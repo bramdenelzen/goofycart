@@ -45,7 +45,8 @@ int main(int argc, char** argv) {
 
     sim::PhysicsTables tables;
     std::string err;
-    if (!tables.load(sim::data_path("physics.json"), &err)) {
+    sim::TrackCatalog tracks;
+    if (!tables.load(sim::data_path("physics.json"), &err) || !tracks.load(sim::data_path("tracks/tracks.json"), &err)) {
         log_error("Could not load game data: {}", err);
         return EXIT_FAILURE;
     }
@@ -72,6 +73,7 @@ int main(int argc, char** argv) {
         b.game = std::make_unique<net::ClientGame>(tables, [l](uint8_t ch, std::vector<uint8_t> d, bool rel) {
             l->send(ch, std::move(d), rel);
         });
+        b.game->set_tracks(tracks);
         b.game->join("Bot " + std::to_string(i + 1), {i % 4, i % 4, 0, 0});
     }
 

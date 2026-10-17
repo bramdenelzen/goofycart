@@ -49,7 +49,9 @@ public:
     Track(Track&&) noexcept;
     Track& operator=(Track&&) noexcept;
 
+    std::string id;
     std::string name;
+    std::string theme = "meadow";  // palette and scenery, for the client
     std::vector<vec3> vertices;
     std::vector<TrackTriangle> triangles;
     std::vector<CenterSample> center;

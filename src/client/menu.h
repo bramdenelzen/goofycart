@@ -21,6 +21,6 @@ SelectAction update_select(SelectState& s, const ClientActions& act, const sim::
 // Draws the part pickers and stat bars on the left; online, the lobby
 // (players, ready flags, Grand Prix points and the timer) on the right.
 void draw_select(render::Renderer& r, const SelectState& s, const sim::PartsCatalog& parts,
-                 const net::LobbyMsg* lobby);
+                 const net::LobbyMsg* lobby, const std::string& track_name = {});
 
 } // namespace gk

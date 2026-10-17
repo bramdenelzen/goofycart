@@ -46,7 +46,7 @@ SelectAction update_select(SelectState& s, const ClientActions& act, const sim::
 }
 
 void draw_select(render::Renderer& r, const SelectState& s, const sim::PartsCatalog& parts,
-                 const net::LobbyMsg* lobby) {
+                 const net::LobbyMsg* lobby, const std::string& track_name) {
     const VkExtent2D ext = r.internal_extent();
     const float W = float(ext.width), H = float(ext.height);
     char buf[96];
@@ -112,7 +112,12 @@ void draw_select(render::Renderer& r, const SelectState& s, const sim::PartsCata
         }
     }
 
-    const char* hint = !lobby ? "ENTER / A: RACE     ESC: QUIT"
+    if (!track_name.empty()) {
+        const float tw = render::Renderer::ui_text_width(track_name.c_str(), 1.5f);
+        r.ui_rect(W - tw - 18, H - 52, tw + 12, 18, rgba(0, 0, 0, 140));
+        r.ui_text(W - tw - 12, H - 48, track_name.c_str(), rgba(255, 230, 60), 1.5f);
+    }
+    const char* hint = !lobby ? "ENTER / A: RACE     ESC: BACK"
                      : s.ready ? "READY!   ENTER / A: CHANGE YOUR MIND"
                                : "ENTER / A: READY     ESC: QUIT";
     const float hw = render::Renderer::ui_text_width(hint, 1.5f);

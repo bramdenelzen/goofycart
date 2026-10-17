@@ -1,0 +1,20 @@
+{
+  "id": "neon_raceway",
+  "name": "Neon Raceway",
+  "theme": "night",
+  "half_width": 8,
+  "verge": 4,
+  "points": [[0,0,0],[0,0,100],[10,0,150],[45,0,170],[80,1,160],[95,2,125],[125,3,110],[165,3,125],[195,2,100],[200,1,45],[185,0,-10],[150,0,-40],[100,0,-30],[70,0,-55],[30,0,-60],[5,0,-30]],
+  "features": [
+    { "type": "boost_pad", "at": [0, 40], "length": 8, "lanes": [0, 1] },
+    { "type": "boost_pad", "at": [0, 60], "length": 8, "lanes": [2, 3] },
+    { "type": "boost_pad", "at": [9, 10], "length": 8, "lanes": [1, 2] },
+    { "type": "trick_ramp", "at": [5, 10], "length": 10, "height": 1.6 },
+    { "type": "trick_ramp", "at": [12, 0], "length": 10, "height": 1.4 },
+    { "type": "verge", "from": 6, "to": 8, "side": "right", "width": 8, "surface": "offroad_medium" },
+    { "type": "item_boxes", "at": [1, 0] },
+    { "type": "item_boxes", "at": [5, 30] },
+    { "type": "item_boxes", "at": [10, 0] },
+    { "type": "item_boxes", "at": [13, 0] }
+  ]
+}

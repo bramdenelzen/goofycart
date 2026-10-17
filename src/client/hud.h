@@ -17,7 +17,7 @@ struct HudMessage {
 struct ResultRow {
     std::string name;
     int finish_ticks = 0; // 0: did not finish
-    int points = 0;       // this race
+    int points = 0;       // this race, -1 to hide
     int total = -1;       // Grand Prix total, -1 to hide
     bool highlight = false;
 };

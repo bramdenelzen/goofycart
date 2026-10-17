@@ -19,7 +19,7 @@
 //   kChannelChat     reliable, low priority: chat and emotes
 namespace gk::net {
 
-inline constexpr uint16_t kProtocolVersion = 4;
+inline constexpr uint16_t kProtocolVersion = 5;
 inline constexpr uint16_t kDefaultPort = 7777;
 inline constexpr uint8_t kChannelState = 0;
 inline constexpr uint8_t kChannelEvents = 1;
@@ -113,6 +113,7 @@ struct RaceSetup {
     uint8_t laps = 3;
     uint16_t countdown = 180;
     sim::CpuLevel cpu_level = sim::CpuLevel::Normal;
+    std::string track;         // track id; clients build it from their own data
     uint32_t data_hash = 0;    // CRC of the server's physics tables, to catch mismatched data files
     std::vector<SeatInfo> seats;
 };
@@ -141,6 +142,8 @@ struct LobbyMsg {
     uint16_t seconds_left = 0;     // until the race starts (lobby) or the lobby opens (results)
     uint8_t race_number = 1;       // within the Grand Prix
     uint8_t races_per_gp = 4;
+    std::string cup;               // Grand Prix name
+    std::string track;             // id of the next (or current) track
     std::vector<LobbyPlayer> players;
 };
 

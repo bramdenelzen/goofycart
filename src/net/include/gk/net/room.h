@@ -1,5 +1,6 @@
 #pragma once
 #include "gk/net/protocol.h"
+#include "gk/sim/track_def.h"
 #include "gk/sim/world.h"
 
 #include <array>
@@ -27,6 +28,11 @@ struct RoomConfig {
     int laps = 3;
     int countdown = 180;
     sim::CpuLevel cpu_level = sim::CpuLevel::Normal;
+    // Tracks: a Grand Prix runs the tracks of one cup in order, then the next
+    // cup. `track` set: every race is on that track. No catalog: the greybox.
+    sim::TrackCatalog tracks;
+    int first_cup = 0;
+    std::string track;
     int seats = kMaxSeats;
     int races_per_gp = 4;
     int lobby_ticks = 60 * 20;         // kart selection before each race
@@ -57,6 +63,9 @@ public:
     const sim::World* world() const { return world_.get(); }
     uint32_t race_id() const { return race_id_; }
     int race_number() const { return race_number_; }
+    // The track for the current race (or the next one, from the lobby).
+    std::string current_track() const;
+    std::string current_cup() const;
     int human_count() const;
     int late_inputs() const { return late_inputs_; }
     bool racing() const { return phase_ == RoomPhase::Racing; }
@@ -116,6 +125,7 @@ private:
     int ready_ticks_ = -1;       // short countdown once every player is ready
     bool lobby_timer_running_ = false;
     int race_number_ = 1;
+    int cup_ = 0;
     int first_finish_for_ = -1;  // ticks since the first player finished
     int humans_done_for_ = -1;   // ticks since every player finished
     uint32_t race_id_ = 0;

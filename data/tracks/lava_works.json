@@ -1,0 +1,19 @@
+{
+  "id": "lava_works",
+  "name": "Lava Works",
+  "theme": "volcano",
+  "half_width": 6.5,
+  "verge": 4,
+  "verge_surface": "offroad_heavy",
+  "points": [[0,0,0],[0,0,60],[15,1,100],[50,2,110],[75,3,85],[70,4,50],[95,5,25],[130,5,40],[150,4,80],[175,3,60],[180,2,10],[160,1,-40],[115,0,-60],[70,0,-55],[40,0,-70],[10,0,-50]],
+  "features": [
+    { "type": "no_walls", "from": [3, 0], "to": [5, 0], "side": "left" },
+    { "type": "no_walls", "from": [11, 0], "to": [12, 20], "side": "right" },
+    { "type": "boost_pad", "at": [1, 0], "length": 8, "lanes": [1, 2] },
+    { "type": "boost_pad", "at": [12, 25], "length": 8, "lanes": [1, 2] },
+    { "type": "trick_ramp", "at": [7, 5], "length": 10, "height": 1.5 },
+    { "type": "item_boxes", "at": [1, 30] },
+    { "type": "item_boxes", "at": [6, 0] },
+    { "type": "item_boxes", "at": [11, 0] }
+  ]
+}

@@ -113,8 +113,10 @@ void draw_results(render::Renderer& r, const std::string& title, const std::vect
         r.ui_text(x + 22 - render::Renderer::ui_text_width(buf), y, buf, c, 1.0f);
         r.ui_text(x + 30, y, name.c_str(), c, 1.0f);
         r.ui_text(x + 110, y, time.c_str(), c, 1.0f);
-        std::snprintf(buf, sizeof buf, "+%d", row.points);
-        r.ui_text(x + 172, y, buf, c, 1.0f);
+        if (row.points >= 0) {
+            std::snprintf(buf, sizeof buf, "+%d", row.points);
+            r.ui_text(x + 172, y, buf, c, 1.0f);
+        }
         if (totals) {
             std::snprintf(buf, sizeof buf, "%d", row.total);
             r.ui_text(x + tw - render::Renderer::ui_text_width(buf), y, buf, c, 1.0f);

@@ -1,0 +1,7 @@
+{
+  "_comment": "Cups of four tracks each, raced in order in a Grand Prix. Track files sit next to this one, named by id.",
+  "cups": [
+    { "name": "Acorn Cup", "tracks": ["meadow_circuit", "dune_drift", "harbor_hop", "frost_pass"] },
+    { "name": "Comet Cup", "tracks": ["canyon_run", "lava_works", "cloud_spire", "neon_raceway"] }
+  ]
+}

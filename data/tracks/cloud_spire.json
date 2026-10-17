@@ -1,0 +1,19 @@
+{
+  "id": "cloud_spire",
+  "name": "Cloud Spire",
+  "theme": "sky",
+  "half_width": 7,
+  "verge": 3,
+  "verge_surface": "offroad_light",
+  "points": [[0,0,0],[0,3,70],[15,7,120],[55,10,140],[100,12,130],[125,14,95],[120,14,55],[100,4,-20],[80,2,-60],[40,1,-80],[5,0,-55]],
+  "features": [
+    { "type": "glide_ramp", "at": [6, 0], "length": 22, "height": 3, "gap": 60 },
+    { "type": "no_walls", "from": [2, 0], "to": [4, 0] },
+    { "type": "boost_pad", "at": [1, 20], "length": 8, "lanes": [1, 2] },
+    { "type": "boost_pad", "at": [8, 10], "length": 8, "lanes": [0, 1, 2, 3] },
+    { "type": "trick_ramp", "at": [9, 0], "length": 10, "height": 1.5 },
+    { "type": "item_boxes", "at": [1, 0] },
+    { "type": "item_boxes", "at": [4, 10] },
+    { "type": "item_boxes", "at": [8, 30] }
+  ]
+}

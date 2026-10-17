@@ -96,7 +96,9 @@ void ClientGame::apply_setup(const RaceSetup& s) {
         rc.engine = s.engine;
         rc.laps = s.laps;
         rc.countdown_frames = s.countdown;
-        world_ = std::make_unique<sim::World>(sim::make_greybox_track(), tables_, rc);
+        if (!setup_.track.empty() && tracks_.find(setup_.track) < 0)
+            log_warn("server races on track '{}', which this client does not have", setup_.track);
+        world_ = std::make_unique<sim::World>(sim::make_track(tracks_, setup_.track), tables_, rc);
         for (const SeatInfo& seat : s.seats) world_->add_kart(seat.params);
         clock_started_ = false;
         history_ = {};

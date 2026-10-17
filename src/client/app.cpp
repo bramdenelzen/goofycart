@@ -79,10 +79,13 @@ int App::run(const AppOptions& options) {
 
 bool App::init() {
     std::string err;
-    if (!tables_.load(sim::data_path("physics.json"), &err) || !parts_.load(sim::data_path("parts.json"), &err)) {
+    if (!tables_.load(sim::data_path("physics.json"), &err) || !parts_.load(sim::data_path("parts.json"), &err) ||
+        !tracks_.load(sim::data_path("tracks/tracks.json"), &err)) {
         log_error("Could not load game data: {}", err);
         return false;
     }
+    course_.engine = options_.engine;
+    course_.cpu = options_.cpu_level;
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         log_error("SDL_Init failed: {}", SDL_GetError());
         return false;
@@ -106,17 +109,20 @@ bool App::init() {
         online_ = std::make_unique<net::ClientGame>(tables_, [this](uint8_t ch, std::vector<uint8_t> d, bool rel) {
             net_->send(ch, std::move(d), rel);
         });
+        online_->set_tracks(tracks_);
         online_->join(options_.name, options_.build);
+        screen_ = Screen::Select;
     }
-    // Only the greybox track exists so far, online and offline.
-    menu_track_ = std::make_unique<sim::Track>(sim::make_greybox_track());
-    track_mesh_ = renderer_.upload_mesh(render::make_track_mesh(*menu_track_));
-    scenery_mesh_ = renderer_.upload_mesh(render::make_scenery_mesh(*menu_track_));
     select_.build = options_.build;
-    // Demos skip the kart select screen.
-    if (!online_ && options_.autodrive) {
+    // --track (and demos) race straight away, skipping the menus.
+    if (!online_ && (options_.autodrive || !options_.track.empty())) {
+        course_.mode = GameMode::Versus;
+        if (options_.track.empty()) options_.track = tracks_.tracks.empty() ? "greybox" : tracks_.tracks.front().id;
+        if (const int i = tracks_.find(options_.track); i >= 0) course_.track = i;
         start_race();
         screen_ = Screen::Race;
+    } else {
+        show_track(course_track(course_, tracks_));
     }
     glider_mesh_ = renderer_.upload_mesh(render::make_glider_mesh(render::rgba(250, 250, 250)));
     spark_mesh_ = renderer_.upload_mesh(render::make_spark_mesh());
@@ -139,28 +145,94 @@ bool App::init() {
     return true;
 }
 
+std::string App::race_track_id() const {
+    // A --track the catalog doesn't list (such as "greybox") is built directly.
+    if (!options_.track.empty() && tracks_.find(options_.track) < 0) return options_.track;
+    if (course_.mode == GameMode::GrandPrix && !tracks_.cups.empty()) {
+        const auto& cup = tracks_.cups[size_t(course_.cup % int(tracks_.cups.size()))];
+        if (!cup.tracks.empty()) return cup.tracks[size_t(gp_.race % int(cup.tracks.size()))];
+    }
+    return course_track(course_, tracks_);
+}
+
+void App::show_track(const std::string& id) {
+    if (shown_track_ && shown_track_->id == (id.empty() ? "greybox" : id)) return;
+    shown_track_ = std::make_unique<sim::Track>(sim::make_track(tracks_, id));
+    auto it = track_meshes_.find(shown_track_->id);
+    if (it == track_meshes_.end()) {
+        const render::MeshId track = renderer_.upload_mesh(render::make_track_mesh(*shown_track_));
+        const render::MeshId scenery = renderer_.upload_mesh(render::make_scenery_mesh(*shown_track_));
+        it = track_meshes_.emplace(shown_track_->id, std::pair(track, scenery)).first;
+    }
+    track_mesh_ = it->second.first;
+    scenery_mesh_ = it->second.second;
+    const render::ThemeStyle& th = render::theme_style(shown_track_->theme);
+    light_ = {};
+    light_.sky = th.sky;
+    light_.fog_density = th.fog_density;
+    light_.ambient = th.ambient;
+}
+
 void App::start_race() {
     sim::RaceConfig rc;
-    rc.engine = options_.engine;
-    world_ = std::make_unique<sim::World>(sim::make_greybox_track(), tables_, rc);
+    rc.engine = course_.engine;
+    const std::string id = race_track_id();
+    show_track(id);
+    sim::Track track = sim::make_track(tracks_, id);
+    const bool time_trial = course_.mode == GameMode::TimeTrial;
+    if (time_trial) track.item_boxes.clear(); // just the three mushrooms
+    message_ = {track.name, render::rgba(255, 255, 255), 3.0f};
+    world_ = std::make_unique<sim::World>(std::move(track), tables_, rc);
     auto clamp_part = [](int i, size_t n) { return std::clamp(i, 0, int(n) - 1); };
     options_.build.driver = clamp_part(options_.build.driver, parts_.drivers.size());
     options_.build.body = clamp_part(options_.build.body, parts_.bodies.size());
     options_.build.tires = clamp_part(options_.build.tires, parts_.tires.size());
     options_.build.glider = clamp_part(options_.build.glider, parts_.gliders.size());
-    const int karts = std::clamp(options_.karts, 1, 12);
+    const int karts = time_trial ? 1 : std::clamp(options_.karts, 1, 12);
     // The player starts at the back of the grid, as in a Grand Prix opener.
     player_ = karts - 1;
     for (int i = 0; i < karts; ++i) {
         sim::Build b = options_.build;
         if (i != player_) b = {i % int(parts_.drivers.size()), i % int(parts_.bodies.size()), (i / 2) % int(parts_.tires.size()), 0};
         sim::KartParams p = tables_.params(parts_.levels(b), parts_.body(b), rc.engine);
-        if (i != player_) p.rubber_band = sim::cpu_rubber_band(options_.cpu_level);
+        if (i != player_) p.rubber_band = sim::cpu_rubber_band(course_.cpu);
         world_->add_kart(p);
     }
+    if (time_trial) world_->give_item(player_, sim::Item::TripleMushroom);
     prev_ = world_->karts();
     cam_init_ = false;
-    message_ = {};
+}
+
+void App::finish_offline_race() {
+    const auto order = world_->standings();
+    const auto names = kart_names();
+    const bool gp = course_.mode == GameMode::GrandPrix;
+    gp_.rows.clear();
+    for (size_t p = 0; p < order.size(); ++p) {
+        const int k = order[p];
+        const sim::KartState& ks = world_->karts()[size_t(k)];
+        const int pts = course_.mode == GameMode::TimeTrial ? 0 : net::kRacePoints[std::min<size_t>(p, 11)];
+        if (gp) gp_.points[size_t(k)] += pts;
+        gp_.rows.push_back({names[size_t(k)], ks.finished ? ks.finish_tick : 0, pts, gp ? gp_.points[size_t(k)] : -1,
+                            k == player_});
+    }
+    int races = 4;
+    if (gp && !tracks_.cups.empty()) races = int(tracks_.cups[size_t(course_.cup % int(tracks_.cups.size()))].tracks.size());
+    gp_.over = gp && gp_.race + 1 >= races;
+    if (gp_.over)
+        std::stable_sort(gp_.rows.begin(), gp_.rows.end(), [](const ResultRow& a, const ResultRow& b) { return a.total > b.total; });
+}
+
+void App::draw_standings() {
+    char title[64];
+    const bool gp = course_.mode == GameMode::GrandPrix;
+    if (gp_.over) std::snprintf(title, sizeof title, "GRAND PRIX RESULTS");
+    else if (gp) std::snprintf(title, sizeof title, "RACE %d OF 4", gp_.race + 1);
+    else std::snprintf(title, sizeof title, course_.mode == GameMode::TimeTrial ? "TIME TRIAL" : "RESULTS");
+    std::vector<ResultRow> rows = gp_.rows;
+    if (course_.mode == GameMode::TimeTrial)
+        for (auto& r : rows) r.points = -1;
+    draw_results(renderer_, title, rows, gp && !gp_.over ? "ENTER / A: NEXT RACE" : "ENTER / A: CONTINUE");
 }
 
 void App::update() {
@@ -375,7 +447,7 @@ void App::draw_items(const sim::World& w) {
 }
 
 void App::render(float alpha, float dt) {
-    if (screen_ == Screen::Select) {
+    if (screen_ == Screen::Title || screen_ == Screen::Course || screen_ == Screen::Select) {
         render_menu(dt);
         return;
     }
@@ -385,12 +457,14 @@ void App::render(float alpha, float dt) {
     cam.position = cam_init_ ? cam_pos_ : vec3(0, 12, -25);
     cam.target = cam_init_ ? cam_look_ : vec3(0, 0, 20);
     cam.fov_y_deg = cam_fov_;
-    render::SceneLighting light;
-    light.fog_density = 0.0035f;
-    if (!renderer_.begin_frame(cam, light)) return;
+    if (w) show_track(w->track().id);
+    if (!renderer_.begin_frame(cam, light_)) return;
     renderer_.draw(track_mesh_, mat4(1.0f));
     renderer_.draw(scenery_mesh_, mat4(1.0f));
-    if (w) {
+    if (w && screen_ == Screen::Standings) {
+        for (size_t i = 0; i < w->karts().size(); ++i) draw_kart(int(i), w->karts()[i], alpha);
+        draw_standings();
+    } else if (w) {
         const auto& karts = w->karts();
         draw_items(*w);
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
@@ -460,34 +534,81 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
         }
         return;
     }
-    if (screen_ == Screen::Select) {
+    switch (screen_) {
+    case Screen::Title:
+        switch (update_title(title_, act)) {
+        case TitleChoice::GrandPrix: course_.mode = GameMode::GrandPrix; break;
+        case TitleChoice::Versus: course_.mode = GameMode::Versus; break;
+        case TitleChoice::TimeTrial: course_.mode = GameMode::TimeTrial; break;
+        case TitleChoice::Quit: running = false; return;
+        case TitleChoice::None: return;
+        }
+        course_.row = 0;
+        screen_ = Screen::Course;
+        show_track(course_track(course_, tracks_));
+        return;
+    case Screen::Course:
+        switch (update_course(course_, act, tracks_)) {
+        case CourseAction::Changed: show_track(course_track(course_, tracks_)); break;
+        case CourseAction::Accept:
+            gp_ = {};
+            screen_ = Screen::Select;
+            show_track(race_track_id());
+            break;
+        case CourseAction::Back: screen_ = Screen::Title; break;
+        case CourseAction::None: break;
+        }
+        return;
+    case Screen::Select:
         switch (update_select(select_, act, parts_)) {
         case SelectAction::Accept:
             options_.build = select_.build;
             start_race();
             screen_ = Screen::Race;
             break;
-        case SelectAction::Back: running = false; break;
+        case SelectAction::Back: screen_ = Screen::Course; break;
         default: break;
         }
         return;
+    case Screen::Race: {
+        // Esc leaves the race, R restarts it, and after the finish Enter / A
+        // shows the results.
+        const bool finished = world_ && world_->karts()[size_t(player_)].finished;
+        if (act.back) {
+            screen_ = options_.track.empty() ? Screen::Course : Screen::Title;
+            options_.track.clear();
+            cam_init_ = false;
+            show_track(course_track(course_, tracks_));
+        } else if (finished && act.accept) {
+            finish_offline_race();
+            screen_ = Screen::Standings;
+        } else if (act.restart_pressed) {
+            start_race();
+        }
+        return;
     }
-    // Local race: Esc or Back returns to kart select, R restarts, and after
-    // the finish Enter / A continues.
-    const bool finished = world_ && world_->karts()[size_t(player_)].finished;
-    if (act.back || (finished && act.accept)) {
-        screen_ = Screen::Select;
+    case Screen::Standings:
+        if (!act.accept && !act.back) return;
+        if (course_.mode == GameMode::GrandPrix && !gp_.over && act.accept) {
+            ++gp_.race;
+            start_race();
+            screen_ = Screen::Race;
+            return;
+        }
+        screen_ = course_.mode == GameMode::GrandPrix ? Screen::Title : Screen::Course;
+        options_.track.clear();
         cam_init_ = false;
-    } else if (act.restart_pressed) {
-        start_race();
+        show_track(course_track(course_, tracks_));
+        return;
     }
 }
 
 void App::render_menu(float dt) {
     // The chosen kart on the start line, with the camera circling it.
     menu_angle_ += dt * 0.4f;
+    if (online_ && online_->has_lobby()) show_track(online_->lobby().track);
     sim::KartState k;
-    sim::kart_spawn(k, *menu_track_, 0);
+    sim::kart_spawn(k, *shown_track_, 0);
     const vec3 fwd = k.forward();
     const vec3 orbit = glm::angleAxis(menu_angle_, kUp) * (fwd * 4.2f);
     render::Camera cam;
@@ -495,14 +616,24 @@ void App::render_menu(float dt) {
     // Look past the kart so it sits right of centre, clear of the menu panel.
     cam.target = k.pos + kUp * 0.5f - glm::normalize(glm::cross(kUp, orbit)) * 1.3f;
     cam.fov_y_deg = 55.0f;
-    render::SceneLighting light;
-    light.fog_density = 0.0035f;
-    if (!renderer_.begin_frame(cam, light)) return;
+    if (!renderer_.begin_frame(cam, light_)) return;
     renderer_.draw(track_mesh_, mat4(1.0f));
     renderer_.draw(scenery_mesh_, mat4(1.0f));
     const int mesh = online_ ? std::max(online_->seat(), 0) : std::clamp(options_.karts, 1, 12) - 1;
     renderer_.draw(kart_meshes_[size_t(mesh % 12)], glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot));
-    draw_select(renderer_, select_, parts_, online_ && online_->has_lobby() ? &online_->lobby() : nullptr);
+    switch (screen_) {
+    case Screen::Title: draw_title(renderer_, title_); break;
+    case Screen::Course: draw_course(renderer_, course_, tracks_); break;
+    default: {
+        const net::LobbyMsg* lobby = online_ && online_->has_lobby() ? &online_->lobby() : nullptr;
+        std::string where = shown_track_->name;
+        if (lobby && !lobby->cup.empty()) where = lobby->cup + ": " + where;
+        else if (!online_ && course_.mode == GameMode::GrandPrix && !tracks_.cups.empty())
+            where = tracks_.cups[size_t(course_.cup % int(tracks_.cups.size()))].name + ": " + shown_track_->name;
+        draw_select(renderer_, select_, parts_, lobby, where);
+        break;
+    }
+    }
     if (online_) draw_net_status();
     renderer_.end_frame();
 }

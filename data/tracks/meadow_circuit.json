@@ -1,0 +1,16 @@
+{
+  "id": "meadow_circuit",
+  "name": "Meadow Circuit",
+  "theme": "meadow",
+  "half_width": 7.5,
+  "points": [[0,0,0],[0,0,70],[6,1,120],[30,2,150],[70,2,160],[110,2,145],[130,1,110],[118,0,75],[135,0,40],[130,0,0],[105,0,-30],[65,0,-45],[28,0,-38],[6,0,-20]],
+  "features": [
+    { "type": "trick_ramp", "at": [1, 8], "length": 10, "height": 1.4 },
+    { "type": "boost_pad", "at": [4, 0], "length": 8, "lanes": [1, 2] },
+    { "type": "boost_pad", "at": [10, 10], "length": 8, "lanes": [0, 1] },
+    { "type": "verge", "from": 3, "to": 6, "side": "right", "width": 9, "surface": "offroad_medium" },
+    { "type": "item_boxes", "at": [0, 40] },
+    { "type": "item_boxes", "at": [5, 0] },
+    { "type": "item_boxes", "at": [11, 0] }
+  ]
+}

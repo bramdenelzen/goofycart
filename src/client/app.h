@@ -1,6 +1,7 @@
 #pragma once
 #include "hud.h"
 #include "input.h"
+#include "frontend.h"
 #include "menu.h"
 #include "render/renderer.h"
 
@@ -8,6 +9,8 @@
 #include "gk/net/transport.h"
 #include "gk/sim/world.h"
 
+#include <array>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -26,6 +29,7 @@ struct AppOptions {
     sim::EngineClass engine = sim::EngineClass::cc150;
     sim::Build build{1, 0, 0, 0};
     sim::CpuLevel cpu_level = sim::CpuLevel::Normal;
+    std::string track;            // offline: race this track straight away (skips the menus)
     // Online play: connect to a gk_server instead of racing locally.
     std::string connect_host;
     uint16_t connect_port = net::kDefaultPort;
@@ -41,6 +45,9 @@ private:
     bool init();
     void shutdown();
     void start_race();
+    std::string race_track_id() const;
+    void show_track(const std::string& id);
+    void finish_offline_race();
     void update();
     void handle_events(const std::vector<sim::KartEvent>& events);
     const sim::World* world() const { return online_ ? online_->world() : world_.get(); }
@@ -48,6 +55,7 @@ private:
     void handle_menu_actions(const ClientActions& act, bool& running);
     void render_menu(float dt);
     void draw_online_results();
+    void draw_standings();
     std::vector<std::string> kart_names() const;
     void update_camera(float dt);
     void render(float alpha, float dt);
@@ -63,6 +71,7 @@ private:
 
     sim::PhysicsTables tables_;
     sim::PartsCatalog parts_;
+    sim::TrackCatalog tracks_;
     std::unique_ptr<sim::World> world_;            // local race
     std::unique_ptr<net::NetClient> net_;          // online race
     std::unique_ptr<net::ClientGame> online_;
@@ -70,11 +79,25 @@ private:
     std::vector<sim::KartState> prev_;
     int player_ = 0;
 
-    enum class Screen { Select, Race };
-    Screen screen_ = Screen::Select;
+    enum class Screen { Title, Course, Select, Race, Standings };
+    Screen screen_ = Screen::Title;
+    TitleState title_;
+    CourseState course_;
     SelectState select_;
-    std::unique_ptr<sim::Track> menu_track_;
     float menu_angle_ = 0.0f;
+
+    // Offline Grand Prix: race number in the cup and points per kart.
+    struct GrandPrix {
+        int race = 0;
+        std::array<int, 12> points{};
+        std::vector<ResultRow> rows; // last race, for the standings screen
+        bool over = false;
+    } gp_;
+
+    // Track shown now (menu backdrop or race), its meshes and lighting.
+    std::unique_ptr<sim::Track> shown_track_;
+    std::map<std::string, std::pair<render::MeshId, render::MeshId>> track_meshes_;
+    render::SceneLighting light_;
 
     render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, glider_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0;
     render::MeshId box_mesh_ = 0, banana_mesh_ = 0, green_mesh_ = 0, red_mesh_ = 0, spiked_mesh_ = 0, bomb_mesh_ = 0,

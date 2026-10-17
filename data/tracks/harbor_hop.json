@@ -1,0 +1,17 @@
+{
+  "id": "harbor_hop",
+  "name": "Harbor Hop",
+  "theme": "harbor",
+  "half_width": 7,
+  "points": [[0,0,0],[0,0,70],[10,2,125],[45,4,150],[92,4,145],[118,4,110],[124,4,65],[120,-6,-10],[100,-8,-55],[58,-8,-78],[20,-6,-68],[0,-3,-40]],
+  "features": [
+    { "type": "glide_ramp", "at": [5, 30], "length": 20, "height": 3, "gap": 55 },
+    { "type": "road", "surface": "water", "from": 8, "to": [9, 20] },
+    { "type": "boost_pad", "at": [2, 10], "length": 8, "lanes": [1, 2] },
+    { "type": "trick_ramp", "at": [10, 0], "length": 10, "height": 1.4 },
+    { "type": "verge", "from": 2, "to": 4, "side": "left", "width": 8, "surface": "sand" },
+    { "type": "item_boxes", "at": [1, 0] },
+    { "type": "item_boxes", "at": [4, 0] },
+    { "type": "item_boxes", "at": [8, 0] }
+  ]
+}

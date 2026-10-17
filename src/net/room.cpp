@@ -11,6 +11,20 @@ Room::Room(sim::PhysicsTables tables, sim::PartsCatalog parts, RoomConfig config
     data_hash_ = hash_constants(tables_);
     config_.seats = std::clamp(config_.seats, 1, kMaxSeats);
     config_.races_per_gp = std::max(1, config_.races_per_gp);
+    if (!config_.tracks.cups.empty())
+        cup_ = std::clamp(config_.first_cup, 0, int(config_.tracks.cups.size()) - 1);
+}
+
+std::string Room::current_track() const {
+    if (!config_.track.empty()) return config_.track;
+    if (config_.tracks.cups.empty()) return {};
+    const auto& tracks = config_.tracks.cups[size_t(cup_)].tracks;
+    return tracks.empty() ? std::string{} : tracks[size_t(race_number_ - 1) % tracks.size()];
+}
+
+std::string Room::current_cup() const {
+    if (!config_.track.empty() || config_.tracks.cups.empty()) return {};
+    return config_.tracks.cups[size_t(cup_)].name;
 }
 
 int Room::human_count() const {
@@ -147,7 +161,7 @@ void Room::start_race() {
     rc.engine = config_.engine;
     rc.laps = config_.laps;
     rc.countdown_frames = config_.countdown;
-    world_ = std::make_unique<sim::World>(sim::make_greybox_track(), tables_, rc);
+    world_ = std::make_unique<sim::World>(sim::make_track(config_.tracks, current_track()), tables_, rc);
     seats_.assign(size_t(config_.seats), Seat{});
     const int nd = int(parts_.drivers.size()), nb = int(parts_.bodies.size()), nt = int(parts_.tires.size());
     for (int i = 0; i < config_.seats; ++i) {
@@ -164,8 +178,8 @@ void Room::start_race() {
         if (c.hello) assign_seat(id, c);
     }
     step_inputs_.assign(seats_.size(), {});
-    log_info("room: race {} ({} of {}) starting with {} player(s)", race_id_, race_number_, config_.races_per_gp,
-             human_count());
+    log_info("room: race {} ({} of {}) on {} starting with {} player(s)", race_id_, race_number_, config_.races_per_gp,
+             world_->track().name, human_count());
     broadcast_setup();
     send_lobby();
 }
@@ -213,6 +227,7 @@ RaceSetup Room::make_setup() const {
     s.laps = uint8_t(config_.laps);
     s.countdown = uint16_t(config_.countdown);
     s.cpu_level = config_.cpu_level;
+    s.track = current_track();
     s.data_hash = data_hash_;
     for (const Seat& seat : seats_) s.seats.push_back({seat.human, seat.name, seat.build, seat.params});
     return s;
@@ -238,6 +253,8 @@ void Room::send_lobby_to(ClientId to) {
                          : uint16_t((std::max(lobby_ticks_left(), 0) + 59) / 60);
     m.race_number = uint8_t(race_number_);
     m.races_per_gp = uint8_t(config_.races_per_gp);
+    m.cup = current_cup();
+    m.track = current_track();
     for (const auto& [id, c] : clients_) {
         if (!c.hello) continue;
         m.players.push_back({c.name, c.build, c.ready, uint16_t(c.points), id == to});
@@ -304,8 +321,9 @@ void Room::tick() {
     case RoomPhase::Results:
         if (--phase_ticks_ <= 0) {
             if (race_number_ >= config_.races_per_gp) {
-                // Grand Prix over: totals start again.
+                // Grand Prix over: totals start again, on to the next cup.
                 race_number_ = 1;
+                if (!config_.tracks.cups.empty()) cup_ = (cup_ + 1) % int(config_.tracks.cups.size());
                 bot_points_ = {};
                 for (auto& [id, c] : clients_) c.points = 0;
             } else {

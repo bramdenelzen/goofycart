@@ -33,6 +33,8 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--races") == 0) cfg.races_per_gp = std::atoi(next());
         else if (std::strcmp(argv[i], "--lobby") == 0) cfg.lobby_ticks = std::atoi(next()) * gk::kTickRate;
         else if (std::strcmp(argv[i], "--cpu") == 0) cfg.cpu_level = gk::sim::parse_cpu_level(next()); // easy, normal, hard
+        else if (std::strcmp(argv[i], "--cup") == 0) cfg.first_cup = std::atoi(next()) - 1; // 1-based
+        else if (std::strcmp(argv[i], "--track") == 0) cfg.track = next();               // one track, every race
         else if (std::strcmp(argv[i], "--bots") == 0) cfg.idle_without_humans = false; // race even when empty
         else if (std::strcmp(argv[i], "--cc") == 0) {
             const int cc = std::atoi(next());
@@ -48,6 +50,14 @@ int main(int argc, char** argv) {
     std::string err;
     if (!tables.load(gk::sim::data_path("physics.json"), &err) || !parts.load(gk::sim::data_path("parts.json"), &err)) {
         gk::log_error("Could not load game data: {}", err);
+        return EXIT_FAILURE;
+    }
+    if (!cfg.tracks.load(gk::sim::data_path("tracks/tracks.json"), &err)) {
+        gk::log_error("Could not load tracks: {}", err);
+        return EXIT_FAILURE;
+    }
+    if (!cfg.track.empty() && cfg.tracks.find(cfg.track) < 0) {
+        gk::log_error("Unknown track '{}'", cfg.track);
         return EXIT_FAILURE;
     }
     if (!gk::net::transport_init()) return EXIT_FAILURE;

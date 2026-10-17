@@ -5,9 +5,10 @@ with Vulkan. Low-res, low-poly art; 12 racers per race with CPU drivers filling
 empty seats; a dedicated server with server-authoritative racing over UDP.
 
 Status: early development. See [docs/ROADMAP.md](docs/ROADMAP.md) for phases.
-Right now you pick a driver, body, tires and glider (with MK8-style stat
-bars) and race 3 laps of a greybox test track against 11 simple
-line-following karts: drifting with blue, orange and purple mini-turbos,
+Right now you pick Grand Prix, VS race or Time Trials, a cup or course, an
+engine class and CPU difficulty, then a driver, body, tires and glider (with
+MK8-style stat bars), and race 3 laps on one of 8 themed tracks against 11
+CPU drivers: drifting with blue, orange and purple mini-turbos,
 hops, tricks off ramps, a glider section over a chasm, dash panels, rocket
 starts, off-road, sand, ice and mud, respawns, and item boxes with all 22
 race items. The same race
@@ -56,7 +57,9 @@ those with `tools/compile_shaders.py`.
 ./build/release/src/server/gk_server
 ```
 
-`gk_client` on its own races locally against 11 placeholder racers. To race
+`gk_client` on its own opens the title menu: Grand Prix runs the four
+tracks of a cup with points and standings, VS race is a single track, and
+Time Trials is a solo run with three mushrooms and no item boxes. To race
 online, start a server and point clients at it:
 
 ```sh
@@ -77,7 +80,9 @@ seconds after the first player finishes. The room waits in the lobby while
 nobody is connected (`--bots` keeps it racing).
 
 Server flags: `--port`, `--laps`, `--races` (per Grand Prix), `--lobby`
-(seconds), `--cc`, `--cpu easy|normal|hard`, `--bots`.
+(seconds), `--cc`, `--cpu easy|normal|hard`, `--bots`, `--cup N` (start
+on cup N, moving to the next cup after each Grand Prix), `--track id` (always
+race one track).
 
 Running the client needs a Vulkan 1.3 driver: your GPU driver on Windows and
 Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
@@ -92,9 +97,27 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 | `--build D,B,T,G` | Driver, body, tires and glider indices from `data/parts.json` |
 | `--karts N` | Racers on the grid, 1 to 12 |
 | `--cpu easy\|normal\|hard` | CPU driver difficulty offline (default normal) |
+| `--track id` | Skip the menus and race that track (ids below) |
 | `--connect host[:port]` | Race online on a `gk_server` (default port 7777) |
 | `--name NAME` | Your name online |
 | `--lag MS --loss PCT --jitter MS` | Simulate a bad connection (added round trip, packet loss, jitter) |
+
+## Tracks
+
+Tracks are data: each file in `data/tracks/` is a closed spline of
+`[x, y, z, half_width]` control points plus features placed by
+`[control point, metres]`: trick ramps, glide ramps over a gap, boost pads
+(by lane), road surfaces (offroad, sand, ice, water), verges, item box rows
+and stretches without walls. `data/tracks/tracks.json` groups them into cups.
+The game builds the collision mesh, respawn points, CPU racing line and a
+themed low-poly render mesh with scenery from that.
+
+| Cup | Tracks (ids) |
+| --- | --- |
+| Acorn Cup | `meadow_circuit`, `dune_drift`, `harbor_hop`, `frost_pass` |
+| Comet Cup | `canyon_run`, `lava_works`, `cloud_spire`, `neon_raceway` |
+
+`greybox` is still there as a test track.
 
 ## Controls
 

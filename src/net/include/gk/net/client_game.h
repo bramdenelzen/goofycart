@@ -1,5 +1,6 @@
 #pragma once
 #include "gk/net/protocol.h"
+#include "gk/sim/track_def.h"
 #include "gk/sim/world.h"
 
 #include <array>
@@ -32,6 +33,8 @@ public:
 
     ClientGame(sim::PhysicsTables tables, SendFn send);
 
+    // The tracks the server may race on, built locally by id.
+    void set_tracks(sim::TrackCatalog tracks) { tracks_ = std::move(tracks); }
     void join(const std::string& name, const sim::Build& build);
     // Kart choice and ready flag for the lobby (also allowed between races).
     void set_build(const sim::Build& build, bool ready);
@@ -91,6 +94,7 @@ private:
     void send_inputs();
 
     sim::PhysicsTables tables_;
+    sim::TrackCatalog tracks_;
     SendFn send_;
     uint32_t data_hash_ = 0;
 

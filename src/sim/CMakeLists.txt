@@ -3,7 +3,7 @@
 add_library(gk_sim STATIC
   stats.cpp
   track.cpp
-  greybox_track.cpp
+  track_builder.cpp
   kart.cpp
   world.cpp
   items.cpp
