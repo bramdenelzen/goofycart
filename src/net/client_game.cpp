@@ -19,10 +19,11 @@ ClientGame::ClientGame(sim::PhysicsTables tables, SendFn send) : tables_(std::mo
     data_hash_ = hash_constants(tables_);
 }
 
-void ClientGame::join(const std::string& name, const sim::Build& build) {
+void ClientGame::join(const std::string& name, const sim::Build& build, const std::string& token) {
     Hello h;
     h.name = name;
     h.build = build;
+    h.token = token;
     send_(kChannelEvents, encode(h), true);
 }
 

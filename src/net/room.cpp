@@ -64,6 +64,17 @@ void Room::on_disconnect(ClientId id) {
     send_lobby();
 }
 
+void Room::set_account(ClientId id, const std::string& account, const std::string& name) {
+    const auto it = clients_.find(id);
+    if (it == clients_.end()) return;
+    Client& c = it->second;
+    c.account = account;
+    if (!name.empty()) c.name = name.substr(0, 16);
+    if (c.seat >= 0 && size_t(c.seat) < seats_.size() && seats_[size_t(c.seat)].client == id) seats_[size_t(c.seat)].name = c.name;
+    log_info("room: {} signed in", c.name);
+    send_lobby();
+}
+
 void Room::on_message(ClientId id, std::span<const uint8_t> data) {
     auto it = clients_.find(id);
     if (it == clients_.end()) return;
@@ -75,6 +86,7 @@ void Room::on_message(ClientId id, std::span<const uint8_t> data) {
         c.hello = true;
         c.name = h.name.empty() ? "Player" : h.name.substr(0, 16);
         c.build = clamp_build(h.build);
+        if (!h.token.empty()) account_checks_.push_back({id, h.token.substr(0, 128)});
         log_info("room: {} joined", c.name);
         // Joining during the countdown still gets a kart; later, you watch.
         if (phase_ == RoomPhase::Racing && world_->countdown_left() > 0) {
@@ -209,6 +221,15 @@ void Room::finish_race() {
         }
         results_.entries.push_back(e);
     }
+    // Signed-in players' order, for the master server's ratings.
+    std::vector<std::string> ranked;
+    for (const ResultEntry& e : results_.entries) {
+        const Seat& seat = seats_[e.seat];
+        if (!seat.human) continue;
+        const auto c = clients_.find(seat.client);
+        if (c != clients_.end() && !c->second.account.empty()) ranked.push_back(c->second.account);
+    }
+    if (ranked.size() >= 2) reports_.push_back(std::move(ranked));
     log_info("room: race {} over, winner {}", race_id_, results_.entries.empty() ? "-" : results_.entries[0].name);
     const auto msg = encode(results_);
     for (auto& [id, c] : clients_)

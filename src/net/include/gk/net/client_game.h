@@ -35,7 +35,8 @@ public:
 
     // The tracks the server may race on, built locally by id.
     void set_tracks(sim::TrackCatalog tracks) { tracks_ = std::move(tracks); }
-    void join(const std::string& name, const sim::Build& build);
+    // `token`: a master server account token, or empty to play as a guest.
+    void join(const std::string& name, const sim::Build& build, const std::string& token = {});
     // Kart choice and ready flag for the lobby (also allowed between races).
     void set_build(const sim::Build& build, bool ready);
     void on_message(std::span<const uint8_t> data);

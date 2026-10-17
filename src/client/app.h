@@ -12,6 +12,7 @@
 #include "gk/sim/world.h"
 
 #include <array>
+#include <future>
 #include <map>
 #include <memory>
 #include <string>
@@ -39,6 +40,8 @@ struct AppOptions {
     std::string connect_host;
     uint16_t connect_port = net::kDefaultPort;
     std::string name = "Player";
+    std::string master_url;       // master server for ONLINE (accounts, matchmaking)
+    std::string region;           // preferred server region for matchmaking
     net::LinkConditions link; // simulated lag and loss for testing
 };
 
@@ -102,12 +105,28 @@ private:
     std::vector<sim::KartState> prev_;
     int player_ = 0;
 
-    enum class Screen { Title, Options, Course, Select, Race, Standings };
+    enum class Screen { Title, Options, Online, Course, Select, Race, Standings };
     Screen screen_ = Screen::Title;
     TitleState title_;
     OptionsState options_menu_;
     Settings settings_;
     void apply_settings();
+
+    // ONLINE: sign in to the master server and matchmake on a worker thread.
+    struct MatchResult {
+        std::string error; // empty on success
+        std::string host, token, name;
+        uint16_t port = 0;
+        int rating = 0;
+    };
+    void start_matchmaking();
+    void poll_matchmaking();
+    bool connect_online(const std::string& host, uint16_t port, const std::string& token);
+    void leave_online();
+    std::future<MatchResult> matching_;
+    std::string online_error_;
+    std::string account_label_; // "NAME (rating)" once signed in
+    bool transport_ready_ = false;
     std::string settings_path() const { return pref_dir_.empty() || options_.max_frames >= 0 ? std::string() : pref_dir_ + "settings.txt"; }
     CourseState course_;
     SelectState select_;

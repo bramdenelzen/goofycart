@@ -17,7 +17,7 @@ enum class GameMode { GrandPrix, Versus, TimeTrial };
 struct TitleState {
     int row = 0;
 };
-enum class TitleChoice { None, GrandPrix, Versus, TimeTrial, Options, Quit };
+enum class TitleChoice { None, GrandPrix, Versus, TimeTrial, Online, Options, Quit };
 TitleChoice update_title(TitleState& s, const ClientActions& act);
 void draw_title(render::Renderer& r, const TitleState& s);
 
@@ -35,6 +35,9 @@ CourseAction update_course(CourseState& s, const ClientActions& act, const sim::
 void draw_course(render::Renderer& r, const CourseState& s, const sim::TrackCatalog& tracks);
 // The track the course screen points at (the cup's first track in a Grand Prix).
 std::string course_track(const CourseState& s, const sim::TrackCatalog& tracks);
+
+// ONLINE while it signs in and looks for a race, or why it could not.
+void draw_online_status(render::Renderer& r, const std::string& text, bool failed);
 
 // Volumes and display settings.
 struct OptionsState {

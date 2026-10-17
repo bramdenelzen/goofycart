@@ -46,8 +46,8 @@ const char* cpu_name(sim::CpuLevel l) {
 // ---------------------------------------------------------------- title
 
 namespace {
-constexpr const char* kTitleItems[] = {"GRAND PRIX", "VS RACE", "TIME TRIALS", "OPTIONS", "QUIT"};
-constexpr int kTitleCount = 5;
+constexpr const char* kTitleItems[] = {"GRAND PRIX", "VS RACE", "TIME TRIALS", "ONLINE", "OPTIONS", "QUIT"};
+constexpr int kTitleCount = 6;
 } // namespace
 
 TitleChoice update_title(TitleState& s, const ClientActions& act) {
@@ -59,7 +59,8 @@ TitleChoice update_title(TitleState& s, const ClientActions& act) {
     case 0: return TitleChoice::GrandPrix;
     case 1: return TitleChoice::Versus;
     case 2: return TitleChoice::TimeTrial;
-    case 3: return TitleChoice::Options;
+    case 3: return TitleChoice::Online;
+    case 4: return TitleChoice::Options;
     default: return TitleChoice::Quit;
     }
 }
@@ -80,6 +81,17 @@ void draw_title(render::Renderer& r, const TitleState& s) {
         y += 24.0f;
     }
     footer(r, "UP/DOWN: CHOOSE    ENTER / A: OK    ESC: QUIT");
+}
+
+// ---------------------------------------------------------------- online
+
+void draw_online_status(render::Renderer& r, const std::string& text, bool failed) {
+    const float W = float(r.internal_extent().width), H = float(r.internal_extent().height);
+    const float w = std::max(200.0f, render::Renderer::ui_text_width(text.c_str(), 1.0f) + 24.0f);
+    r.ui_rect((W - w) * 0.5f, H * 0.4f - 30, w, 64, rgba(0, 0, 0, 160));
+    centered(r, H * 0.4f - 22, "ONLINE", rgba(255, 230, 60), 2.0f);
+    centered(r, H * 0.4f + 10, text.c_str(), failed ? rgba(255, 120, 100) : rgba(255, 255, 255), 1.0f);
+    footer(r, failed ? "ENTER / A: TRY AGAIN    ESC: BACK" : "ESC: BACK");
 }
 
 // ---------------------------------------------------------------- options

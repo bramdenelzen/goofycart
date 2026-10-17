@@ -1,17 +1,24 @@
 // gk_server: headless dedicated server. One race room over ENet (UDP); the
 // server owns the simulation and clients send only inputs. No GPU, window or
 // audio.
+//
+// With --master URL it registers with a master server (accounts and
+// matchmaking): --server-key (or GK_SERVER_KEY), --region, --name, and
+// --public-host if players should connect to another address than the one
+// the server reaches the master from.
 #include "gk/core/fixed_step.h"
 #include "gk/core/log.h"
 #include "gk/net/room.h"
 #include "gk/net/transport.h"
 #include "gk/sim/data.h"
+#include "master_link.h"
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <thread>
 
 namespace {
@@ -24,6 +31,10 @@ int main(int argc, char** argv) {
     bool fast = false;   // step as fast as possible (tests)
     uint16_t port = gk::net::kDefaultPort;
     gk::net::RoomConfig cfg;
+    std::string master_url, server_key;
+    gk::online::ServerEntry self;
+    self.name = "Gobby Kart server";
+    if (const char* k = std::getenv("GK_SERVER_KEY")) server_key = k;
     for (int i = 1; i < argc; ++i) {
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : "0"; };
         if (std::strcmp(argv[i], "--ticks") == 0) max_ticks = std::atol(next());
@@ -35,6 +46,11 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--cpu") == 0) cfg.cpu_level = gk::sim::parse_cpu_level(next()); // easy, normal, hard
         else if (std::strcmp(argv[i], "--cup") == 0) cfg.first_cup = std::atoi(next()) - 1; // 1-based
         else if (std::strcmp(argv[i], "--track") == 0) cfg.track = next();               // one track, every race
+        else if (std::strcmp(argv[i], "--master") == 0) master_url = next();
+        else if (std::strcmp(argv[i], "--server-key") == 0) server_key = next();
+        else if (std::strcmp(argv[i], "--region") == 0) self.region = next();
+        else if (std::strcmp(argv[i], "--name") == 0) self.name = next();
+        else if (std::strcmp(argv[i], "--public-host") == 0) self.host = next();
         else if (std::strcmp(argv[i], "--bots") == 0) cfg.idle_without_humans = false; // race even when empty
         else if (std::strcmp(argv[i], "--cc") == 0) {
             const int cc = std::atoi(next());
@@ -70,6 +86,13 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
         gk::net::Room room(tables, parts, cfg, net);
+        std::unique_ptr<gk::MasterLink> master;
+        if (!master_url.empty()) {
+            self.port = port;
+            self.protocol = gk::net::kProtocolVersion;
+            self.max_players = cfg.seats;
+            master = std::make_unique<gk::MasterLink>(master_url, server_key, self);
+        }
         gk::log_info("gk_server ready at {} Hz, {} seats, {} laps, {} races per Grand Prix", gk::kTickRate, cfg.seats,
                      cfg.laps, cfg.races_per_gp);
 
@@ -81,6 +104,7 @@ int main(int argc, char** argv) {
             net.service(room);
             room.tick();
             net.flush();
+            if (master) master->sync(room);
             ++ticks;
             if (ticks % (60 * 30) == 0 && room.racing())
                 gk::log_info("race {}: {} human(s), tick {}, late inputs {}", room.race_id(), room.human_count(),

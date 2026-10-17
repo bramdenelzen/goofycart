@@ -19,7 +19,7 @@
 //   kChannelChat     reliable, low priority: chat and emotes
 namespace gk::net {
 
-inline constexpr uint16_t kProtocolVersion = 5;
+inline constexpr uint16_t kProtocolVersion = 6;
 inline constexpr uint16_t kDefaultPort = 7777;
 inline constexpr uint8_t kChannelState = 0;
 inline constexpr uint8_t kChannelEvents = 1;
@@ -122,6 +122,7 @@ struct Hello {
     uint16_t protocol = kProtocolVersion;
     std::string name;
     sim::Build build;
+    std::string token; // master server account token; empty plays as a guest
 };
 
 struct Welcome {

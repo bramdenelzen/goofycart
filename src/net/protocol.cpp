@@ -324,6 +324,7 @@ std::vector<uint8_t> encode(const Hello& m) {
     w.u16(m.protocol);
     w.str(m.name);
     write_build(w, m.build);
+    w.str(m.token);
     return w.take();
 }
 
@@ -333,6 +334,7 @@ bool decode(std::span<const uint8_t> d, Hello& m) {
     m.protocol = r.u16();
     m.name = r.str();
     m.build = read_build(r);
+    m.token = r.str();
     return r.ok();
 }
 

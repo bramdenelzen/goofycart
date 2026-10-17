@@ -13,6 +13,10 @@ bool Settings::load(const std::string& path) {
         const auto eq = line.find('=');
         if (eq == std::string::npos) continue;
         const std::string key = line.substr(0, eq);
+        if (key == "master_url") {
+            master_url = line.substr(eq + 1);
+            continue;
+        }
         int v = 0;
         try {
             v = std::stoi(line.substr(eq + 1));
@@ -33,7 +37,7 @@ bool Settings::load(const std::string& path) {
 bool Settings::save(const std::string& path) const {
     std::ofstream f(path, std::ios::trunc);
     f << "master=" << master << "\nmusic=" << music << "\nsfx=" << sfx << "\nlow_res=" << low_res
-      << "\nfullscreen=" << fullscreen << "\nshow_help=" << show_help << "\nrumble=" << rumble << "\n";
+      << "\nfullscreen=" << fullscreen << "\nshow_help=" << show_help << "\nrumble=" << rumble << "\nmaster_url=" << master_url << "\n";
     return bool(f);
 }
 

@@ -4,18 +4,24 @@
 //
 //   gk_botclient [--connect host[:port]] [--clients N] [--seconds S]
 //                [--lag ms] [--loss percent] [--jitter ms]
+//                [--master URL [--region R]]
+//
+// With --master each bot makes an account and finds its server through
+// matchmaking instead of --connect, as the game client does.
 //
 // Exits non-zero if any client failed to join and race.
 #include "gk/core/fixed_step.h"
 #include "gk/core/log.h"
 #include "gk/net/client_game.h"
 #include "gk/net/transport.h"
+#include "gk/online/master_client.h"
 #include "gk/sim/data.h"
 
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -28,6 +34,7 @@ int main(int argc, char** argv) {
     int count = 1;
     double seconds = 10.0;
     net::LinkConditions link;
+    std::string master_url, region;
     for (int i = 1; i < argc; ++i) {
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : "0"; };
         if (std::strcmp(argv[i], "--connect") == 0) {
@@ -41,6 +48,8 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--lag") == 0) link.lag_ms = std::atoi(next());
         else if (std::strcmp(argv[i], "--jitter") == 0) link.jitter_ms = std::atoi(next());
         else if (std::strcmp(argv[i], "--loss") == 0) link.loss = float(std::atof(next())) / 100.0f;
+        else if (std::strcmp(argv[i], "--master") == 0) master_url = next();
+        else if (std::strcmp(argv[i], "--region") == 0) region = next();
     }
 
     sim::PhysicsTables tables;
@@ -61,6 +70,31 @@ int main(int argc, char** argv) {
     };
     std::vector<Bot> bots(static_cast<size_t>(count));
     bool ok = true;
+    std::vector<std::string> tokens(static_cast<size_t>(count));
+    if (!master_url.empty()) {
+        // Sign up, then let matchmaking pick the server (it may take a heartbeat to appear).
+        online::MasterClient master(master_url);
+        for (int i = 0; i < count; ++i) {
+            const auto a = master.create_account("Bot " + std::to_string(i + 1));
+            if (!a) {
+                log_error("master: {}", master.error());
+                return EXIT_FAILURE;
+            }
+            tokens[size_t(i)] = a->token;
+        }
+        std::optional<online::ServerEntry> found;
+        for (int tries = 0; tries < 20 && !found; ++tries) {
+            found = master.match(region, net::kProtocolVersion);
+            if (!found) std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
+        if (!found) {
+            log_error("master: no server to join ({})", master.error());
+            return EXIT_FAILURE;
+        }
+        host = found->host;
+        port = found->port;
+        log_info("matchmaking: {} at {}:{}", found->name, host, port);
+    }
     for (int i = 0; i < count && ok; ++i) {
         Bot& b = bots[size_t(i)];
         b.link = std::make_unique<net::NetClient>();
@@ -74,7 +108,7 @@ int main(int argc, char** argv) {
             l->send(ch, std::move(d), rel);
         });
         b.game->set_tracks(tracks);
-        b.game->join("Bot " + std::to_string(i + 1), {i % 4, i % 4, 0, 0});
+        b.game->join("Bot " + std::to_string(i + 1), {i % 4, i % 4, 0, 0}, tokens[size_t(i)]);
     }
 
     using clock = std::chrono::steady_clock;

@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <span>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -71,6 +72,18 @@ public:
     bool racing() const { return phase_ == RoomPhase::Racing; }
     const ResultsMsg& last_results() const { return results_; }
 
+    // Accounts (with a master server). Players who sent a token wait here
+    // until the server has asked the master who they are.
+    struct AccountCheck {
+        ClientId client;
+        std::string token;
+    };
+    std::vector<AccountCheck> take_account_checks() { return std::exchange(account_checks_, {}); }
+    // The master vouched for this player: race under the account's name.
+    void set_account(ClientId id, const std::string& account, const std::string& name);
+    // Finished races with signed-in players, accounts in finishing order.
+    std::vector<std::vector<std::string>> take_reports() { return std::exchange(reports_, {}); }
+
 private:
     struct Client {
         std::string name = "Player";
@@ -83,6 +96,7 @@ private:
         sim::KartInput last_input{};
         uint32_t used_tick = 0;
         float lead = 0.0f;                         // smoothed ticks of input headroom
+        std::string account;                       // verified master server account, if any
     };
     struct Seat {
         bool human = false;
@@ -131,6 +145,8 @@ private:
     uint32_t race_id_ = 0;
     uint32_t server_tick_ = 0;
     int late_inputs_ = 0;
+    std::vector<AccountCheck> account_checks_;
+    std::vector<std::vector<std::string>> reports_;
 };
 
 } // namespace gk::net

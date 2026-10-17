@@ -79,6 +79,11 @@ everyone has finished, 4 seconds after the last player finishes, or 30
 seconds after the first player finishes. The room waits in the lobby while
 nobody is connected (`--bots` keeps it racing).
 
+For public play there is also `gk_master`, an HTTPS service for accounts,
+matchmaking and ratings: game servers register with it and ONLINE on the
+title menu signs in and finds a race through it. See
+[docs/ONLINE.md](docs/ONLINE.md).
+
 Server flags: `--port`, `--laps`, `--races` (per Grand Prix), `--lobby`
 (seconds), `--cc`, `--cpu easy|normal|hard`, `--bots`, `--cup N` (start
 on cup N, moving to the next cup after each Grand Prix), `--track id` (always
@@ -102,7 +107,8 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 | `--time-trial` | With `--track`: a Time Trial instead of a VS race |
 | `--menu options\|course` | Open on that menu (for screenshots) |
 | `--connect host[:port]` | Race online on a `gk_server` (default port 7777) |
-| `--name NAME` | Your name online |
+| `--name NAME` | Your name online (and your account name the first time) |
+| `--master URL --region R` | Master server and preferred region for ONLINE |
 | `--lag MS --loss PCT --jitter MS` | Simulate a bad connection (added round trip, packet loss, jitter) |
 
 ## Racers and parts

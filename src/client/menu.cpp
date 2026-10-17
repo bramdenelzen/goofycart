@@ -119,7 +119,7 @@ void draw_select(render::Renderer& r, const SelectState& s, const sim::PartsCata
     }
     const char* hint = !lobby ? "ENTER / A: RACE     ESC: BACK"
                      : s.ready ? "READY!   ENTER / A: CHANGE YOUR MIND"
-                               : "ENTER / A: READY     ESC: QUIT";
+                               : "ENTER / A: READY     ESC: LEAVE";
     const float hw = render::Renderer::ui_text_width(hint, 1.5f);
     r.ui_rect((W - hw) * 0.5f - 6, H - 26, hw + 12, 18, rgba(0, 0, 0, 140));
     r.ui_text((W - hw) * 0.5f, H - 22, hint, rgba(255, 255, 255), 1.5f);

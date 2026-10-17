@@ -2,6 +2,8 @@
 
 #include "render/item_mesh.h"
 #include "render/kart_mesh.h"
+
+#include "gk/online/master_client.h"
 #include "render/track_mesh.h"
 
 #include "gk/core/fixed_step.h"
@@ -10,7 +12,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstdio>
+#include <fstream>
 
 namespace gk {
 namespace {
@@ -66,6 +70,7 @@ int App::run(const AppOptions& options) {
             else if (act.back) audio_.mixer().play(audio::Sfx::MenuBack);
             else if (act.menu_up || act.menu_down || act.menu_left || act.menu_right) audio_.mixer().play(audio::Sfx::MenuMove);
         }
+        poll_matchmaking();
         handle_menu_actions(act, running);
 
         const uint64_t now = SDL_GetPerformanceCounter();
@@ -125,19 +130,8 @@ bool App::init() {
     if (options_.max_frames >= 0) SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
     if (!options_.mute) audio_.open();
 
-    if (!options_.connect_host.empty()) {
-        if (!net::transport_init()) return false;
-        net_ = std::make_unique<net::NetClient>();
-        net_->set_conditions(options_.link);
-        if (!net_->connect(options_.connect_host, options_.connect_port)) return false;
-        online_ = std::make_unique<net::ClientGame>(tables_, [this](uint8_t ch, std::vector<uint8_t> d, bool rel) {
-            net_->send(ch, std::move(d), rel);
-        });
-        online_->set_tracks(tracks_);
-        online_->join(options_.name, options_.build);
-        screen_ = Screen::Select;
-    }
     select_.build = options_.build;
+    if (!options_.connect_host.empty() && !connect_online(options_.connect_host, options_.connect_port, {})) return false;
     // --track (and demos) race straight away, skipping the menus.
     if (!online_ && (options_.autodrive || !options_.track.empty())) {
         course_.mode = options_.time_trial ? GameMode::TimeTrial : GameMode::Versus;
@@ -148,6 +142,7 @@ bool App::init() {
     } else {
         if (options_.menu == "options") screen_ = Screen::Options;
         else if (options_.menu == "course") screen_ = Screen::Course;
+        else if (options_.menu == "online") start_matchmaking();
         show_track(course_track(course_, tracks_));
     }
     spark_mesh_ = renderer_.upload_mesh(render::make_spark_mesh());
@@ -410,6 +405,101 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
         default: break;
         }
     }
+}
+
+namespace {
+
+// The account this install signed up with, per master server.
+struct SavedAccount {
+    std::string master, token;
+};
+SavedAccount load_account(const std::string& path) {
+    SavedAccount a;
+    std::ifstream f(path);
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.rfind("master=", 0) == 0) a.master = line.substr(7);
+        else if (line.rfind("token=", 0) == 0) a.token = line.substr(6);
+    }
+    return a;
+}
+
+} // namespace
+
+void App::start_matchmaking() {
+    screen_ = Screen::Online;
+    online_error_.clear();
+    const std::string url = !options_.master_url.empty() ? options_.master_url : settings_.master_url;
+    if (url.empty()) {
+        online_error_ = "NO MASTER SERVER SET (START WITH --master URL)";
+        return;
+    }
+    if (matching_.valid()) return; // already searching
+    const std::string account_file = pref_dir_.empty() ? std::string() : pref_dir_ + "account.txt";
+    matching_ = std::async(std::launch::async, [url, account_file, name = options_.name, region = options_.region] {
+        MatchResult r;
+        online::MasterClient master(url);
+        // Sign in with the saved token, or make an account the first time.
+        const SavedAccount saved = account_file.empty() ? SavedAccount{} : load_account(account_file);
+        std::optional<online::AccountInfo> me;
+        if (saved.master == url && !saved.token.empty()) me = master.me(saved.token);
+        if (!me) {
+            me = master.create_account(name);
+            if (!me) return MatchResult{"SIGN-UP FAILED: " + master.error()};
+            if (!account_file.empty()) std::ofstream(account_file, std::ios::trunc) << "master=" << url << "\ntoken=" << me->token << "\n";
+        }
+        const auto server = master.match(region, net::kProtocolVersion);
+        if (!server) return MatchResult{"NO RACE FOUND: " + master.error()};
+        r.host = server->host;
+        r.port = server->port;
+        r.token = me->token;
+        r.name = me->name;
+        r.rating = me->rating;
+        return r;
+    });
+}
+
+void App::poll_matchmaking() {
+    if (!matching_.valid() || matching_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+    MatchResult r = matching_.get();
+    if (screen_ != Screen::Online) return; // backed out meanwhile
+    for (char& c : r.error) c = char(std::toupper(uint8_t(c)));
+    if (!r.error.empty()) {
+        online_error_ = r.error;
+        return;
+    }
+    account_label_ = r.name + " (" + std::to_string(r.rating) + ")";
+    options_.name = r.name;
+    if (!connect_online(r.host, r.port, r.token)) online_error_ = "COULD NOT REACH " + r.host + ":" + std::to_string(r.port);
+}
+
+bool App::connect_online(const std::string& host, uint16_t port, const std::string& token) {
+    if (!transport_ready_) {
+        if (!net::transport_init()) return false;
+        transport_ready_ = true;
+    }
+    net_ = std::make_unique<net::NetClient>();
+    net_->set_conditions(options_.link);
+    if (!net_->connect(host, port)) {
+        net_.reset();
+        return false;
+    }
+    online_ = std::make_unique<net::ClientGame>(tables_, [this](uint8_t ch, std::vector<uint8_t> d, bool rel) {
+        net_->send(ch, std::move(d), rel);
+    });
+    online_->set_tracks(tracks_);
+    online_->join(options_.name, select_.build, token);
+    select_.ready = false;
+    screen_ = Screen::Select;
+    return true;
+}
+
+void App::leave_online() {
+    online_.reset();
+    net_.reset();
+    online_race_ = 0;
+    screen_ = Screen::Title;
+    show_track(course_track(course_, tracks_));
 }
 
 void App::apply_settings() {
@@ -694,7 +784,8 @@ void App::draw_items(const sim::World& w) {
 }
 
 void App::render(float alpha, float dt) {
-    if (screen_ == Screen::Title || screen_ == Screen::Options || screen_ == Screen::Course || screen_ == Screen::Select) {
+    if (screen_ == Screen::Title || screen_ == Screen::Options || screen_ == Screen::Online || screen_ == Screen::Course ||
+        screen_ == Screen::Select) {
         render_menu(dt);
         return;
     }
@@ -784,6 +875,8 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
             if (select_.ready) {
                 select_.ready = false;
                 online_->set_build(select_.build, false);
+            } else if (options_.connect_host.empty()) {
+                leave_online(); // back to the title menu
             } else {
                 running = false;
             }
@@ -799,12 +892,21 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
         case TitleChoice::Versus: course_.mode = GameMode::Versus; break;
         case TitleChoice::TimeTrial: course_.mode = GameMode::TimeTrial; break;
         case TitleChoice::Options: screen_ = Screen::Options; return;
+        case TitleChoice::Online: start_matchmaking(); return;
         case TitleChoice::Quit: running = false; return;
         case TitleChoice::None: return;
         }
         course_.row = 0;
         screen_ = Screen::Course;
         show_track(course_track(course_, tracks_));
+        return;
+    case Screen::Online:
+        if (act.back) {
+            online_error_.clear();
+            screen_ = Screen::Title; // a running search finishes in the background and is dropped
+        } else if (act.accept && !online_error_.empty()) {
+            start_matchmaking(); // try again
+        }
         return;
     case Screen::Options:
         switch (update_options(options_menu_, settings_, act)) {
@@ -893,6 +995,7 @@ void App::render_menu(float dt) {
     switch (screen_) {
     case Screen::Title: draw_title(renderer_, title_); break;
     case Screen::Options: draw_options(renderer_, options_menu_, settings_); break;
+    case Screen::Online: draw_online_status(renderer_, online_error_.empty() ? "SIGNING IN AND FINDING A RACE..." : online_error_, !online_error_.empty()); break;
     case Screen::Course: draw_course(renderer_, course_, tracks_); break;
     default: {
         const net::LobbyMsg* lobby = online_ && online_->has_lobby() ? &online_->lobby() : nullptr;
@@ -901,6 +1004,11 @@ void App::render_menu(float dt) {
         else if (!online_ && course_.mode == GameMode::GrandPrix && !tracks_.cups.empty())
             where = tracks_.cups[size_t(course_.cup % int(tracks_.cups.size()))].name + ": " + shown_track_->name;
         draw_select(renderer_, select_, parts_, lobby, where);
+        if (online_ && !account_label_.empty()) {
+            const std::string t = "SIGNED IN: " + account_label_;
+            renderer_.ui_rect(6.0f, 200.0f, render::Renderer::ui_text_width(t.c_str(), 1.0f) + 12.0f, 16.0f, render::rgba(0, 0, 0, 140));
+            renderer_.ui_text(12.0f, 204.0f, t.c_str(), render::rgba(170, 215, 255), 1.0f);
+        }
         break;
     }
     }
@@ -946,10 +1054,10 @@ void App::draw_net_status() {
 }
 
 void App::shutdown() {
-    if (net_) {
-        net_.reset();
-        net::transport_shutdown();
-    }
+    if (matching_.valid()) matching_.wait();
+    online_.reset();
+    net_.reset();
+    if (transport_ready_) net::transport_shutdown();
     renderer_.shutdown();
     if (window_) SDL_DestroyWindow(window_);
     window_ = nullptr;
