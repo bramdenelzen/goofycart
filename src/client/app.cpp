@@ -96,6 +96,10 @@ bool App::init() {
         log_error("SDL_Init failed: {}", SDL_GetError());
         return false;
     }
+    if (char* pref = SDL_GetPrefPath("Gobby", "GobbyKart")) {
+        pref_dir_ = pref;
+        SDL_free(pref);
+    }
     window_ = SDL_CreateWindow("Gobby Kart", options_.window_width, options_.window_height,
                                SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window_) {
@@ -126,7 +130,7 @@ bool App::init() {
     select_.build = options_.build;
     // --track (and demos) race straight away, skipping the menus.
     if (!online_ && (options_.autodrive || !options_.track.empty())) {
-        course_.mode = GameMode::Versus;
+        course_.mode = options_.time_trial ? GameMode::TimeTrial : GameMode::Versus;
         if (options_.track.empty()) options_.track = tracks_.tracks.empty() ? "greybox" : tracks_.tracks.front().id;
         if (const int i = tracks_.find(options_.track); i >= 0) course_.track = i;
         start_race();
@@ -190,27 +194,75 @@ void App::start_race() {
     show_track(id);
     sim::Track track = sim::make_track(tracks_, id);
     const bool time_trial = course_.mode == GameMode::TimeTrial;
-    if (time_trial) track.item_boxes.clear(); // just the three mushrooms
     message_ = {track.name, render::rgba(255, 255, 255), 3.0f};
-    world_ = std::make_unique<sim::World>(std::move(track), tables_, rc);
     auto clamp_part = [](int i, size_t n) { return std::clamp(i, 0, int(n) - 1); };
     options_.build.driver = clamp_part(options_.build.driver, parts_.drivers.size());
     options_.build.body = clamp_part(options_.build.body, parts_.bodies.size());
     options_.build.tires = clamp_part(options_.build.tires, parts_.tires.size());
     options_.build.glider = clamp_part(options_.build.glider, parts_.gliders.size());
-    const int karts = time_trial ? 1 : std::clamp(options_.karts, 1, 12);
-    // The player starts at the back of the grid, as in a Grand Prix opener.
-    player_ = karts - 1;
-    for (int i = 0; i < karts; ++i) {
-        sim::Build b = options_.build;
-        if (i != player_) b = {i % int(parts_.drivers.size()), i % int(parts_.bodies.size()), (i / 2) % int(parts_.tires.size()), 0};
-        sim::KartParams p = tables_.params(parts_.levels(b), parts_.body(b), rc.engine);
-        if (i != player_) p.rubber_band = sim::cpu_rubber_band(course_.cpu);
-        world_->add_kart(p);
+    auto params_for = [&](const sim::Build& b) { return tables_.params(parts_.levels(b), parts_.body(b), rc.engine); };
+    ghost_.reset();
+    if (time_trial) {
+        world_ = std::make_unique<sim::World>(sim::make_time_trial_world(std::move(track), tables_, rc, params_for(options_.build)));
+        player_ = 0;
+        recording_ = {.track = id, .name = "YOU", .engine = rc.engine, .laps = rc.laps, .build = options_.build};
+        recording_done_ = false;
+        // Race the personal best if it still replays on this version, else a CPU.
+        sim::Ghost best;
+        best_tick_ = 0;
+        const std::string path = ghost_path(id, rc.engine);
+        if (!path.empty() && sim::load_ghost(path, best) && best.track == id) {
+            const sim::KartParams bp = params_for(best.build);
+            if (sim::ghost_still_valid(best, sim::make_track(tracks_, id), tables_, bp)) {
+                best_tick_ = best.finish_tick;
+                ghost_ = std::make_unique<sim::GhostRunner>(sim::make_track(tracks_, id), tables_, rc, bp, &best);
+            } else {
+                log_info("Ghost {} no longer matches the game; racing a CPU ghost instead", path);
+            }
+        }
+        if (!ghost_) ghost_ = std::make_unique<sim::GhostRunner>(sim::make_track(tracks_, id), tables_, rc, params_for({0, 1, 0, 0}), nullptr);
+        ghost_prev_ = ghost_->kart();
+    } else {
+        world_ = std::make_unique<sim::World>(std::move(track), tables_, rc);
+        const int karts = std::clamp(options_.karts, 1, 12);
+        // The player starts at the back of the grid, as in a Grand Prix opener.
+        player_ = karts - 1;
+        for (int i = 0; i < karts; ++i) {
+            sim::Build b = options_.build;
+            if (i != player_) b = {i % int(parts_.drivers.size()), i % int(parts_.bodies.size()), (i / 2) % int(parts_.tires.size()), 0};
+            sim::KartParams p = params_for(b);
+            if (i != player_) p.rubber_band = sim::cpu_rubber_band(course_.cpu);
+            world_->add_kart(p);
+        }
     }
-    if (time_trial) world_->give_item(player_, sim::Item::TripleMushroom);
     prev_ = world_->karts();
     cam_init_ = false;
+}
+
+std::string App::ghost_path(const std::string& track, sim::EngineClass e) const {
+    if (pref_dir_.empty()) return {};
+    return pref_dir_ + "ghost_" + track + "_" + engine_name(e) + ".gkg";
+}
+
+void App::finish_time_trial() {
+    const sim::KartState& k = world_->karts()[size_t(player_)];
+    recording_.finish_tick = k.finish_tick;
+    recording_done_ = true;
+    if (best_tick_ > 0 && k.finish_tick >= best_tick_) return;
+    best_tick_ = k.finish_tick;
+    const std::string path = ghost_path(recording_.track, recording_.engine);
+    if (!path.empty() && sim::save_ghost(path, recording_)) log_info("New best: ghost saved to {}", path);
+    message_ = {"NEW RECORD!", render::rgba(255, 220, 60), 3.0f};
+}
+
+void App::draw_ghost(float alpha) {
+    if (!ghost_) return;
+    const sim::KartState& s = ghost_->kart();
+    const mat4 m = glm::rotate(glm::translate(mat4(1.0f), glm::mix(ghost_prev_.pos, s.pos, alpha)) *
+                                   glm::mat4_cast(glm::slerp(ghost_prev_.rot, s.rot, alpha)),
+                               -s.visual_drift_yaw, vec3(0, 1, 0));
+    renderer_.draw(kart_meshes_[size_t((player_ + 6) % 12)], m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
+    if (s.gliding) renderer_.draw(glider_mesh_, m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
 }
 
 void App::finish_offline_race() {
@@ -276,9 +328,16 @@ void App::update() {
             inputs[i] = net::bot_input(*world_, int(i), int(i) == player_ ? sim::CpuLevel::Hard : options_.cpu_level);
         }
     }
+    if (ghost_) inputs[size_t(player_)] = sim::quantize(inputs[size_t(player_)]); // exactly what the ghost file holds
     last_input_ = inputs[size_t(player_)];
+    if (ghost_ && !recording_done_) recording_.inputs.push_back(inputs[size_t(player_)]);
     world_->tick(inputs);
     handle_events(world_->events());
+    if (ghost_) {
+        ghost_prev_ = ghost_->kart();
+        ghost_->tick();
+        if (!recording_done_ && world_->karts()[size_t(player_)].finished) finish_time_trial();
+    }
     if (message_.time_left > 0.0f) message_.time_left -= kDt;
 }
 
@@ -606,9 +665,20 @@ void App::render(float alpha, float dt) {
         const auto& karts = w->karts();
         draw_items(*w);
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
+        if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
         draw_hud(renderer_, *w, player_, kart_names(), message_, show_help_ && !server_results, !server_results);
         if (server_results) draw_online_results();
+        if (ghost_) {
+            char buf[64];
+            if (best_tick_ > 0) {
+                const int ms = best_tick_ * 1000 / 60;
+                std::snprintf(buf, sizeof buf, "BEST %d:%02d.%03d", ms / 60000, ms / 1000 % 60, ms % 1000);
+            } else {
+                std::snprintf(buf, sizeof buf, "GHOST: CPU");
+            }
+            renderer_.ui_text(6.0f, 44.0f, buf, render::rgba(170, 215, 255), 1.5f);
+        }
         if (!online_ && karts[size_t(player_)].finished) {
             const char* hint = "ENTER / A: CONTINUE";
             const VkExtent2D ext = renderer_.internal_extent();

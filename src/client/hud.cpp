@@ -224,7 +224,7 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
             ResultRow row;
             row.name = size_t(order[i]) < names.size() ? names[size_t(order[i])] : "CPU";
             row.finish_ticks = o.finished ? o.finish_tick : 0;
-            row.points = i < 12 ? kRacePoints[i] : 0;
+            row.points = order.size() < 2 ? -1 : i < 12 ? kRacePoints[i] : 0; // no points racing alone
             row.highlight = order[i] == player;
             rows.push_back(row);
         }

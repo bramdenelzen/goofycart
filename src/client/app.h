@@ -7,6 +7,7 @@
 #include "render/renderer.h"
 
 #include "gk/net/client_game.h"
+#include "gk/sim/ghost.h"
 #include "gk/net/transport.h"
 #include "gk/sim/world.h"
 
@@ -32,6 +33,7 @@ struct AppOptions {
     sim::CpuLevel cpu_level = sim::CpuLevel::Normal;
     std::string track;            // offline: race this track straight away (skips the menus)
     bool mute = false;
+    bool time_trial = false;      // with --track: a Time Trial instead of a VS race
     // Online play: connect to a gk_server instead of racing locally.
     std::string connect_host;
     uint16_t connect_port = net::kDefaultPort;
@@ -55,6 +57,9 @@ private:
     void event_sound(const sim::KartEvent& e);
     void play_at(audio::Sfx s, int kart, float pitch = 1.0f);
     void update_audio();
+    std::string ghost_path(const std::string& track, sim::EngineClass e) const;
+    void finish_time_trial();
+    void draw_ghost(float alpha);
     const sim::World* world() const { return online_ ? online_->world() : world_.get(); }
     void draw_net_status();
     void handle_menu_actions(const ClientActions& act, bool& running);
@@ -76,6 +81,14 @@ private:
     AudioDevice audio_;
     int last_count_ = -1;      // countdown second last beeped
     int last_roulette_ = 0;
+    std::string pref_dir_;     // per-user save folder (ghosts, settings)
+
+    // Time Trials: the ghost raced against and the run being recorded.
+    std::unique_ptr<sim::GhostRunner> ghost_;
+    sim::KartState ghost_prev_;
+    sim::Ghost recording_;
+    int best_tick_ = 0;        // personal best on this track and class, 0 if none
+    bool recording_done_ = false;
     sim::KartInput last_input_;
 
     sim::PhysicsTables tables_;

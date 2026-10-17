@@ -9,6 +9,7 @@ add_library(gk_sim STATIC
   items.cpp
   racing_line.cpp
   ai.cpp
+  ghost.cpp
   data.cpp
 )
 target_include_directories(gk_sim PUBLIC include)

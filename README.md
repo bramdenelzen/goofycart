@@ -99,6 +99,7 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 | `--cpu easy\|normal\|hard` | CPU driver difficulty offline (default normal) |
 | `--track id` | Skip the menus and race that track (ids below) |
 | `--mute` | No sound |
+| `--time-trial` | With `--track`: a Time Trial instead of a VS race |
 | `--connect host[:port]` | Race online on a `gk_server` (default port 7777) |
 | `--name NAME` | Your name online |
 | `--lag MS --loss PCT --jitter MS` | Simulate a bad connection (added round trip, packet loss, jitter) |
@@ -119,6 +120,15 @@ themed low-poly render mesh with scenery from that.
 | Comet Cup | `canyon_run`, `lava_works`, `cloud_spire`, `neon_raceway` |
 
 `greybox` is still there as a test track.
+
+## Time Trials
+
+A Time Trial is a solo run with three mushrooms against a translucent ghost.
+Your best run per track and engine class is saved as a ghost (just the
+inputs, about 16 KB) in your user data folder (`%APPDATA%\Gobby\GobbyKart`,
+`~/Library/Application Support/Gobby/GobbyKart`, `~/.local/share/Gobby/GobbyKart`).
+Until you set a time, the ghost is a hard CPU. A saved ghost is replayed
+once before the race and dropped if the physics have changed since.
 
 ## Sound
 

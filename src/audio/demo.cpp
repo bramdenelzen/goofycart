@@ -4,6 +4,8 @@
 //   gk_audiodemo [out_dir] [seconds_per_song]
 #include "gk/audio/mixer.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
