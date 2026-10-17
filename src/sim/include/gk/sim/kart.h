@@ -63,7 +63,7 @@ struct KartState {
     bool glide_armed = false;
     bool gliding = false;
 
-    int respawn_frames = 0;        // > 0 while Lakitu carries the kart back
+    int respawn_frames = 0;        // > 0 while the kart is carried back to the track
     int invincible_frames = 0;
     int stun_frames = 0;           // burnout or spin-out: no driving
     int last_safe_sample = 0;

@@ -22,6 +22,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(a, "--karts") == 0) opt.karts = std::atoi(next());
         else if (std::strcmp(a, "--cpu") == 0) opt.cpu_level = gk::sim::parse_cpu_level(next());
         else if (std::strcmp(a, "--track") == 0) opt.track = next();
+        else if (std::strcmp(a, "--mute") == 0) opt.mute = true;
         else if (std::strcmp(a, "--connect") == 0) {
             // host or host:port
             std::string target = next();

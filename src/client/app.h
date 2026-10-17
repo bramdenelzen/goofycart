@@ -1,4 +1,5 @@
 #pragma once
+#include "audio_device.h"
 #include "hud.h"
 #include "input.h"
 #include "frontend.h"
@@ -30,6 +31,7 @@ struct AppOptions {
     sim::Build build{1, 0, 0, 0};
     sim::CpuLevel cpu_level = sim::CpuLevel::Normal;
     std::string track;            // offline: race this track straight away (skips the menus)
+    bool mute = false;
     // Online play: connect to a gk_server instead of racing locally.
     std::string connect_host;
     uint16_t connect_port = net::kDefaultPort;
@@ -50,6 +52,9 @@ private:
     void finish_offline_race();
     void update();
     void handle_events(const std::vector<sim::KartEvent>& events);
+    void event_sound(const sim::KartEvent& e);
+    void play_at(audio::Sfx s, int kart, float pitch = 1.0f);
+    void update_audio();
     const sim::World* world() const { return online_ ? online_->world() : world_.get(); }
     void draw_net_status();
     void handle_menu_actions(const ClientActions& act, bool& running);
@@ -68,6 +73,10 @@ private:
     SDL_Window* window_ = nullptr;
     render::Renderer renderer_;
     InputMapper input_;
+    AudioDevice audio_;
+    int last_count_ = -1;      // countdown second last beeped
+    int last_roulette_ = 0;
+    sim::KartInput last_input_;
 
     sim::PhysicsTables tables_;
     sim::PartsCatalog parts_;

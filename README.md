@@ -98,6 +98,7 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 | `--karts N` | Racers on the grid, 1 to 12 |
 | `--cpu easy\|normal\|hard` | CPU driver difficulty offline (default normal) |
 | `--track id` | Skip the menus and race that track (ids below) |
+| `--mute` | No sound |
 | `--connect host[:port]` | Race online on a `gk_server` (default port 7777) |
 | `--name NAME` | Your name online |
 | `--lag MS --loss PCT --jitter MS` | Simulate a bad connection (added round trip, packet loss, jitter) |
@@ -118,6 +119,16 @@ themed low-poly render mesh with scenery from that.
 | Comet Cup | `canyon_run`, `lava_works`, `cloud_spire`, `neon_raceway` |
 
 `greybox` is still there as a test track.
+
+## Sound
+
+All sound is synthesised when the game starts; there are no sample files.
+`src/audio` holds the effects (engine with drift squeal and spark shimmer,
+boosts, items, hits, countdown, laps), and a chiptune writer that composes a
+looping song for each track from its id and theme: chord progression, bass,
+lead melody, arpeggio and drums. The music speeds up on the final lap.
+`gk_audiodemo out_dir` renders every effect and one song per mood to WAV
+files for listening outside the game.
 
 ## Controls
 

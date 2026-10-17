@@ -3,7 +3,7 @@
 
 namespace gk::sim {
 
-// Everything a driver can do in one tick. Players, bots and Bullet Bill's
+// Everything a driver can do in one tick. Players, bots and the Bullet item's
 // autopilot all drive through this one struct, so the shared physics is the
 // only thing that moves a kart.
 struct KartInput {

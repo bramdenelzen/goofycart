@@ -54,6 +54,11 @@ int App::run(const AppOptions& options) {
         if (act.toggle_resolution_pressed) renderer_.set_full_resolution(!renderer_.full_resolution());
         if (act.toggle_help_pressed) show_help_ = !show_help_;
         if (net_) net_->service([this](std::span<const uint8_t> d) { online_->on_message(d); });
+        if (screen_ != Screen::Race) {
+            if (act.accept) audio_.mixer().play(audio::Sfx::MenuAccept);
+            else if (act.back) audio_.mixer().play(audio::Sfx::MenuBack);
+            else if (act.menu_up || act.menu_down || act.menu_left || act.menu_right) audio_.mixer().play(audio::Sfx::MenuMove);
+        }
         handle_menu_actions(act, running);
 
         const uint64_t now = SDL_GetPerformanceCounter();
@@ -66,6 +71,7 @@ int App::run(const AppOptions& options) {
         const double scale = online_ ? online_->time_scale() : 1.0;
         const int ticks = scripted ? 1 : step.advance(elapsed * scale);
         for (int i = 0; i < ticks; ++i) update();
+        update_audio();
 
         if (scripted && int(frame_) == options_.max_frames - 1 && !options_.screenshot_path.empty())
             renderer_.request_screenshot(options_.screenshot_path);
@@ -100,6 +106,10 @@ bool App::init() {
     ro.full_resolution = options_.full_resolution;
     ro.validation = options_.validation;
     if (!renderer_.init(window_, ro)) return false;
+    // Scripted runs (CI, screenshots) mix into SDL's dummy device so the audio
+    // path still runs without speakers.
+    if (options_.max_frames >= 0) SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    if (!options_.mute) audio_.open();
 
     if (!options_.connect_host.empty()) {
         if (!net::transport_init()) return false;
@@ -249,6 +259,7 @@ void App::update() {
         if (w && online_->seat() >= 0 && options_.autodrive) {
             in = net::bot_input(*w, player_, sim::CpuLevel::Hard);
         }
+        last_input_ = in;
         online_->step(in);
         handle_events(online_->take_events());
         if (message_.time_left > 0.0f) message_.time_left -= kDt;
@@ -265,6 +276,7 @@ void App::update() {
             inputs[i] = net::bot_input(*world_, int(i), int(i) == player_ ? sim::CpuLevel::Hard : options_.cpu_level);
         }
     }
+    last_input_ = inputs[size_t(player_)];
     world_->tick(inputs);
     handle_events(world_->events());
     if (message_.time_left > 0.0f) message_.time_left -= kDt;
@@ -272,6 +284,7 @@ void App::update() {
 
 void App::handle_events(const std::vector<sim::KartEvent>& events) {
     for (const auto& e : events) {
+        event_sound(e);
         if (e.kart != player_) continue;
         switch (e.type) {
         case sim::KartEventType::Boost:
@@ -296,6 +309,131 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
         default: break;
         }
     }
+}
+
+void App::play_at(audio::Sfx s, int kart, float pitch) {
+    audio::Mixer& mx = audio_.mixer();
+    const sim::World* w = world();
+    if (!w || kart == player_ || kart < 0 || size_t(kart) >= w->karts().size() || !cam_init_) {
+        mx.play(s, 1.0f, 0.0f, pitch);
+        return;
+    }
+    // Other karts: quieter with distance, panned by where they are on screen.
+    const vec4 v = glm::lookAt(cam_pos_, cam_look_, vec3(0, 1, 0)) * vec4(w->karts()[size_t(kart)].pos, 1.0f);
+    const float d = glm::length(vec3(v));
+    if (d > 90.0f) return;
+    const float pan = std::clamp(v.x / (std::abs(v.z) + 4.0f), -1.0f, 1.0f) * 0.8f;
+    mx.play(s, 0.8f / (1.0f + d / 12.0f), pan, pitch);
+}
+
+void App::event_sound(const sim::KartEvent& e) {
+    using audio::Sfx;
+    const bool mine = e.kart == player_;
+    Sfx s = Sfx::Count;
+    float pitch = 1.0f;
+    switch (e.type) {
+    case sim::KartEventType::Boost:
+        switch (sim::BoostKind(e.value)) {
+        case sim::BoostKind::MiniTurbo: s = Sfx::MiniTurbo; break;
+        case sim::BoostKind::SuperMiniTurbo: s = Sfx::MiniTurbo, pitch = 1.15f; break;
+        case sim::BoostKind::UltraMiniTurbo: s = Sfx::MiniTurbo, pitch = 1.3f; break;
+        case sim::BoostKind::RocketStart: s = Sfx::RocketStart; break;
+        case sim::BoostKind::Star: s = Sfx::Star; break;
+        case sim::BoostKind::Trick: s = Sfx::MiniTurbo, pitch = 0.9f; break;
+        default: s = Sfx::Boost; break;
+        }
+        break;
+    case sim::KartEventType::Trick: s = Sfx::Trick; break;
+    case sim::KartEventType::Land: s = Sfx::Land; break;
+    case sim::KartEventType::WallHit: s = Sfx::WallHit; break;
+    case sim::KartEventType::Bump: s = Sfx::Bump; break;
+    case sim::KartEventType::Respawn: s = Sfx::Respawn; break;
+    case sim::KartEventType::GliderOpen: s = Sfx::GliderOpen; break;
+    case sim::KartEventType::Burnout: s = Sfx::Bump, pitch = 0.6f; break;
+    case sim::KartEventType::ItemBox: s = Sfx::ItemBox; break;
+    case sim::KartEventType::ItemGet: s = mine ? Sfx::ItemGet : Sfx::Count; break;
+    case sim::KartEventType::ItemUse:
+        switch (sim::Item(e.value)) {
+        case sim::Item::Banana:
+        case sim::Item::TripleBanana: s = Sfx::Drop; break;
+        case sim::Item::Mushroom:
+        case sim::Item::TripleMushroom:
+        case sim::Item::GoldenMushroom:
+        case sim::Item::Star: break; // the boost event sounds
+        case sim::Item::Horn: s = Sfx::Horn; break;
+        case sim::Item::Coin: s = Sfx::Coin; break;
+        case sim::Item::Ink: s = Sfx::Ink; break;
+        case sim::Item::Ghost: s = Sfx::Ghost; break;
+        case sim::Item::Bullet: s = Sfx::RocketStart, pitch = 0.8f; break;
+        case sim::Item::Lightning: audio_.mixer().play(Sfx::Lightning); return; // everyone hears it
+        default: s = Sfx::Throw; break;
+        }
+        break;
+    case sim::KartEventType::Hit: s = (e.value & 0xff) == int(sim::HitKind::Shrink) ? Sfx::Shrink : Sfx::Hit; break;
+    case sim::KartEventType::Explosion: s = Sfx::Explosion; break;
+    case sim::KartEventType::Blocked: s = Sfx::Blocked; break;
+    case sim::KartEventType::Lap:
+        if (mine && world()) s = e.value == world()->config().laps ? Sfx::FinalLap : Sfx::Lap;
+        break;
+    case sim::KartEventType::Finish: s = mine ? Sfx::Finish : Sfx::Count; break;
+    default: break;
+    }
+    if (s != Sfx::Count) play_at(s, e.kart, pitch);
+}
+
+namespace {
+uint32_t fnv1a(const std::string& s) {
+    uint32_t h = 2166136261u;
+    for (char c : s) h = (h ^ uint8_t(c)) * 16777619u;
+    return h;
+}
+} // namespace
+
+void App::update_audio() {
+    audio::Mixer& mx = audio_.mixer();
+    const sim::World* w = world();
+    const bool in_race = (screen_ == Screen::Race || screen_ == Screen::Standings) && w && size_t(player_) < w->karts().size();
+    if (!in_race) {
+        mx.play_music(0x6b617274u, audio::Mood::Menu);
+        mx.set_engine({});
+        last_count_ = -1;
+        return;
+    }
+    const sim::KartState& k = w->karts()[size_t(player_)];
+    const sim::Track& t = w->track();
+    const bool done = screen_ == Screen::Standings || k.finished ||
+                      (online_ && online_->phase() == net::RoomPhase::Results);
+    if (done) mx.play_music(fnv1a(t.id) + 1u, audio::Mood::Results);
+    else mx.play_music(fnv1a(t.id), audio::mood_for_theme(t.theme));
+    mx.set_music_speed(!done && k.lap >= w->config().laps ? 1.1f : 1.0f);
+
+    // Countdown beeps: 3, 2, 1, go.
+    if (!w->racing()) {
+        const int sec = (w->countdown_left() + 59) / 60;
+        if (sec != last_count_) {
+            if (sec >= 1 && sec <= 3) mx.play(audio::Sfx::CountBeep);
+            last_count_ = sec;
+        }
+    } else if (last_count_ >= 1) {
+        mx.play(audio::Sfx::CountGo);
+        last_count_ = 0;
+    }
+    // Roulette ticks while the item spins.
+    if (k.roulette > 0 && k.roulette / 5 != last_roulette_ / 5) mx.play(audio::Sfx::RouletteTick, 0.7f);
+    last_roulette_ = k.roulette;
+
+    audio::EngineState e;
+    e.active = !done && screen_ == Screen::Race;
+    const float top = std::max(1.0f, w->params(player_).top_speed);
+    e.speed = (k.grounded ? std::abs(k.speed) : glm::length(k.air_vel)) / top;
+    e.throttle = last_input_.accelerate || k.bullet_frames > 0 ? 1.0f : last_input_.brake ? 0.3f : 0.0f;
+    const auto& kc = w->tables().constants;
+    e.drift_tier = k.drift == sim::DriftState::Drifting ? (k.mt_charge >= kc.spark_threshold ? k.mt_tier(kc) : 0) : -1;
+    e.rough = k.surface == sim::Surface::OffroadLight ? 0.4f : k.surface == sim::Surface::OffroadMedium ? 0.7f
+            : k.surface == sim::Surface::OffroadHeavy ? 1.0f : k.surface == sim::Surface::Sand ? 0.3f : 0.0f;
+    e.airborne = !k.grounded;
+    e.boosting = k.boost_frames > 0;
+    mx.set_engine(e);
 }
 
 void App::update_camera(float dt) {
@@ -683,6 +821,7 @@ void App::shutdown() {
     renderer_.shutdown();
     if (window_) SDL_DestroyWindow(window_);
     window_ = nullptr;
+    audio_.close();
     SDL_Quit();
 }
 
