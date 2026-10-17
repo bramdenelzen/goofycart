@@ -51,6 +51,7 @@ struct KartState {
     float mt_charge = 0.0f;
     bool drift_button_prev = false;
     float hop_steer = 0.0f;
+    uint8_t drift_frames = 0;      // frames since the drift started: the entry ramp
 
     BoostKind boost = BoostKind::None;
     int boost_frames = 0;

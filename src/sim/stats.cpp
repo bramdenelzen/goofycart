@@ -206,6 +206,9 @@ bool PhysicsTables::load(const std::string& path, std::string* error) {
             read_const(c, "slope_factor", k.slope_factor);
             read_const(c, "road_slip_retention", k.road_slip_retention);
             read_const(c, "drift_slip_retention", k.drift_slip_retention);
+            read_const(c, "drift_entry_frames", k.drift_entry_frames);
+            read_const(c, "drift_entry_slip_retention", k.drift_entry_slip_retention);
+            read_const(c, "drift_entry_yaw", k.drift_entry_yaw);
             read_const(c, "coin_speed_bonus", k.coin_speed_bonus);
             read_const(c, "max_coins", k.max_coins);
             read_const(c, "charge_fast", k.charge_fast);

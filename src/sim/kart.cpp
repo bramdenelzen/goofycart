@@ -104,6 +104,7 @@ void release_drift(KartState& s, const KartStepContext& ctx, bool give_boost) {
     }
     s.drift = DriftState::None;
     s.drift_dir = 0;
+    s.drift_frames = 0;
     s.mt_charge = 0.0f;
 }
 
@@ -111,6 +112,7 @@ void start_respawn(KartState& s, const KartStepContext& ctx) {
     s.respawn_frames = ctx.k.respawn_frames;
     s.drift = DriftState::None;
     s.drift_dir = 0;
+    s.drift_frames = 0;
     s.mt_charge = 0;
     s.boost_frames = 0;
     s.boost = BoostKind::None;
@@ -174,7 +176,9 @@ void land(KartState& s, const Probe& pr, const KartInput& in, const KartStepCont
         if (in.drift && std::abs(steer) > 0.3f && s.speed > ctx.k.min_drift_speed) {
             s.drift = DriftState::Drifting;
             s.drift_dir = steer > 0 ? 1 : -1;
+            s.drift_frames = 0;
             s.mt_charge = 0.0f;
+            s.slide = lateral; // landing into a drift keeps all the sideways momentum
         } else {
             s.drift = DriftState::None;
         }
@@ -312,6 +316,17 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
             s.mt_charge += (rel >= 0.5f ? k.charge_fast : k.charge_slow) * p.mt_charge;
         }
     }
+    // Drift entry ramp, 0 at the start of the drift and 1 once it has settled.
+    // The kart carries on in its old direction for a moment, the nose swinging
+    // in, before the slide bleeds off and the drift becomes a steady arc.
+    float entry = 1.0f;
+    if (s.drift == DriftState::Drifting) {
+        if (k.drift_entry_frames > 0) {
+            const float t = std::min(1.0f, float(s.drift_frames) / float(k.drift_entry_frames));
+            entry = t * t * (3.0f - 2.0f * t);
+        }
+        if (s.drift_frames < 255) ++s.drift_frames;
+    }
 
     // Steering turns the heading directly; it is not a physics torque.
     float yaw_rate;
@@ -319,7 +334,7 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
         const float rel = in.steer * float(s.drift_dir); // +1 = into the turn
         const bool outward = p.drift == DriftType::Outward;
         const float base = outward ? 0.62f : 0.82f, mod = outward ? 0.38f : 0.28f;
-        yaw_rate = float(s.drift_dir) * p.turn_rate * (base + mod * rel);
+        yaw_rate = float(s.drift_dir) * p.turn_rate * (base + mod * rel) * glm::mix(k.drift_entry_yaw, 1.0f, entry);
     } else {
         const float at_speed = 1.0f - 0.25f * std::clamp(std::abs(s.speed) / p.top_speed, 0.0f, 1.0f);
         yaw_rate = in.steer * p.turn_rate * at_speed;
@@ -333,7 +348,8 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     s.speed = glm::dot(v, nf);
     vec3 lateral = v - nf * s.speed;
     lateral -= up * glm::dot(lateral, up);
-    float retention = s.drift == DriftState::Drifting ? k.drift_slip_retention : k.road_slip_retention;
+    float retention = s.drift == DriftState::Drifting ? glm::mix(k.drift_entry_slip_retention, k.drift_slip_retention, entry)
+                                                      : k.road_slip_retention;
     if (s.surface == Surface::Ice) retention = glm::mix(0.97f, 0.85f, p.slip_traction);
     else if (s.surface == Surface::Sand) retention = glm::mix(0.85f, 0.6f, p.slip_traction);
     s.slide = lateral * retention;

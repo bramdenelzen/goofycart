@@ -145,6 +145,29 @@ TEST_CASE("stick away from the turn charges at the slow rate") {
     CHECK(b.kart.mt_charge - before == doctest::Approx(10 * b.tables.constants.charge_slow * b.params.mt_charge));
 }
 
+TEST_CASE("a drift starts by carrying the old direction, then settles into a tighter arc") {
+    Bench b(test::flat_track());
+    b.step(gas(), 60 * 3);
+    b.step(gas(1.0f, true), 1);
+    while (!b.kart.grounded) b.step(gas(1.0f, true));
+    REQUIRE(b.kart.drift == DriftState::Drifting);
+    const auto& k = b.tables.constants;
+    auto heading = [&] { const vec3 f = b.kart.forward(); return std::atan2(f.x, f.z); };
+    auto travel = [&] { const vec3 v = b.kart.velocity(); return std::atan2(v.x, v.z); };
+    auto wrap = [](float a) { while (a > M_PI) a -= 2 * float(M_PI); while (a < -M_PI) a += 2 * float(M_PI); return a; };
+    // Over the entry the nose swings in far more than the path bends.
+    const float h0 = heading(), t0 = travel();
+    b.step(gas(1.0f, true), k.drift_entry_frames / 2);
+    const float nose_early = std::abs(wrap(heading() - h0)), path_early = std::abs(wrap(travel() - t0));
+    CHECK(nose_early > 2.0f * path_early);
+    // Once settled the path bends faster than it did on entry.
+    b.step(gas(1.0f, true), k.drift_entry_frames);
+    const float t1 = travel();
+    b.step(gas(1.0f, true), k.drift_entry_frames / 2);
+    const float path_late = std::abs(wrap(travel() - t1));
+    CHECK(path_late > 1.5f * path_early);
+}
+
 TEST_CASE("a hop without steering does not start a drift") {
     Bench b(test::flat_track());
     b.step(gas(), 60 * 3);

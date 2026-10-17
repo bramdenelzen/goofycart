@@ -113,6 +113,12 @@ struct PhysicsConstants {
     float slope_factor = 0.35f;
     float road_slip_retention = 0.2f;
     float drift_slip_retention = 0.6f;
+    // Drift entry: for the first drift_entry_frames the kart keeps sliding
+    // along its old direction (high slip retention) while the heading swings
+    // in from drift_entry_yaw of the full drift yaw rate up to all of it.
+    int drift_entry_frames = 18;
+    float drift_entry_slip_retention = 0.94f;
+    float drift_entry_yaw = 0.5f;
     float coin_speed_bonus = 0.005f; // per coin; unpublished, to measure
     int max_coins = 10;
 
