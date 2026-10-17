@@ -139,7 +139,7 @@ TEST_CASE("the HTTP API end to end") {
     const auto dir = std::filesystem::temp_directory_path() / "gk_test_crashes";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
-    std::ofstream(dir / "crash-1.txt") << "Gobby Kart crash report\nprogram: test\n";
+    std::ofstream(dir / "crash-1.txt", std::ios::binary) << "Gobby Kart crash report\nprogram: test\n";
     std::ofstream(dir / "crash-2.txt") << "not a report";
     std::ofstream(dir / "notes.txt") << "left alone";
     CHECK(player.send_crash_reports(dir.string()) == 1);

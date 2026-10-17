@@ -140,7 +140,7 @@ std::map<std::string, int> MasterState::report(const RaceReport& r) {
 }
 
 bool MasterState::store_crash(const std::string& report) {
-    if (report.size() > kMaxCrashBytes || report.rfind("Gobby Kart crash report\n", 0) != 0) return false;
+    if (report.size() > kMaxCrashBytes || report.rfind("Gobby Kart crash report", 0) != 0) return false;
     std::lock_guard lock(mutex_);
     if (crashes_ >= kMaxCrashes) return false;
     ++crashes_;
