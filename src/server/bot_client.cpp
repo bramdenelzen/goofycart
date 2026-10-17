@@ -17,6 +17,7 @@
 #include "gk/online/master_client.h"
 #include "gk/sim/data.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -33,6 +34,7 @@ int main(int argc, char** argv) {
     uint16_t port = net::kDefaultPort;
     int count = 1;
     double seconds = 10.0;
+    bool until_results = false;
     net::LinkConditions link;
     std::string master_url, region;
     for (int i = 1; i < argc; ++i) {
@@ -50,6 +52,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--loss") == 0) link.loss = float(std::atof(next())) / 100.0f;
         else if (std::strcmp(argv[i], "--master") == 0) master_url = next();
         else if (std::strcmp(argv[i], "--region") == 0) region = next();
+        else if (std::strcmp(argv[i], "--until-results") == 0) until_results = true; // stop after one race
     }
 
     sim::PhysicsTables tables;
@@ -140,6 +143,10 @@ int main(int argc, char** argv) {
             }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        if (until_results && std::all_of(bots.begin(), bots.end(), [](const Bot& b) { return b.game->results(); })) {
+            log_info("every bot has its race results after {:.1f} s", std::chrono::duration<double>(clock::now() - start).count());
+            break;
+        }
     }
 
     for (size_t i = 0; i < bots.size(); ++i) {

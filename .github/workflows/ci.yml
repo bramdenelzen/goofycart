@@ -60,11 +60,15 @@ jobs:
       - name: Online smoke test through the master server (accounts, matchmaking, ratings)
         shell: bash
         run: |
-          ./build/release/src/online/gk_master --port 7790 --data accounts.json --server-key ci --seconds 75 &
+          ./build/release/src/online/gk_master --port 7790 --data accounts.json --server-key ci &
+          master=$!
           sleep 1
-          ./build/release/src/server/gk_server --port 7803 --laps 1 --lobby 2 --master http://127.0.0.1:7790 --server-key ci --region eu --ticks 3900 &
+          ./build/release/src/server/gk_server --port 7803 --laps 1 --lobby 2 --master http://127.0.0.1:7790 --server-key ci --region eu &
+          server=$!
           sleep 2
-          ./build/release/src/server/gk_botclient --master http://127.0.0.1:7790 --region eu --clients 3 --seconds 62
+          ./build/release/src/server/gk_botclient --master http://127.0.0.1:7790 --region eu --clients 3 --seconds 180 --until-results
+          sleep 3 # the server reports the race from its worker thread
+          kill $server $master
           wait
           python3 -c "import json,sys; a=json.load(open('accounts.json'))['accounts']; print(a); sys.exit(0 if sum(x['races'] for x in a)==3 else 1)"
 
