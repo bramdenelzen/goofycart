@@ -33,6 +33,13 @@ Every push to the default branch replaces the **latest** pre-release on the
 GitHub Releases page with a ready-to-run Windows zip and macOS DMG: download,
 unzip or open, play. Tagged versions (`v0.2.0`) get their own release.
 
+Next to the game are two double-click scripts. **Host a Server** opens the
+firewall for UDP port 7777 (Windows asks once), prints the addresses friends
+should join with and starts `gk_server`. **Join a Server** asks for an address
+and a name, remembers them, and starts the game connected. They are
+`.bat` files on Windows and `.command` files on macOS (right-click > Open the
+first time).
+
 ## Building
 
 You need CMake 3.24+, Ninja and a C++20 compiler (MSVC 2022, Clang 16+ or
