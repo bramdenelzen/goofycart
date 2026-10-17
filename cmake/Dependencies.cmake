@@ -3,6 +3,13 @@
 # needed to build: headers come from Vulkan-Headers and the loader is opened
 # at runtime by volk.
 include(FetchContent)
+# Some pinned dependencies still declare cmake_minimum_required below 3.5,
+# which CMake 4 rejects without this.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+# Jolt keeps its CMakeLists in Build/, so it is populated and added by hand.
+if(POLICY CMP0169)
+  cmake_policy(SET CMP0169 OLD)
+endif()
 set(FETCHCONTENT_QUIET ON)
 
 macro(gk_fetch name repo tag)
