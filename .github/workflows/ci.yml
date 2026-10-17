@@ -96,7 +96,9 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           test ! -e /opt/homebrew/lib/libvulkan.1.dylib
-          ./build/release/src/client/gk_client --autodrive --mute --frames 300 --screenshot smoke-macos.png 2>&1 | tee client.log
+          export MVK_CONFIG_LOG_LEVEL=2 # MoltenVK warnings and errors
+          ./build/release/src/client/gk_client --autodrive --mute --frames 300 --screenshot smoke-macos.png 2>&1 | tee client.log \
+            || { cat ~/Library/"Application Support"/Gobby/GobbyKart/crashes/*.txt 2>/dev/null; exit 1; }
           grep -q "GPU:" client.log
 
       - name: Upload macOS smoke screenshot

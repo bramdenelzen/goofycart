@@ -77,3 +77,21 @@ TEST_CASE("every track is a clean lap for a CPU, and a 12-kart race finishes") {
         CHECK(respawns <= 3); // items can knock a kart off an edge now and then
     }
 }
+
+TEST_CASE("building a track twice gives the same geometry") {
+    // The client draws one copy of the track and races on another, so any
+    // difference between two builds shows as the road and its collision
+    // drifting apart.
+    for (const TrackDef& def : catalog().tracks) {
+        INFO(def.id);
+        const Track a = make_track(catalog(), def.id), b = make_track(catalog(), def.id);
+        REQUIRE(a.vertices.size() == b.vertices.size());
+        REQUIRE(a.triangles.size() == b.triangles.size());
+        CHECK(std::equal(a.vertices.begin(), a.vertices.end(), b.vertices.begin()));
+        bool same_tris = true;
+        for (size_t i = 0; i < a.triangles.size(); ++i)
+            same_tris &= a.triangles[i].a == b.triangles[i].a && a.triangles[i].b == b.triangles[i].b &&
+                         a.triangles[i].c == b.triangles[i].c && a.triangles[i].surface == b.triangles[i].surface;
+        CHECK(same_tris);
+    }
+}
