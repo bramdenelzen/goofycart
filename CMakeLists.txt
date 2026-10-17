@@ -9,6 +9,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(GK_BUILD_CLIENT "Build the game client (needs SDL3 + Vulkan headers)" ON)
 option(GK_BUILD_SERVER "Build the headless dedicated server" ON)
 option(GK_BUILD_TESTS "Build unit tests" ON)
+option(GK_MACOS_BUNDLE "Build the macOS client as an app bundle with MoltenVK inside" OFF)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
@@ -38,3 +39,5 @@ if(GK_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
+
+include(Packaging)

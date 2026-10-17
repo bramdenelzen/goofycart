@@ -68,7 +68,11 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
     window_ = window;
     options_ = options;
 
-    if (volkInitialize() != VK_SUCCESS) {
+    // Use the Vulkan library SDL loaded for the window (on macOS that can be
+    // the MoltenVK inside the app bundle), else look for the system loader.
+    const auto sdl_gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(SDL_Vulkan_GetVkGetInstanceProcAddr());
+    if (sdl_gipa) volkInitializeCustom(sdl_gipa);
+    else if (volkInitialize() != VK_SUCCESS) {
         log_error("No Vulkan loader found. Install your GPU driver (Windows/Linux) or the Vulkan SDK / MoltenVK (macOS).");
         return false;
     }

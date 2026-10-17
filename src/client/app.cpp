@@ -104,6 +104,13 @@ bool App::init() {
     }
     course_.engine = options_.engine;
     course_.cpu = options_.cpu_level;
+#ifdef __APPLE__
+    // A packaged app carries MoltenVK in Contents/Frameworks.
+    if (const char* base = SDL_GetBasePath()) {
+        const std::string moltenvk = std::string(base) + "../Frameworks/libMoltenVK.dylib";
+        if (std::ifstream(moltenvk).good()) SDL_SetHint(SDL_HINT_VULKAN_LIBRARY, moltenvk.c_str());
+    }
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         log_error("SDL_Init failed: {}", SDL_GetError());
         return false;

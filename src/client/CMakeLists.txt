@@ -49,3 +49,25 @@ target_link_libraries(gk_client PRIVATE gk_net gk_audio gk_online SDL3::SDL3 vol
 if(WIN32)
   set_target_properties(gk_client PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
 endif()
+
+if(APPLE AND GK_MACOS_BUNDLE)
+  # "Gobby Kart.app": data in Resources, MoltenVK (from Homebrew's molten-vk,
+  # or MOLTENVK_DYLIB) in Frameworks so it runs without the Vulkan SDK.
+  set_target_properties(gk_client PROPERTIES
+    MACOSX_BUNDLE ON
+    MACOSX_BUNDLE_BUNDLE_NAME "Gobby Kart"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "net.gobbykart.client"
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
+  if(NOT MOLTENVK_DYLIB)
+    execute_process(COMMAND brew --prefix molten-vk OUTPUT_VARIABLE _mvk OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(_mvk AND EXISTS "${_mvk}/lib/libMoltenVK.dylib")
+      set(MOLTENVK_DYLIB "${_mvk}/lib/libMoltenVK.dylib")
+    endif()
+  endif()
+  if(MOLTENVK_DYLIB)
+    install(FILES ${MOLTENVK_DYLIB} DESTINATION "gk_client.app/Contents/Frameworks" COMPONENT game)
+  else()
+    message(WARNING "MoltenVK not found (brew install molten-vk): the app will need the Vulkan SDK installed")
+  endif()
+endif()
