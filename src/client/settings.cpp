@@ -1,0 +1,40 @@
+#include "settings.h"
+
+#include <algorithm>
+#include <fstream>
+
+namespace gk {
+
+bool Settings::load(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) return false;
+    std::string line;
+    while (std::getline(f, line)) {
+        const auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string key = line.substr(0, eq);
+        int v = 0;
+        try {
+            v = std::stoi(line.substr(eq + 1));
+        } catch (...) {
+            continue;
+        }
+        if (key == "master") master = std::clamp(v, 0, 10);
+        else if (key == "music") music = std::clamp(v, 0, 10);
+        else if (key == "sfx") sfx = std::clamp(v, 0, 10);
+        else if (key == "low_res") low_res = v != 0;
+        else if (key == "fullscreen") fullscreen = v != 0;
+        else if (key == "show_help") show_help = v != 0;
+        else if (key == "rumble") rumble = v != 0;
+    }
+    return true;
+}
+
+bool Settings::save(const std::string& path) const {
+    std::ofstream f(path, std::ios::trunc);
+    f << "master=" << master << "\nmusic=" << music << "\nsfx=" << sfx << "\nlow_res=" << low_res
+      << "\nfullscreen=" << fullscreen << "\nshow_help=" << show_help << "\nrumble=" << rumble << "\n";
+    return bool(f);
+}
+
+} // namespace gk

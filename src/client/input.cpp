@@ -139,6 +139,7 @@ sim::KartInput InputMapper::sample() const {
 }
 
 void InputMapper::rumble(float low, float high, int ms) {
+    if (!rumble_enabled) return;
     for (auto* p : pads_)
         SDL_RumbleGamepad(p, Uint16(std::clamp(low, 0.0f, 1.0f) * 65535), Uint16(std::clamp(high, 0.0f, 1.0f) * 65535),
                           Uint32(ms));

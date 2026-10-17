@@ -46,8 +46,8 @@ const char* cpu_name(sim::CpuLevel l) {
 // ---------------------------------------------------------------- title
 
 namespace {
-constexpr const char* kTitleItems[] = {"GRAND PRIX", "VS RACE", "TIME TRIALS", "QUIT"};
-constexpr int kTitleCount = 4;
+constexpr const char* kTitleItems[] = {"GRAND PRIX", "VS RACE", "TIME TRIALS", "OPTIONS", "QUIT"};
+constexpr int kTitleCount = 5;
 } // namespace
 
 TitleChoice update_title(TitleState& s, const ClientActions& act) {
@@ -59,6 +59,7 @@ TitleChoice update_title(TitleState& s, const ClientActions& act) {
     case 0: return TitleChoice::GrandPrix;
     case 1: return TitleChoice::Versus;
     case 2: return TitleChoice::TimeTrial;
+    case 3: return TitleChoice::Options;
     default: return TitleChoice::Quit;
     }
 }
@@ -79,6 +80,57 @@ void draw_title(render::Renderer& r, const TitleState& s) {
         y += 24.0f;
     }
     footer(r, "UP/DOWN: CHOOSE    ENTER / A: OK    ESC: QUIT");
+}
+
+// ---------------------------------------------------------------- options
+
+namespace {
+constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "BACK"};
+constexpr int kOptionCount = 8;
+} // namespace
+
+OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions& act) {
+    if (act.back || (act.accept && s.row == kOptionCount - 1)) return OptionsAction::Back;
+    if (act.menu_up) s.row = (s.row + kOptionCount - 1) % kOptionCount;
+    if (act.menu_down) s.row = (s.row + 1) % kOptionCount;
+    const int d = step(act) + (act.accept ? 1 : 0);
+    if (d == 0) return OptionsAction::None;
+    auto vol = [d](int& v) { v = std::clamp(v + (d > 0 ? 1 : -1), 0, 10); };
+    switch (s.row) {
+    case 0: vol(st.master); break;
+    case 1: vol(st.music); break;
+    case 2: vol(st.sfx); break;
+    case 3: st.low_res = !st.low_res; break;
+    case 4: st.fullscreen = !st.fullscreen; break;
+    case 5: st.show_help = !st.show_help; break;
+    case 6: st.rumble = !st.rumble; break;
+    default: return OptionsAction::None;
+    }
+    return OptionsAction::Changed;
+}
+
+void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st) {
+    const float x = 12.0f;
+    float y = 12.0f;
+    r.ui_rect(x - 6, y - 6, 260, 46.0f + 16.0f * kOptionCount, rgba(0, 0, 0, 150));
+    r.ui_text(x, y, "OPTIONS", rgba(255, 230, 60), 2.0f);
+    y += 26.0f;
+    for (int i = 0; i < kOptionCount; ++i) {
+        const bool sel = i == s.row;
+        if (sel) r.ui_rect(x - 3, y - 3, 254, 15, rgba(255, 200, 40, 80));
+        r.ui_text(x, y, kOptionRows[i], sel ? rgba(255, 230, 60) : rgba(200, 200, 200), 1.0f);
+        const float vx = x + 120;
+        if (i <= 2) {
+            const int v = i == 0 ? st.master : i == 1 ? st.music : st.sfx;
+            for (int b = 0; b < 10; ++b)
+                r.ui_rect(vx + float(b) * 11, y, 9, 8, b < v ? rgba(90, 200, 255) : rgba(255, 255, 255, 40));
+        } else if (i < kOptionCount - 1) {
+            const bool on = i == 3 ? st.low_res : i == 4 ? st.fullscreen : i == 5 ? st.show_help : st.rumble;
+            r.ui_text(vx, y, on ? "< ON >" : "< OFF >", rgba(255, 255, 255), 1.0f);
+        }
+        y += 16.0f;
+    }
+    footer(r, "UP/DOWN: CHOOSE    LEFT/RIGHT: CHANGE    ESC: BACK");
 }
 
 // ---------------------------------------------------------------- course

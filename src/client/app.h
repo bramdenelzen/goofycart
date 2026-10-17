@@ -33,7 +33,8 @@ struct AppOptions {
     sim::CpuLevel cpu_level = sim::CpuLevel::Normal;
     std::string track;            // offline: race this track straight away (skips the menus)
     bool mute = false;
-    bool time_trial = false;      // with --track: a Time Trial instead of a VS race
+    bool time_trial = false;
+    std::string menu;             // open on this menu (options, course) for screenshots      // with --track: a Time Trial instead of a VS race
     // Online play: connect to a gk_server instead of racing locally.
     std::string connect_host;
     uint16_t connect_port = net::kDefaultPort;
@@ -101,9 +102,13 @@ private:
     std::vector<sim::KartState> prev_;
     int player_ = 0;
 
-    enum class Screen { Title, Course, Select, Race, Standings };
+    enum class Screen { Title, Options, Course, Select, Race, Standings };
     Screen screen_ = Screen::Title;
     TitleState title_;
+    OptionsState options_menu_;
+    Settings settings_;
+    void apply_settings();
+    std::string settings_path() const { return pref_dir_.empty() || options_.max_frames >= 0 ? std::string() : pref_dir_ + "settings.txt"; }
     CourseState course_;
     SelectState select_;
     float menu_angle_ = 0.0f;

@@ -36,6 +36,7 @@ public:
 
     float deadzone = 0.18f;    // radial dead zone on the steering stick
     float steer_curve = 1.5f;  // response exponent outside the dead zone
+    bool rumble_enabled = true;
 
 private:
     std::vector<SDL_Gamepad*> pads_;

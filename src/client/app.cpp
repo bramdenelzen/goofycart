@@ -51,8 +51,14 @@ int App::run(const AppOptions& options) {
         while (SDL_PollEvent(&e)) input_.handle_event(e);
         const ClientActions& act = input_.actions();
         if (act.quit_requested) running = false;
-        if (act.toggle_resolution_pressed) renderer_.set_full_resolution(!renderer_.full_resolution());
-        if (act.toggle_help_pressed) show_help_ = !show_help_;
+        if (act.toggle_resolution_pressed) {
+            settings_.low_res = !settings_.low_res;
+            apply_settings();
+        }
+        if (act.toggle_help_pressed) {
+            settings_.show_help = !settings_.show_help;
+            apply_settings();
+        }
         if (net_) net_->service([this](std::span<const uint8_t> d) { online_->on_message(d); });
         if (screen_ != Screen::Race) {
             if (act.accept) audio_.mixer().play(audio::Sfx::MenuAccept);
@@ -110,6 +116,9 @@ bool App::init() {
     ro.full_resolution = options_.full_resolution;
     ro.validation = options_.validation;
     if (!renderer_.init(window_, ro)) return false;
+    if (const std::string sp = settings_path(); !sp.empty()) settings_.load(sp);
+    if (options_.full_resolution) settings_.low_res = false;
+    apply_settings();
     // Scripted runs (CI, screenshots) mix into SDL's dummy device so the audio
     // path still runs without speakers.
     if (options_.max_frames >= 0) SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
@@ -136,6 +145,8 @@ bool App::init() {
         start_race();
         screen_ = Screen::Race;
     } else {
+        if (options_.menu == "options") screen_ = Screen::Options;
+        else if (options_.menu == "course") screen_ = Screen::Course;
         show_track(course_track(course_, tracks_));
     }
     glider_mesh_ = renderer_.upload_mesh(render::make_glider_mesh(render::rgba(250, 250, 250)));
@@ -368,6 +379,14 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
         default: break;
         }
     }
+}
+
+void App::apply_settings() {
+    renderer_.set_full_resolution(!settings_.low_res);
+    show_help_ = settings_.show_help;
+    input_.rumble_enabled = settings_.rumble;
+    SDL_SetWindowFullscreen(window_, settings_.fullscreen);
+    audio_.mixer().set_volumes({settings_.master / 10.0f, settings_.music / 10.0f, settings_.sfx / 10.0f});
 }
 
 void App::play_at(audio::Sfx s, int kart, float pitch) {
@@ -644,7 +663,7 @@ void App::draw_items(const sim::World& w) {
 }
 
 void App::render(float alpha, float dt) {
-    if (screen_ == Screen::Title || screen_ == Screen::Course || screen_ == Screen::Select) {
+    if (screen_ == Screen::Title || screen_ == Screen::Options || screen_ == Screen::Course || screen_ == Screen::Select) {
         render_menu(dt);
         return;
     }
@@ -748,12 +767,23 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
         case TitleChoice::GrandPrix: course_.mode = GameMode::GrandPrix; break;
         case TitleChoice::Versus: course_.mode = GameMode::Versus; break;
         case TitleChoice::TimeTrial: course_.mode = GameMode::TimeTrial; break;
+        case TitleChoice::Options: screen_ = Screen::Options; return;
         case TitleChoice::Quit: running = false; return;
         case TitleChoice::None: return;
         }
         course_.row = 0;
         screen_ = Screen::Course;
         show_track(course_track(course_, tracks_));
+        return;
+    case Screen::Options:
+        switch (update_options(options_menu_, settings_, act)) {
+        case OptionsAction::Changed: apply_settings(); break;
+        case OptionsAction::Back:
+            if (const std::string sp = settings_path(); !sp.empty()) settings_.save(sp);
+            screen_ = Screen::Title;
+            break;
+        case OptionsAction::None: break;
+        }
         return;
     case Screen::Course:
         switch (update_course(course_, act, tracks_)) {
@@ -831,6 +861,7 @@ void App::render_menu(float dt) {
     renderer_.draw(kart_meshes_[size_t(mesh % 12)], glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot));
     switch (screen_) {
     case Screen::Title: draw_title(renderer_, title_); break;
+    case Screen::Options: draw_options(renderer_, options_menu_, settings_); break;
     case Screen::Course: draw_course(renderer_, course_, tracks_); break;
     default: {
         const net::LobbyMsg* lobby = online_ && online_->has_lobby() ? &online_->lobby() : nullptr;
@@ -891,6 +922,7 @@ void App::shutdown() {
     renderer_.shutdown();
     if (window_) SDL_DestroyWindow(window_);
     window_ = nullptr;
+    if (const std::string sp = settings_path(); !sp.empty()) settings_.save(sp);
     audio_.close();
     SDL_Quit();
 }

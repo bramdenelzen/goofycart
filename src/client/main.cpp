@@ -24,6 +24,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(a, "--track") == 0) opt.track = next();
         else if (std::strcmp(a, "--mute") == 0) opt.mute = true;
         else if (std::strcmp(a, "--time-trial") == 0) opt.time_trial = true;
+        else if (std::strcmp(a, "--menu") == 0) opt.menu = next();
         else if (std::strcmp(a, "--connect") == 0) {
             // host or host:port
             std::string target = next();

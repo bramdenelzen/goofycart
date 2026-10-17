@@ -100,6 +100,7 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 | `--track id` | Skip the menus and race that track (ids below) |
 | `--mute` | No sound |
 | `--time-trial` | With `--track`: a Time Trial instead of a VS race |
+| `--menu options\|course` | Open on that menu (for screenshots) |
 | `--connect host[:port]` | Race online on a `gk_server` (default port 7777) |
 | `--name NAME` | Your name online |
 | `--lag MS --loss PCT --jitter MS` | Simulate a bad connection (added round trip, packet loss, jitter) |
@@ -120,6 +121,12 @@ themed low-poly render mesh with scenery from that.
 | Comet Cup | `canyon_run`, `lava_works`, `cloud_spire`, `neon_raceway` |
 
 `greybox` is still there as a test track.
+
+## Options
+
+OPTIONS on the title menu sets master, music and effects volume, the low-res
+look, fullscreen, control hints and rumble. Settings are saved to
+`settings.txt` in the same user data folder as the ghosts.
 
 ## Time Trials
 
