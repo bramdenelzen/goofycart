@@ -20,6 +20,18 @@ int main(int argc, char** argv) {
         else if (std::strcmp(a, "--height") == 0) opt.window_height = std::atoi(next());
         else if (std::strcmp(a, "--autodrive") == 0) opt.autodrive = true;
         else if (std::strcmp(a, "--karts") == 0) opt.karts = std::atoi(next());
+        else if (std::strcmp(a, "--connect") == 0) {
+            // host or host:port
+            std::string target = next();
+            if (const auto colon = target.rfind(':'); colon != std::string::npos && target.find(':') == colon) {
+                opt.connect_port = uint16_t(std::atoi(target.c_str() + colon + 1));
+                target.resize(colon);
+            }
+            opt.connect_host = target;
+        } else if (std::strcmp(a, "--name") == 0) opt.name = next();
+        else if (std::strcmp(a, "--lag") == 0) opt.link.lag_ms = std::atoi(next());
+        else if (std::strcmp(a, "--jitter") == 0) opt.link.jitter_ms = std::atoi(next());
+        else if (std::strcmp(a, "--loss") == 0) opt.link.loss = float(std::atof(next())) / 100.0f;
         else if (std::strcmp(a, "--cc") == 0) {
             const int cc = std::atoi(next());
             opt.engine = cc <= 50 ? gk::sim::EngineClass::cc50 : cc <= 100 ? gk::sim::EngineClass::cc100

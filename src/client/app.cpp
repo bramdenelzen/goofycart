@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace gk {
 namespace {
@@ -51,14 +52,18 @@ int App::run(const AppOptions& options) {
         if (act.quit_requested || act.pause_pressed) running = false;
         if (act.toggle_resolution_pressed) renderer_.set_full_resolution(!renderer_.full_resolution());
         if (act.toggle_help_pressed) show_help_ = !show_help_;
-        if (act.restart_pressed) start_race();
+        if (act.restart_pressed && !online_) start_race();
+        if (net_) net_->service([this](std::span<const uint8_t> d) { online_->on_message(d); });
 
         const uint64_t now = SDL_GetPerformanceCounter();
         const double elapsed = double(now - last) / freq;
         last = now;
         // Scripted runs step exactly one tick per frame so output is reproducible.
         const bool scripted = options_.max_frames >= 0;
-        const int ticks = scripted ? 1 : step.advance(elapsed);
+        // Online, the client clock runs slightly fast or slow to keep its
+        // inputs reaching the server just before they are needed.
+        const double scale = online_ ? online_->time_scale() : 1.0;
+        const int ticks = scripted ? 1 : step.advance(elapsed * scale);
         for (int i = 0; i < ticks; ++i) update();
 
         if (scripted && int(frame_) == options_.max_frames - 1 && !options_.screenshot_path.empty())
@@ -92,9 +97,22 @@ bool App::init() {
     ro.validation = options_.validation;
     if (!renderer_.init(window_, ro)) return false;
 
-    start_race();
-    track_mesh_ = renderer_.upload_mesh(render::make_track_mesh(world_->track()));
-    scenery_mesh_ = renderer_.upload_mesh(render::make_scenery_mesh(world_->track()));
+    if (!options_.connect_host.empty()) {
+        if (!net::transport_init()) return false;
+        net_ = std::make_unique<net::NetClient>();
+        net_->set_conditions(options_.link);
+        if (!net_->connect(options_.connect_host, options_.connect_port)) return false;
+        online_ = std::make_unique<net::ClientGame>(tables_, [this](uint8_t ch, std::vector<uint8_t> d, bool rel) {
+            net_->send(ch, std::move(d), rel);
+        });
+        online_->join(options_.name, options_.build);
+    } else {
+        start_race();
+    }
+    // Only the greybox track exists so far, online and offline.
+    const sim::Track track = sim::make_greybox_track();
+    track_mesh_ = renderer_.upload_mesh(render::make_track_mesh(track));
+    scenery_mesh_ = renderer_.upload_mesh(render::make_scenery_mesh(track));
     glider_mesh_ = renderer_.upload_mesh(render::make_glider_mesh(render::rgba(250, 250, 250)));
     spark_mesh_ = renderer_.upload_mesh(render::make_spark_mesh());
     flame_mesh_ = renderer_.upload_mesh(render::make_flame_mesh());
@@ -129,6 +147,24 @@ void App::start_race() {
 }
 
 void App::update() {
+    if (online_) {
+        const sim::World* w = online_->world();
+        if (online_->race_id_changed(online_race_)) {
+            cam_init_ = false;
+            message_ = {};
+        }
+        player_ = std::max(online_->seat(), 0);
+        if (w) prev_ = w->karts();
+        sim::KartInput in = input_.sample();
+        if (w && online_->seat() >= 0 && options_.autodrive) {
+            in = net::bot_input(w->karts()[size_t(player_)], w->track(), 7);
+            if (!w->racing()) in.accelerate = w->countdown_left() < 80;
+        }
+        online_->step(in);
+        handle_events(online_->take_events());
+        if (message_.time_left > 0.0f) message_.time_left -= kDt;
+        return;
+    }
     prev_ = world_->karts();
     const auto& karts = world_->karts();
     std::vector<sim::KartInput> inputs(karts.size());
@@ -138,17 +174,17 @@ void App::update() {
         } else {
             // Placeholder CPU drivers until the AI phase: line followers with
             // slightly different look-ahead so they spread out.
-            inputs[i] = sim::autopilot(karts[i], world_->track(), 6.0f + float(i % 4));
+            inputs[i] = net::bot_input(karts[i], world_->track(), int(i));
             if (int(i) == player_ && world_->countdown_left() > 0) inputs[i].accelerate = world_->countdown_left() < 80;
         }
     }
     world_->tick(inputs);
-    handle_events();
+    handle_events(world_->events());
     if (message_.time_left > 0.0f) message_.time_left -= kDt;
 }
 
-void App::handle_events() {
-    for (const auto& e : world_->events()) {
+void App::handle_events(const std::vector<sim::KartEvent>& events) {
+    for (const auto& e : events) {
         if (e.kart != player_) continue;
         switch (e.type) {
         case sim::KartEventType::Boost:
@@ -161,7 +197,7 @@ void App::handle_events() {
         case sim::KartEventType::Bump: input_.rumble(0.6f, 0.6f, 100); break;
         case sim::KartEventType::Burnout: message_ = {"BURNOUT! (too early)", render::rgba(255, 90, 60), 2.0f}; break;
         case sim::KartEventType::Lap:
-            message_ = {e.value == world_->config().laps ? "FINAL LAP!" : "LAP " + std::to_string(e.value),
+            message_ = {e.value == world()->config().laps ? "FINAL LAP!" : "LAP " + std::to_string(e.value),
                         render::rgba(255, 255, 255), 2.0f};
             break;
         default: break;
@@ -170,7 +206,7 @@ void App::handle_events() {
 }
 
 void App::update_camera(float dt) {
-    const sim::KartState& now = world_->karts()[size_t(player_)];
+    const sim::KartState& now = world()->karts()[size_t(player_)];
     const vec3 fwd = now.forward();
     vec3 flat = vec3(fwd.x, 0.0f, fwd.z);
     flat = glm::length(flat) > 0.01f ? glm::normalize(flat) : vec3(0, 0, 1);
@@ -194,7 +230,8 @@ void App::update_camera(float dt) {
 
 void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     const sim::KartState& p = prev_.size() > size_t(index) ? prev_[size_t(index)] : s;
-    const vec3 pos = glm::mix(p.pos, s.pos, alpha);
+    vec3 pos = glm::mix(p.pos, s.pos, alpha);
+    if (online_) pos += online_->visual_offset(index);
     const quat rot = glm::slerp(p.rot, s.rot, alpha);
     mat4 m = glm::translate(mat4(1.0f), pos) * glm::mat4_cast(rot);
     m = glm::rotate(m, -s.visual_drift_yaw, vec3(0, 1, 0));
@@ -206,7 +243,7 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     renderer_.draw(kart_meshes_[size_t(index % 12)], m, tint);
     if (s.gliding) renderer_.draw(glider_mesh_, m, to_tint(kKartColors[size_t(index % 12)]));
 
-    const auto& kc = world_->tables().constants;
+    const auto& kc = world()->tables().constants;
     if (s.drift == sim::DriftState::Drifting && s.mt_charge >= kc.spark_threshold) {
         const vec4 c = to_tint(tier_color(s.mt_tier(kc)));
         for (float side : {-1.0f, 1.0f}) {
@@ -225,23 +262,49 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
 }
 
 void App::render(float alpha, float dt) {
-    update_camera(dt);
+    const sim::World* w = world();
+    if (w && size_t(player_) < w->karts().size()) update_camera(dt);
     render::Camera cam;
-    cam.position = cam_pos_;
-    cam.target = cam_look_;
+    cam.position = cam_init_ ? cam_pos_ : vec3(0, 12, -25);
+    cam.target = cam_init_ ? cam_look_ : vec3(0, 0, 20);
     cam.fov_y_deg = cam_fov_;
     render::SceneLighting light;
     light.fog_density = 0.0035f;
     if (!renderer_.begin_frame(cam, light)) return;
     renderer_.draw(track_mesh_, mat4(1.0f));
     renderer_.draw(scenery_mesh_, mat4(1.0f));
-    const auto& karts = world_->karts();
-    for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
-    draw_hud(renderer_, *world_, player_, message_, show_help_);
+    if (w) {
+        const auto& karts = w->karts();
+        for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
+        draw_hud(renderer_, *w, player_, message_, show_help_);
+    }
+    if (online_) draw_net_status();
     renderer_.end_frame();
 }
 
+void App::draw_net_status() {
+    const VkExtent2D ext = renderer_.internal_extent();
+    const float H = float(ext.height);
+    std::string line;
+    if (!net_->connected()) line = "DISCONNECTED FROM SERVER";
+    else if (!online_->joined() || !online_->world()) line = "CONNECTING...";
+    else if (!online_->has_clock()) line = "WAITING FOR THE SERVER...";
+    else if (online_->seat() < 0) line = "SPECTATING - YOU JOIN THE NEXT RACE";
+    if (!line.empty()) {
+        const float wdt = render::Renderer::ui_text_width(line.c_str(), 2.0f);
+        renderer_.ui_text((float(ext.width) - wdt) * 0.5f, H * 0.35f, line.c_str(), render::rgba(255, 255, 255), 2.0f);
+    }
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "ONLINE  PING %d MS%s", net_->rtt_ms(), online_->data_mismatch() ? "  DATA MISMATCH" : "");
+    renderer_.ui_text((float(ext.width) - render::Renderer::ui_text_width(buf)) * 0.5f, 4.0f, buf,
+                      render::rgba(200, 230, 255), 1.0f);
+}
+
 void App::shutdown() {
+    if (net_) {
+        net_.reset();
+        net::transport_shutdown();
+    }
     renderer_.shutdown();
     if (window_) SDL_DestroyWindow(window_);
     window_ = nullptr;

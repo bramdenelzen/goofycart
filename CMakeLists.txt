@@ -25,6 +25,7 @@ endif()
 
 add_subdirectory(src/core)
 add_subdirectory(src/sim)
+add_subdirectory(src/net)
 if(GK_BUILD_SERVER)
   add_subdirectory(src/server)
 endif()

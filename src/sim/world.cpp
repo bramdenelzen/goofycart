@@ -22,6 +22,13 @@ int World::add_kart(const KartParams& params) {
     return index;
 }
 
+void World::restore(const WorldState& s) {
+    tick_ = s.tick;
+    countdown_left_ = s.countdown_left;
+    race_ticks_ = s.race_ticks;
+    for (size_t i = 0; i < karts_.size() && i < s.karts.size(); ++i) karts_[i] = s.karts[i];
+}
+
 void World::tick(std::span<const KartInput> inputs) {
     events_.clear();
     ++tick_;

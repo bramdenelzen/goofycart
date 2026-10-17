@@ -1,0 +1,340 @@
+// Netcode tests: the wire format, and whole races between a Room and several
+// ClientGames over an in-memory link with latency and packet loss.
+#include "sim_fixture.h"
+
+#include "gk/net/client_game.h"
+#include "gk/net/room.h"
+
+#include <map>
+#include <memory>
+#include <cmath>
+#include <random>
+
+using namespace gk;
+using namespace gk::net;
+
+namespace {
+
+// Simulated network between one Room and its clients. Unreliable packets are
+// dropped with probability `loss`; reliable ones arrive one round trip late
+// instead, and stay ordered per channel, like ENet.
+class TestNetwork : public MessageSink {
+public:
+    TestNetwork(int one_way_ms, float loss, int jitter_ms = 0) : one_way_(one_way_ms), jitter_(jitter_ms), loss_(loss) {}
+
+    void send(ClientId client, uint8_t channel, std::vector<uint8_t> data, bool reliable) override {
+        queue(true, client, channel, std::move(data), reliable);
+    }
+    void client_send(ClientId client, uint8_t channel, std::vector<uint8_t> data, bool reliable) {
+        queue(false, client, channel, std::move(data), reliable);
+    }
+
+    // Delivers everything due by `now_ms`.
+    template <class ToClient>
+    void deliver(int now_ms, Room& room, ToClient&& to_client) {
+        std::vector<Packet> due;
+        for (auto it = packets_.begin(); it != packets_.end();) {
+            if (it->due <= now_ms) {
+                due.push_back(std::move(*it));
+                it = packets_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        std::stable_sort(due.begin(), due.end(), [](const Packet& a, const Packet& b) { return a.due < b.due; });
+        for (Packet& p : due) {
+            if (p.to_client) to_client(p.client, p.data);
+            else room.on_message(p.client, p.data);
+        }
+    }
+    void set_now(int ms) { now_ = ms; }
+    // Drops queued traffic for a client that went away.
+    void forget(ClientId client) {
+        std::erase_if(packets_, [&](const Packet& p) { return p.client == client; });
+    }
+
+private:
+    struct Packet {
+        int due;
+        bool to_client;
+        ClientId client;
+        std::vector<uint8_t> data;
+    };
+    void queue(bool to_client, ClientId client, uint8_t channel, std::vector<uint8_t> data, bool reliable) {
+        std::uniform_real_distribution<float> u(0.0f, 1.0f);
+        int due = now_ + one_way_ + (jitter_ > 0 ? int(u(rng_) * float(jitter_)) : 0);
+        if (u(rng_) < loss_) {
+            if (!reliable) return;
+            due += 2 * one_way_ + 20;
+        }
+        if (reliable) {
+            int& last = last_reliable_[{to_client, client, channel}];
+            due = std::max(due, last);
+            last = due;
+        }
+        packets_.push_back({due, to_client, client, std::move(data)});
+    }
+
+    int one_way_, jitter_;
+    float loss_;
+    int now_ = 0;
+    std::mt19937 rng_{7};
+    std::vector<Packet> packets_;
+    std::map<std::tuple<bool, ClientId, uint8_t>, int> last_reliable_;
+};
+
+struct TestClient {
+    ClientId id;
+    std::unique_ptr<ClientGame> game;
+    double accum = 0.0;
+    double sum_correction = 0.0;
+    int corrections = 0;
+};
+
+// Drives a room and clients in 1 ms steps. Server ticks at exactly 60 Hz;
+// each client runs at 60 Hz scaled by its own clock adjustment.
+struct Harness {
+    sim::PhysicsTables tables = test::tables();
+    TestNetwork net;
+    Room room;
+    std::map<ClientId, TestClient> clients;
+    int now_ms = 0;
+    double server_accum = 0.0;
+
+    Harness(int one_way_ms, float loss, RoomConfig cfg = {}, int jitter_ms = 0)
+        : net(one_way_ms, loss, jitter_ms), room(tables, test::parts(), cfg, net) {}
+
+    ClientGame& connect(ClientId id, const std::string& name) {
+        TestClient c;
+        c.id = id;
+        c.game = std::make_unique<ClientGame>(tables, [this, id](uint8_t ch, std::vector<uint8_t> d, bool rel) {
+            net.client_send(id, ch, std::move(d), rel);
+        });
+        room.on_connect(id);
+        ClientGame& g = *c.game;
+        clients.emplace(id, std::move(c));
+        g.join(name, {1, 0, 0, 0});
+        return g;
+    }
+
+    void disconnect(ClientId id) {
+        room.on_disconnect(id);
+        clients.erase(id);
+        net.forget(id);
+    }
+
+    void run_ms(int ms) {
+        constexpr double kTickMs = 1000.0 / 60.0;
+        for (int i = 0; i < ms; ++i) {
+            ++now_ms;
+            net.set_now(now_ms);
+            net.deliver(now_ms, room, [&](ClientId id, const std::vector<uint8_t>& d) {
+                if (auto it = clients.find(id); it != clients.end()) {
+                    const int before = it->second.game->snapshots_applied();
+                    it->second.game->on_message(d);
+                    if (it->second.game->snapshots_applied() > before + 0 && it->second.game->snapshots_applied() > 1 &&
+                        it->second.game->world() && it->second.game->world()->racing()) {
+                        it->second.sum_correction += it->second.game->last_correction();
+                        ++it->second.corrections;
+                    }
+                }
+            });
+            server_accum += 1.0;
+            while (server_accum >= kTickMs) {
+                server_accum -= kTickMs;
+                room.tick();
+            }
+            for (auto& [id, c] : clients) {
+                c.accum += c.game->time_scale();
+                while (c.accum >= kTickMs) {
+                    c.accum -= kTickMs;
+                    sim::KartInput in;
+                    const sim::World* w = c.game->world();
+                    const int seat = c.game->seat();
+                    if (w && seat >= 0) {
+                        in = bot_input(w->karts()[size_t(seat)], w->track(), 7);
+                        // Even-numbered clients weave, so the others mispredict them.
+                        if (id % 2 == 0) in.steer = std::clamp(in.steer + 0.4f * std::sin(float(c.game->tick()) * 0.07f), -1.0f, 1.0f);
+                        if (!w->racing()) in.accelerate = false;
+                    }
+                    c.game->step(in);
+                }
+            }
+        }
+    }
+};
+
+} // namespace
+
+TEST_CASE("kart state survives the wire within quantisation") {
+    sim::KartState s;
+    s.pos = {12.5f, -3.25f, 400.125f};
+    s.rot = glm::angleAxis(0.7f, glm::normalize(vec3(0.1f, 1.0f, 0.05f)));
+    s.speed = 23.4f;
+    s.slide = {1.5f, 0.0f, -0.75f};
+    s.grounded = false;
+    s.air_vel = {3.0f, -8.0f, 20.0f};
+    s.drift = sim::DriftState::Drifting;
+    s.drift_dir = -1;
+    s.mt_charge = 412.0f;
+    s.boost = sim::BoostKind::SuperMiniTurbo;
+    s.boost_frames = 77;
+    s.boost_mult = 1.25f;
+    s.lap = 2;
+    s.checkpoint = 13;
+    s.sample = 301;
+    s.coins = 7;
+    s.finished = true;
+    s.finish_tick = 5555;
+
+    Writer w;
+    write_kart(w, s);
+    CHECK(w.data().size() < 64);
+    Reader r(w.data());
+    const sim::KartState d = read_kart(r);
+    CHECK(r.ok());
+    CHECK(r.at_end());
+    CHECK(glm::length(d.pos - s.pos) < 1e-4f);
+    CHECK(std::abs(glm::dot(d.rot, s.rot)) > 0.999f);
+    CHECK(d.speed == doctest::Approx(s.speed).epsilon(0.01));
+    CHECK(glm::length(d.air_vel - s.air_vel) < 0.02f);
+    CHECK(d.drift == s.drift);
+    CHECK(d.drift_dir == -1);
+    CHECK(d.mt_charge == doctest::Approx(412.0f));
+    CHECK(d.boost == s.boost);
+    CHECK(d.boost_frames == 77);
+    CHECK(d.lap == 2);
+    CHECK(d.checkpoint == 13);
+    CHECK(d.sample == 301);
+    CHECK(d.coins == 7);
+    CHECK(d.finished);
+    CHECK(d.finish_tick == 5555);
+}
+
+TEST_CASE("messages round-trip and reject garbage") {
+    InputMsg in;
+    in.newest_tick = 1234;
+    for (int i = 0; i < kInputRedundancy; ++i) {
+        sim::KartInput k;
+        k.steer = -0.5f + 0.1f * float(i);
+        k.accelerate = true;
+        k.drift = i % 2;
+        in.inputs.push_back(k);
+    }
+    const auto bytes = encode(in);
+    InputMsg out;
+    REQUIRE(decode(bytes, out));
+    CHECK(out.newest_tick == 1234);
+    REQUIRE(out.inputs.size() == size_t(kInputRedundancy));
+    CHECK(out.inputs[3].steer == doctest::Approx(-0.2f).epsilon(0.02));
+    CHECK(out.inputs[3].drift);
+
+    RaceSetup rs;
+    rs.race_id = 9;
+    rs.laps = 2;
+    rs.seats.push_back({true, "Albert", {1, 2, 3, 0}, {}});
+    rs.seats.push_back({false, "CPU", {0, 0, 0, 1}, {}});
+    RaceSetup rs2;
+    REQUIRE(decode(encode(rs), rs2));
+    CHECK(rs2.race_id == 9);
+    CHECK(rs2.laps == 2);
+    REQUIRE(rs2.seats.size() == 2);
+    CHECK(rs2.seats[0].human);
+    CHECK(rs2.seats[0].name == "Albert");
+    CHECK(rs2.seats[0].build.tires == 3);
+
+    std::vector<uint8_t> truncated(bytes.begin(), bytes.begin() + 7);
+    CHECK_FALSE(decode(truncated, out));
+    SnapshotMsg snap;
+    CHECK_FALSE(decode(bytes, snap)); // wrong type
+}
+
+TEST_CASE("four clients race at 150 ms round trip with 2% loss") {
+    RoomConfig cfg;
+    cfg.laps = 1;
+    Harness h(75, 0.02f, cfg, 10);
+    h.connect(1, "A");
+    h.connect(2, "B");
+    h.connect(3, "C");
+    h.connect(4, "D");
+    h.run_ms(500);
+    REQUIRE(h.room.racing());
+    CHECK(h.room.human_count() == 4);
+    for (auto& [id, c] : h.clients) {
+        CHECK(c.game->seat() >= 0);
+        CHECK(c.game->world() != nullptr);
+    }
+
+    // Race until the room ends it (everyone finished, or the grace period ran out).
+    int human_ticks = 0;
+    std::map<ClientId, int> seat_of;
+    for (auto& [id, c] : h.clients) seat_of[id] = c.game->seat();
+    while (h.room.racing() && h.now_ms < 200'000) {
+        h.run_ms(100);
+        if (h.room.racing() && h.room.world()->racing()) human_ticks += 4 * 6;
+    }
+    CHECK_FALSE(h.room.racing());
+    CHECK(h.now_ms < 200'000);
+
+    // Inputs arrived in time: redundancy covers loss and the clock keeps a lead.
+    MESSAGE("late inputs: ", h.room.late_inputs(), " of ~", human_ticks);
+    CHECK(h.room.late_inputs() < human_ticks / 100);
+
+    for (auto& [id, c] : h.clients) {
+        const sim::World* w = c.game->world();
+        REQUIRE(w != nullptr);
+        const auto& k = w->karts()[size_t(seat_of[id])];
+        CHECK(k.finished);
+        const double mean = c.corrections ? c.sum_correction / c.corrections : 0.0;
+        MESSAGE("client ", id, ": lead ", c.game->input_lead(), ", mean correction ", mean, " m, max ",
+                c.game->max_correction(), " m over ", c.corrections, " snapshots");
+        CHECK(c.corrections > 100);
+        CHECK(mean < 0.15);
+    }
+}
+
+TEST_CASE("a bot takes over when a player leaves, and late joiners spectate") {
+    RoomConfig cfg;
+    cfg.laps = 1;
+    Harness h(40, 0.0f, cfg);
+    ClientGame& a = h.connect(1, "A");
+    h.connect(2, "B");
+    h.run_ms(300);
+    REQUIRE(h.room.racing());
+    const int seat_b = h.clients.at(2).game->seat();
+    REQUIRE(seat_b >= 0);
+    CHECK(a.setup().seats[size_t(seat_b)].human);
+
+    h.run_ms(6000); // past the countdown, racing
+    const int sample_before = h.room.world()->karts()[size_t(seat_b)].sample;
+    h.disconnect(2);
+    h.run_ms(3000);
+    CHECK(h.room.human_count() == 1);
+    CHECK_FALSE(a.setup().seats[size_t(seat_b)].human);
+    CHECK(h.room.world()->karts()[size_t(seat_b)].sample != sample_before); // still driving
+
+    // Joining mid-race: watch now, race next time.
+    ClientGame& c = h.connect(3, "C");
+    h.run_ms(500);
+    CHECK(c.joined());
+    CHECK(c.seat() == -1);
+    CHECK(c.world() != nullptr);
+    CHECK(c.snapshots_applied() > 5);
+    const uint32_t first_race = h.room.race_id();
+    while (h.room.race_id() == first_race && h.now_ms < 300'000) h.run_ms(500);
+    h.run_ms(500);
+    CHECK(h.room.race_id() == first_race + 1);
+    CHECK(c.seat() >= 0);
+    CHECK(h.room.human_count() == 2);
+}
+
+TEST_CASE("an empty room stops racing") {
+    Harness h(10, 0.0f);
+    h.connect(1, "A");
+    h.run_ms(200);
+    CHECK(h.room.racing());
+    h.disconnect(1);
+    h.run_ms(100);
+    CHECK_FALSE(h.room.racing());
+}
+

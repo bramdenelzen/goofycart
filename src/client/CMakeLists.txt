@@ -38,7 +38,7 @@ add_executable(gk_client
 )
 add_dependencies(gk_client gk_shaders)
 target_include_directories(gk_client PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${GK_SHADER_INCLUDE})
-target_link_libraries(gk_client PRIVATE gk_sim SDL3::SDL3 volk vk-bootstrap::vk-bootstrap
+target_link_libraries(gk_client PRIVATE gk_net SDL3::SDL3 volk vk-bootstrap::vk-bootstrap
                       GPUOpen::VulkanMemoryAllocator gk_stb gk_warnings)
 if(WIN32)
   set_target_properties(gk_client PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)

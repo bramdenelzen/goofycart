@@ -47,7 +47,15 @@ jobs:
         run: ctest --preset release
 
       - name: Server smoke test
-        run: ./build/release/src/server/gk_server --ticks 60
+        run: ./build/release/src/server/gk_server --ticks 60 --port 7801
+
+      - name: Online smoke test (4 headless clients, 150 ms, 2% loss)
+        shell: bash
+        run: |
+          ./build/release/src/server/gk_server --port 7802 --ticks 1200 &
+          sleep 1
+          ./build/release/src/server/gk_botclient --connect 127.0.0.1:7802 --clients 4 --seconds 12 --lag 150 --loss 2 --jitter 10
+          wait
 
       - name: Prebuilt shaders are up to date
         if: runner.os == 'Linux'

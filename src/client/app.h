@@ -3,6 +3,8 @@
 #include "input.h"
 #include "render/renderer.h"
 
+#include "gk/net/client_game.h"
+#include "gk/net/transport.h"
 #include "gk/sim/world.h"
 
 #include <memory>
@@ -22,6 +24,11 @@ struct AppOptions {
     int karts = 12;
     sim::EngineClass engine = sim::EngineClass::cc150;
     sim::Build build{1, 0, 0, 0};
+    // Online play: connect to a gk_server instead of racing locally.
+    std::string connect_host;
+    uint16_t connect_port = net::kDefaultPort;
+    std::string name = "Player";
+    net::LinkConditions link; // simulated lag and loss for testing
 };
 
 class App {
@@ -33,7 +40,9 @@ private:
     void shutdown();
     void start_race();
     void update();
-    void handle_events();
+    void handle_events(const std::vector<sim::KartEvent>& events);
+    const sim::World* world() const { return online_ ? online_->world() : world_.get(); }
+    void draw_net_status();
     void update_camera(float dt);
     void render(float alpha, float dt);
     void draw_kart(int index, const sim::KartState& s, float alpha);
@@ -45,7 +54,10 @@ private:
 
     sim::PhysicsTables tables_;
     sim::PartsCatalog parts_;
-    std::unique_ptr<sim::World> world_;
+    std::unique_ptr<sim::World> world_;            // local race
+    std::unique_ptr<net::NetClient> net_;          // online race
+    std::unique_ptr<net::ClientGame> online_;
+    uint32_t online_race_ = 0;
     std::vector<sim::KartState> prev_;
     int player_ = 0;
 

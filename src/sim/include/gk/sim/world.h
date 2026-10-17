@@ -16,6 +16,14 @@ struct RaceConfig {
     int countdown_frames = 180; // "3", "2", "1", then GO
 };
 
+// Everything needed to rewind the simulation (client-side reconciliation).
+struct WorldState {
+    uint64_t tick = 0;
+    int countdown_left = 0;
+    int race_ticks = 0;
+    std::vector<KartState> karts;
+};
+
 // The authoritative race simulation: track, karts and race clock, stepped at
 // a fixed 60 Hz. The server runs it for real; clients run it to predict.
 class World {
@@ -23,6 +31,9 @@ public:
     World(Track track, PhysicsTables tables, RaceConfig config = {});
 
     int add_kart(const KartParams& params);
+    void set_kart_params(int kart, const KartParams& params) { params_[size_t(kart)] = params; }
+    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_}; }
+    void restore(const WorldState& s);
     void tick(std::span<const KartInput> inputs);
 
     const Track& track() const { return track_; }
