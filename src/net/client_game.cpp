@@ -191,6 +191,9 @@ void ClientGame::apply_snapshot(const SnapshotMsg& m) {
     ws.race_ticks = int(m.race_ticks);
     ws.karts.reserve(m.karts.size());
     for (const auto& k : m.karts) ws.karts.push_back(k.state);
+    ws.entities = m.entities;
+    ws.box_respawn = m.boxes;
+    ws.rng.state = m.rng;
     world_->restore(ws);
     simulate_to(tick_, false);
 

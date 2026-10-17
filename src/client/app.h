@@ -51,6 +51,9 @@ private:
     void update_camera(float dt);
     void render(float alpha, float dt);
     void draw_kart(int index, const sim::KartState& s, float alpha);
+    void draw_items(const sim::World& w);
+    void draw_held_item(sim::Item item, int uses, const mat4& kart, bool trailing);
+    render::MeshId item_mesh(sim::Item item) const;
 
     AppOptions options_;
     SDL_Window* window_ = nullptr;
@@ -73,6 +76,9 @@ private:
     float menu_angle_ = 0.0f;
 
     render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, glider_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0;
+    render::MeshId box_mesh_ = 0, banana_mesh_ = 0, green_mesh_ = 0, red_mesh_ = 0, spiked_mesh_ = 0, bomb_mesh_ = 0,
+                   ball_mesh_ = 0, boomerang_mesh_ = 0, bullet_mesh_ = 0, chomper_mesh_ = 0;
+    float flash_ = 0.0f; // white screen flash (lightning)
     std::vector<render::MeshId> kart_meshes_;
 
     vec3 cam_pos_{0.0f}, cam_look_{0.0f};

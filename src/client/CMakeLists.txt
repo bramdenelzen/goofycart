@@ -35,6 +35,7 @@ add_executable(gk_client
   menu.cpp
   render/mesh.cpp
   render/track_mesh.cpp
+  render/item_mesh.cpp
   render/renderer.cpp
 )
 add_dependencies(gk_client gk_shaders)

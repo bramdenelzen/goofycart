@@ -6,6 +6,7 @@ add_library(gk_sim STATIC
   greybox_track.cpp
   kart.cpp
   world.cpp
+  items.cpp
   data.cpp
 )
 target_include_directories(gk_sim PUBLIC include)

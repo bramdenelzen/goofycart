@@ -215,7 +215,7 @@ TEST_CASE("kart state survives the wire within quantisation") {
 
     Writer w;
     write_kart(w, s);
-    CHECK(w.data().size() < 64);
+    CHECK(w.data().size() < 72);
     Reader r(w.data());
     const sim::KartState d = read_kart(r);
     CHECK(r.ok());

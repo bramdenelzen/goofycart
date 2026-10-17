@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 
 namespace gk::net {
 
@@ -123,7 +124,9 @@ void write_kart(Writer& w, const sim::KartState& s) {
     w.q16(s.slide.z, 80.0f);
     const uint16_t flags = uint16_t(s.grounded) | uint16_t(s.drift_button_prev) << 1 |
                            uint16_t(s.boost_ignores_offroad) << 2 | uint16_t(s.trick_done) << 3 |
-                           uint16_t(s.glide_armed) << 4 | uint16_t(s.gliding) << 5 | uint16_t(s.finished) << 6;
+                           uint16_t(s.glide_armed) << 4 | uint16_t(s.gliding) << 5 | uint16_t(s.finished) << 6 |
+                           uint16_t(s.item_button_prev) << 7 | uint16_t(s.trailing) << 8 |
+                           uint16_t(s.item != sim::Item::None || s.item_next != sim::Item::None || s.roulette > 0) << 9;
     w.u16(flags);
     if (!s.grounded) {
         w.q16(s.air_vel.x, 120.0f);
@@ -151,6 +154,22 @@ void write_kart(Writer& w, const sim::KartState& s) {
     w.u8(uint8_t(std::clamp(s.accel_hold_frames, 0, 255)));
     w.q16(s.visual_drift_yaw, 1.0f);
     w.q8u(s.wall_bump, 1.0f);
+    if (flags & (1u << 9)) {
+        w.u8(uint8_t(s.item));
+        w.u8(uint8_t(s.item_next));
+        w.u8(s.item_uses);
+        w.u8(uint8_t(std::clamp(s.roulette, 0, 255)));
+    }
+    w.u8(s.lucky_index);
+    // Item effect timers: a mask of the running ones, then each as u16.
+    const int timers[] = {s.spin_frames, s.tumble_frames, s.shrink_frames, s.star_frames, s.bullet_frames, s.ghost_frames,
+                          s.ink_frames, s.golden_frames, s.fire_frames, s.chomper_frames, s.chomper_cooldown};
+    uint16_t mask = 0;
+    for (size_t i = 0; i < std::size(timers); ++i)
+        if (timers[i] > 0) mask |= uint16_t(1u << i);
+    w.u16(mask);
+    for (size_t i = 0; i < std::size(timers); ++i)
+        if (mask & (1u << i)) w.u16(uint16_t(std::clamp(timers[i], 0, 65535)));
 }
 
 sim::KartState read_kart(Reader& r) {
@@ -200,8 +219,56 @@ sim::KartState read_kart(Reader& r) {
     s.accel_hold_frames = r.u8();
     s.visual_drift_yaw = r.q16(1.0f);
     s.wall_bump = r.q8u(1.0f);
+    s.item_button_prev = flags & (1u << 7);
+    s.trailing = flags & (1u << 8);
+    if (flags & (1u << 9)) {
+        s.item = sim::Item(std::min<int>(r.u8(), int(sim::Item::Count) - 1));
+        s.item_next = sim::Item(std::min<int>(r.u8(), int(sim::Item::Count) - 1));
+        s.item_uses = r.u8();
+        s.roulette = r.u8();
+    }
+    s.lucky_index = r.u8();
+    int* timers[] = {&s.spin_frames, &s.tumble_frames, &s.shrink_frames, &s.star_frames, &s.bullet_frames, &s.ghost_frames,
+                     &s.ink_frames, &s.golden_frames, &s.fire_frames, &s.chomper_frames, &s.chomper_cooldown};
+    const uint16_t mask = r.u16();
+    for (size_t i = 0; i < std::size(timers); ++i)
+        if (mask & (1u << i)) *timers[i] = r.u16();
     s.ground_normal = s.up();
     return s;
+}
+
+void write_entity(Writer& w, const sim::ItemEntity& e) {
+    w.u8(uint8_t(e.type));
+    w.i8(e.owner);
+    w.i8(e.target);
+    w.u8(e.bounces);
+    w.u8(uint8_t(uint8_t(e.grounded) | uint8_t(e.returning) << 1));
+    w.vec3(e.pos);
+    w.q16(e.vel.x, 100.0f);
+    w.q16(e.vel.y, 100.0f);
+    w.q16(e.vel.z, 100.0f);
+    w.i16(e.sample);
+    w.i16(e.age);
+    w.i16(e.life);
+}
+
+sim::ItemEntity read_entity(Reader& r) {
+    sim::ItemEntity e;
+    e.type = sim::EntityType(std::min<int>(r.u8(), int(sim::EntityType::Explosion)));
+    e.owner = r.i8();
+    e.target = r.i8();
+    e.bounces = r.u8();
+    const uint8_t f = r.u8();
+    e.grounded = f & 1;
+    e.returning = f & 2;
+    e.pos = r.vec3();
+    e.vel.x = r.q16(100.0f);
+    e.vel.y = r.q16(100.0f);
+    e.vel.z = r.q16(100.0f);
+    e.sample = r.i16();
+    e.age = r.i16();
+    e.life = r.i16();
+    return e;
 }
 
 // ---------------------------------------------------------------- params
@@ -357,6 +424,12 @@ std::vector<uint8_t> encode(const SnapshotMsg& m) {
         write_kart(w, k.state);
         write_input(w, k.input);
     }
+    w.u32(uint32_t(m.rng));
+    w.u32(uint32_t(m.rng >> 32));
+    w.u8(uint8_t(std::min<size_t>(m.boxes.size(), 255)));
+    for (size_t i = 0; i < m.boxes.size() && i < 255; ++i) w.u8(uint8_t(std::clamp(m.boxes[i], 0, 255)));
+    w.u8(uint8_t(std::min<size_t>(m.entities.size(), 255)));
+    for (size_t i = 0; i < m.entities.size() && i < 255; ++i) write_entity(w, m.entities[i]);
     return w.take();
 }
 
@@ -376,6 +449,12 @@ bool decode(std::span<const uint8_t> d, SnapshotMsg& m) {
         k.state = read_kart(r);
         k.input = read_input(r);
     }
+    const uint64_t lo = r.u32();
+    m.rng = lo | (uint64_t(r.u32()) << 32);
+    m.boxes.resize(r.u8());
+    for (int& b : m.boxes) b = r.u8();
+    m.entities.resize(r.u8());
+    for (auto& e : m.entities) e = read_entity(r);
     return r.ok();
 }
 

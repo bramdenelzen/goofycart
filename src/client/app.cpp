@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include "render/item_mesh.h"
 #include "render/track_mesh.h"
 
 #include "gk/core/fixed_step.h"
@@ -120,6 +121,16 @@ bool App::init() {
     glider_mesh_ = renderer_.upload_mesh(render::make_glider_mesh(render::rgba(250, 250, 250)));
     spark_mesh_ = renderer_.upload_mesh(render::make_spark_mesh());
     flame_mesh_ = renderer_.upload_mesh(render::make_flame_mesh());
+    box_mesh_ = renderer_.upload_mesh(render::make_item_box_mesh());
+    banana_mesh_ = renderer_.upload_mesh(render::make_banana_mesh());
+    green_mesh_ = renderer_.upload_mesh(render::make_shell_mesh(render::rgba(60, 200, 70), false));
+    red_mesh_ = renderer_.upload_mesh(render::make_shell_mesh(render::rgba(230, 50, 40), false));
+    spiked_mesh_ = renderer_.upload_mesh(render::make_shell_mesh(render::rgba(60, 110, 240), true));
+    bomb_mesh_ = renderer_.upload_mesh(render::make_bomb_mesh());
+    ball_mesh_ = renderer_.upload_mesh(render::make_ball_mesh(render::rgba(255, 255, 255)));
+    boomerang_mesh_ = renderer_.upload_mesh(render::make_boomerang_mesh());
+    bullet_mesh_ = renderer_.upload_mesh(render::make_bullet_mesh());
+    chomper_mesh_ = renderer_.upload_mesh(render::make_chomper_mesh());
     for (int i = 0; i < 12; ++i)
         kart_meshes_.push_back(renderer_.upload_mesh(
             render::make_kart_mesh(kKartColors[i], kKartColors[(i + 5) % 12])));
@@ -201,6 +212,12 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
         case sim::KartEventType::Land: input_.rumble(0.5f, 0.2f, 120); break;
         case sim::KartEventType::WallHit: input_.rumble(0.8f, 0.4f, 120); break;
         case sim::KartEventType::Bump: input_.rumble(0.6f, 0.6f, 100); break;
+        case sim::KartEventType::Hit:
+            input_.rumble(1.0f, 0.8f, 300);
+            if ((e.value & 0xff) == int(sim::HitKind::Shrink)) flash_ = 1.0f;
+            break;
+        case sim::KartEventType::Blocked: input_.rumble(0.4f, 0.4f, 100); break;
+        case sim::KartEventType::ItemGet: input_.rumble(0.1f, 0.3f, 60); break;
         case sim::KartEventType::Burnout: message_ = {"BURNOUT! (too early)", render::rgba(255, 90, 60), 2.0f}; break;
         case sim::KartEventType::Lap:
             message_ = {e.value == world()->config().laps ? "FINAL LAP!" : "LAP " + std::to_string(e.value),
@@ -244,9 +261,29 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     if (s.trick_anim > 0.0f) m = glm::rotate(m, (1.0f - s.trick_anim) * 2.0f * kPi, vec3(0, 0, 1));
     if (s.drift == sim::DriftState::Drifting) m = glm::rotate(m, float(s.drift_dir) * 0.08f, vec3(0, 0, 1));
     if (s.wall_bump > 0.0f) m = glm::rotate(m, std::sin(float(frame_) * 1.7f) * 0.08f * s.wall_bump, vec3(0, 1, 0));
+    const mat4 base = m; // before hit animations, for held items
+    if (s.spin_frames > 0) m = glm::rotate(m, float(s.spin_frames) * 0.42f, vec3(0, 1, 0));
+    if (s.tumble_frames > 0) {
+        const float t = 1.0f - float(s.tumble_frames) / float(world()->item_tuning().tumble_frames);
+        m = glm::translate(m, vec3(0, std::sin(t * kPi) * 1.2f, 0));
+        m = glm::rotate(m, t * 2.0f * kPi, vec3(1, 0, 0));
+    }
+    if (s.shrink_frames > 0) m = glm::scale(m, vec3(0.55f));
     vec4 tint(1.0f);
     if (s.respawn_frames > 0 || (s.invincible_frames > 0 && (frame_ / 4) % 2)) tint = vec4(1, 1, 1, 1) * 0.6f + 0.4f;
-    renderer_.draw(kart_meshes_[size_t(index % 12)], m, tint);
+    if (s.star_frames > 0) {
+        const float h = float(frame_) * 0.3f;
+        tint = vec4(1.0f + 0.6f * std::sin(h), 1.0f + 0.6f * std::sin(h + 2.1f), 1.0f + 0.6f * std::sin(h + 4.2f), 1.0f);
+    }
+    if (s.ghost_frames > 0) tint = vec4(index == player_ ? 0.45f : 0.12f);
+    if (s.bullet_frames > 0) renderer_.draw(bullet_mesh_, base);
+    else renderer_.draw(kart_meshes_[size_t(index % 12)], m, tint);
+    if (s.chomper_frames > 0) {
+        const float lunge = s.chomper_cooldown > world()->item_tuning().chomper_cooldown - 10 ? 0.8f : 0.0f;
+        renderer_.draw(chomper_mesh_, glm::translate(base, vec3(0, 0.3f, 1.1f + lunge)));
+    }
+    if (s.item != sim::Item::None && s.roulette == 0 && s.bullet_frames == 0)
+        draw_held_item(s.item, s.item_uses, base, s.trailing);
     if (s.gliding) renderer_.draw(glider_mesh_, m, to_tint(kKartColors[size_t(index % 12)]));
 
     const auto& kc = world()->tables().constants;
@@ -264,6 +301,78 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         if (s.boost == sim::BoostKind::SuperMiniTurbo) c = to_tint(tier_color(2));
         if (s.boost == sim::BoostKind::UltraMiniTurbo) c = to_tint(tier_color(3));
         renderer_.draw(flame_mesh_, glm::scale(glm::translate(m, vec3(0, 0.28f, -0.95f)), vec3(1.0f, 1.0f, flicker)), c * 1.4f);
+    }
+}
+
+render::MeshId App::item_mesh(sim::Item item) const {
+    switch (item) {
+    case sim::Item::Banana: case sim::Item::TripleBanana: return banana_mesh_;
+    case sim::Item::GreenShell: case sim::Item::TripleGreen: return green_mesh_;
+    case sim::Item::RedShell: case sim::Item::TripleRed: return red_mesh_;
+    case sim::Item::Bomb: return bomb_mesh_;
+    default: return 0;
+    }
+}
+
+void App::draw_held_item(sim::Item item, int uses, const mat4& kart, bool trailing) {
+    const render::MeshId mesh = item_mesh(item);
+    if (!mesh) return;
+    const bool triple = item == sim::Item::TripleBanana || item == sim::Item::TripleGreen || item == sim::Item::TripleRed;
+    if (triple) {
+        // Orbiting the kart.
+        for (int i = 0; i < uses; ++i) {
+            const float a = float(frame_) * 0.08f + float(i) * 2.0f * kPi / 3.0f;
+            renderer_.draw(mesh, glm::translate(kart, vec3(std::cos(a) * 1.3f, 0.2f, std::sin(a) * 1.3f)));
+        }
+    } else if (trailing) {
+        renderer_.draw(mesh, glm::translate(kart, vec3(0, 0.05f, -1.4f)));
+    }
+}
+
+void App::draw_items(const sim::World& w) {
+    const auto& boxes = w.track().item_boxes;
+    const auto& respawn = w.box_respawn();
+    const float spin = float(frame_) * 0.03f;
+    for (size_t i = 0; i < boxes.size() && i < respawn.size(); ++i) {
+        const int r = respawn[i];
+        if (r > 20) continue;
+        const float scale = r > 0 ? 1.0f - float(r) / 20.0f : 1.0f;
+        const float bob = std::sin(spin * 2.0f + float(i)) * 0.15f;
+        mat4 m = glm::translate(mat4(1.0f), boxes[i] + vec3(0, bob, 0));
+        m = glm::rotate(m, spin + float(i), vec3(0, 1, 0));
+        m = glm::rotate(m, 0.5f, vec3(1, 0, 1));
+        renderer_.draw(box_mesh_, glm::scale(m, vec3(scale)));
+    }
+    for (const sim::ItemEntity& e : w.entities()) {
+        mat4 m = glm::translate(mat4(1.0f), e.pos - vec3(0, 0.3f, 0));
+        const float yaw = std::atan2(e.vel.x, e.vel.z);
+        switch (e.type) {
+        case sim::EntityType::Banana: renderer_.draw(banana_mesh_, m); break;
+        case sim::EntityType::GreenShell: renderer_.draw(green_mesh_, glm::rotate(m, float(e.age) * 0.4f, vec3(0, 1, 0))); break;
+        case sim::EntityType::RedShell: renderer_.draw(red_mesh_, glm::rotate(m, float(e.age) * 0.4f, vec3(0, 1, 0))); break;
+        case sim::EntityType::SpikedShell:
+            renderer_.draw(spiked_mesh_, glm::rotate(glm::scale(m, vec3(1.4f)), float(e.age) * 0.3f, vec3(0, 1, 0)));
+            break;
+        case sim::EntityType::Bomb: {
+            // Flashes faster as the fuse runs down.
+            const bool lit = e.life > 0 && (e.life < 40 ? (e.age / 3) % 2 : (e.age / 10) % 2);
+            renderer_.draw(bomb_mesh_, glm::rotate(m, yaw, vec3(0, 1, 0)), lit ? vec4(2.5f, 1.2f, 1.0f, 1.0f) : vec4(1.0f));
+            break;
+        }
+        case sim::EntityType::Fireball:
+            renderer_.draw(ball_mesh_, glm::translate(m, vec3(0, 0.3f, 0)), vec4(1.6f, 0.7f, 0.2f, 1.0f));
+            break;
+        case sim::EntityType::Boomerang:
+            renderer_.draw(boomerang_mesh_, glm::rotate(glm::translate(m, vec3(0, 0.3f, 0)), float(e.age) * 0.6f, vec3(0, 1, 0)));
+            break;
+        case sim::EntityType::Explosion: {
+            const float t = 1.0f - float(e.life) / 30.0f;
+            const float r = w.item_tuning().explosion_radius * (0.3f + 0.7f * t) / 0.3f;
+            renderer_.draw(ball_mesh_, glm::scale(glm::translate(m, vec3(0, 0.3f, 0)), vec3(r)),
+                           vec4(1.8f, 1.0f - 0.5f * t, 0.3f, 1.0f));
+            break;
+        }
+        }
     }
 }
 
@@ -285,6 +394,7 @@ void App::render(float alpha, float dt) {
     renderer_.draw(scenery_mesh_, mat4(1.0f));
     if (w) {
         const auto& karts = w->karts();
+        draw_items(*w);
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
         draw_hud(renderer_, *w, player_, kart_names(), message_, show_help_ && !server_results, !server_results);
@@ -295,6 +405,11 @@ void App::render(float alpha, float dt) {
             renderer_.ui_text((float(ext.width) - render::Renderer::ui_text_width(hint, 1.5f)) * 0.5f,
                               float(ext.height) - 22.0f, hint, render::rgba(255, 255, 255), 1.5f);
         }
+    }
+    if (flash_ > 0.0f) {
+        const VkExtent2D ext = renderer_.internal_extent();
+        renderer_.ui_rect(0, 0, float(ext.width), float(ext.height), render::rgba(255, 255, 230, uint8_t(flash_ * 200.0f)));
+        flash_ = std::max(0.0f, flash_ - dt * 3.0f);
     }
     if (online_) draw_net_status();
     renderer_.end_frame();
@@ -427,7 +542,7 @@ void App::draw_net_status() {
     }
     char buf[96];
     std::snprintf(buf, sizeof(buf), "ONLINE  PING %d MS%s", net_->rtt_ms(), online_->data_mismatch() ? "  DATA MISMATCH" : "");
-    renderer_.ui_text((float(ext.width) - render::Renderer::ui_text_width(buf)) * 0.5f, 4.0f, buf,
+    renderer_.ui_text(float(ext.width) - render::Renderer::ui_text_width(buf) - 6.0f, 46.0f, buf,
                       render::rgba(200, 230, 255), 1.0f);
 }
 

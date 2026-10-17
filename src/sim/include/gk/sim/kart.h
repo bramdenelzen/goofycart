@@ -1,6 +1,7 @@
 #pragma once
 #include "gk/core/math.h"
 #include "gk/sim/input.h"
+#include "gk/sim/items.h"
 #include "gk/sim/stats.h"
 #include "gk/sim/surface.h"
 #include "gk/sim/track.h"
@@ -11,11 +12,19 @@
 namespace gk::sim {
 
 enum class DriftState : uint8_t { None, Hop, Drifting };
-enum class BoostKind : uint8_t { None, MiniTurbo, SuperMiniTurbo, UltraMiniTurbo, Trick, BoostPad, GlideRamp, RocketStart, Mushroom };
+enum class BoostKind : uint8_t { None, MiniTurbo, SuperMiniTurbo, UltraMiniTurbo, Trick, BoostPad, GlideRamp, RocketStart, Mushroom, Star, Bullet };
 
 // Things the client turns into sounds, sparks and rumble. The server sends
 // gameplay-relevant ones over the reliable lane.
-enum class KartEventType : uint8_t { Boost, Trick, Land, WallHit, Respawn, Lap, Finish, GliderOpen, Burnout, Bump };
+enum class KartEventType : uint8_t {
+    Boost, Trick, Land, WallHit, Respawn, Lap, Finish, GliderOpen, Burnout, Bump,
+    ItemBox,    // drove through a box: the roulette starts
+    ItemGet,    // value = Item
+    ItemUse,    // value = Item
+    Hit,        // value = HitKind
+    Explosion,  // value unused; kart = owner
+    Blocked,    // a held item absorbed a hit
+};
 struct KartEvent {
     KartEventType type;
     int kart;
@@ -68,6 +77,26 @@ struct KartState {
     int coins = 0;
     int accel_hold_frames = 0;     // for the rocket start
 
+    // Items
+    Item item = Item::None;        // in hand
+    Item item_next = Item::None;   // reserve slot (MK8 Deluxe holds two)
+    uint8_t item_uses = 0;         // left in the stack for the item in hand
+    uint8_t lucky_index = 0;       // next item out of a Lucky Eight
+    int roulette = 0;              // frames left before the box's item arrives
+    bool item_button_prev = false;
+    bool trailing = false;         // holding the item behind as a shield
+    int spin_frames = 0;           // hit by a banana, fireball or plant
+    int tumble_frames = 0;         // hit by a shell, bomb, horn or bullet
+    int shrink_frames = 0;         // struck by lightning
+    int star_frames = 0;
+    int bullet_frames = 0;
+    int ghost_frames = 0;
+    int ink_frames = 0;
+    int golden_frames = 0;
+    int fire_frames = 0;
+    int chomper_frames = 0;
+    int chomper_cooldown = 0;
+
     // Visual-only helpers (the client may also derive these)
     float visual_drift_yaw = 0.0f;
     float wall_bump = 0.0f;
@@ -77,6 +106,11 @@ struct KartState {
     vec3 right() const { return rot * vec3(-1, 0, 0); }
     vec3 velocity() const { return grounded ? forward() * speed + slide : air_vel; }
     int mt_tier(const PhysicsConstants& k) const; // 0 none, 1 blue, 2 orange, 3 purple
+    // Immune to items and bumps: star, bullet, ghost, respawn and the grace after a hit.
+    bool untouchable() const {
+        return star_frames > 0 || bullet_frames > 0 || ghost_frames > 0 || respawn_frames > 0 || invincible_frames > 0;
+    }
+    bool knocked() const { return spin_frames > 0 || tumble_frames > 0; }
 };
 
 struct KartStepContext {

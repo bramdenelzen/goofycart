@@ -183,6 +183,14 @@ Track make_greybox_track() {
     quad(base_v, base_v + 1, base_v + 2, base_v + 3, Surface::OutOfBounds);
     t.kill_y = floor_y - 10.0f;
 
+    // Item box rows: four boxes across the road at a few points per lap.
+    for (float s_box : {s_of_ctrl(2.0f), s_of_ctrl(6.5f), s_of_ctrl(10.5f) + 20.0f, s_of_ctrl(14.0f)}) {
+        int i = 0;
+        while (i + 1 < n && t.center[size_t(i)].s < s_box) ++i;
+        const CenterSample& c = t.center[size_t(i)];
+        for (float lat : {-0.6f, -0.2f, 0.2f, 0.6f}) t.item_boxes.push_back(c.pos + c.right * (lat * c.half_width) + c.up * 1.0f);
+    }
+
     // Checkpoint regions roughly every 40 m; region 0 starts at the line.
     const int per = std::max(1, int(40.0f / step));
     for (int i = 0; i < n; i += per) t.checkpoints.push_back(i);

@@ -383,6 +383,10 @@ void Room::send_snapshots() {
     base.race_ticks = uint32_t(world_->race_ticks());
     const auto& karts = world_->karts();
     for (size_t i = 0; i < karts.size(); ++i) base.karts.push_back({karts[i], seats_[i].last_input});
+    const sim::WorldState ws = world_->save();
+    base.rng = ws.rng.state;
+    base.boxes = ws.box_respawn;
+    base.entities = ws.entities;
     for (auto& [id, c] : clients_) {
         if (!c.hello) continue;
         SnapshotMsg m = base;

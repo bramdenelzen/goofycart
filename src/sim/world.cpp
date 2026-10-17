@@ -11,6 +11,8 @@ namespace gk::sim {
 World::World(Track track, PhysicsTables tables, RaceConfig config)
     : track_(std::move(track)), tables_(std::move(tables)), config_(config), countdown_left_(config.countdown_frames) {
     track_.laps = config_.laps;
+    box_respawn_.assign(track_.item_boxes.size(), 0);
+    rng_.state ^= config_.seed * 0xD1B54A32D192ED03ull;
 }
 
 int World::add_kart(const KartParams& params) {
@@ -27,16 +29,21 @@ void World::restore(const WorldState& s) {
     countdown_left_ = s.countdown_left;
     race_ticks_ = s.race_ticks;
     for (size_t i = 0; i < karts_.size() && i < s.karts.size(); ++i) karts_[i] = s.karts[i];
+    entities_ = s.entities;
+    if (s.box_respawn.size() == box_respawn_.size()) box_respawn_ = s.box_respawn;
+    rng_ = s.rng;
 }
 
 void World::tick(std::span<const KartInput> inputs) {
     events_.clear();
     ++tick_;
     const bool frozen = countdown_left_ > 0;
+    step_inputs_.assign(karts_.size(), KartInput{});
+    for (size_t i = 0; i < karts_.size() && i < inputs.size(); ++i) step_inputs_[i] = inputs[i];
+    if (config_.items && !frozen) items_before_step(step_inputs_);
     for (size_t i = 0; i < karts_.size(); ++i) {
-        const KartInput in = i < inputs.size() ? inputs[i] : KartInput{};
         KartStepContext ctx{track_, tables_.constants, params_[i], int(i), frozen, &events_};
-        kart_step(karts_[i], in, ctx);
+        kart_step(karts_[i], step_inputs_[i], ctx);
     }
     if (countdown_left_ > 0 && --countdown_left_ == 0) {
         for (size_t i = 0; i < karts_.size(); ++i) {
@@ -45,6 +52,7 @@ void World::tick(std::span<const KartInput> inputs) {
         }
     }
     collide_karts();
+    if (config_.items && !frozen) items_after_step();
     if (!frozen) ++race_ticks_;
     for (size_t i = 0; i < karts_.size(); ++i) {
         KartState& k = karts_[i];
@@ -68,11 +76,28 @@ void World::collide_karts() {
             KartState& ka = karts_[a];
             KartState& kb = karts_[b];
             if (ka.respawn_frames > 0 || kb.respawn_frames > 0) continue;
+            if (ka.ghost_frames > 0 || kb.ghost_frames > 0) continue; // ghosts pass through
             vec3 d = kb.pos - ka.pos;
             if (std::abs(d.y) > 1.5f) continue;
             d.y = 0.0f;
             const float dist = glm::length(d);
             if (dist >= 2.0f * kRadius || dist < 1e-4f) continue;
+            // A star or a bullet knocks over whoever it touches; a full-size
+            // kart flattens a shrunken one.
+            if (config_.items) {
+                const bool pa = ka.star_frames > 0 || ka.bullet_frames > 0;
+                const bool pb = kb.star_frames > 0 || kb.bullet_frames > 0;
+                if (pa != pb) {
+                    const int victim = pa ? int(b) : int(a);
+                    if (!karts_[size_t(victim)].untouchable()) apply_hit(victim, HitKind::Tumble, pa ? int(a) : int(b));
+                    continue;
+                }
+                const bool sa = ka.shrink_frames > 0, sb = kb.shrink_frames > 0;
+                if (sa != sb) {
+                    const int victim = sa ? int(a) : int(b);
+                    if (!karts_[size_t(victim)].untouchable()) apply_hit(victim, HitKind::Spin, sa ? int(b) : int(a));
+                }
+            }
             const vec3 n = d / dist;
             const float ma = params_[a].mass, mb = params_[b].mass;
             const float overlap = 2.0f * kRadius - dist;

@@ -9,7 +9,8 @@ Right now you pick a driver, body, tires and glider (with MK8-style stat
 bars) and race 3 laps of a greybox test track against 11 simple
 line-following karts: drifting with blue, orange and purple mini-turbos,
 hops, tricks off ramps, a glider section over a chasm, dash panels, rocket
-starts, off-road, sand, ice and mud, and Lakitu-style respawns. The same race
+starts, off-road, sand, ice and mud, respawns, and item boxes with all 22
+race items. The same race
 runs online on a dedicated server with up to 12 players.
 
 ## Layout
@@ -100,8 +101,8 @@ Kart select and lobby: Up/Down pick a part, Left/Right change it, Enter (or
 A) to race or ready up, Esc to quit.
 
 Racing: arrows or WASD steer, X or Space accelerate, Z brake, Shift
-hop/drift (press it at a ramp lip to trick), Up/Down pitch the glider, E use
-item, C look back, R restart, F1 help, F2 low-res toggle, Esc back to kart
+hop/drift (press it at a ramp lip to trick), Up/Down pitch the glider, E or
+Ctrl use item (hold to drag it behind you), C look back, R restart, F1 help, F2 low-res toggle, Esc back to kart
 select (online: quit). After the finish, Enter or A continues.
 
 Gamepads (Xbox, PlayStation, Switch Pro and generic) work out of the box:
@@ -110,6 +111,22 @@ L or left trigger item, X/Square look back, Back/Select restart.
 
 Rocket start: press accelerate as the "2" fades (about 1 to 1.7 s before GO).
 Holding it from the start burns out the engine.
+
+## Items
+
+Item boxes give one of the 22 MK8 Deluxe race items, under our own names:
+Banana, Triple Bananas, Green Shell, Triple Green Shells, Red Shell, Triple
+Red Shells, Spiked Shell (seeks the leader), Bomb, Mushroom, Triple
+Mushrooms, Golden Mushroom, Bullet (autopilot rocket), Ink, Lightning, Star,
+Fireball, Boomerang, Chomper (a plant that bites what is ahead), Horn
+(shockwave; the only defence against the Spiked Shell), Lucky Eight, Coin and
+Ghost (turn invisible and steal an item). You can hold two items. Odds depend
+on your place.
+
+Hold the item button to keep a banana, shell or bomb behind you as a shield
+and let go to throw it; hold Up to throw a banana or bomb forward, Down to
+throw a shell backwards. Triple items circle the kart and block one hit each.
+Item timings and odds are provisional (tagged in `src/sim/items.cpp`).
 
 ## Netcode
 

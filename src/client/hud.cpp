@@ -42,6 +42,54 @@ void centered(render::Renderer& r, float cx, float y, const char* text, uint32_t
 }
 } // namespace
 
+namespace {
+// Short label and panel colour for the item slots.
+struct ItemLook {
+    const char* label;
+    uint32_t color;
+};
+ItemLook item_look(sim::Item item) {
+    using sim::Item;
+    switch (item) {
+    case Item::Banana: case Item::TripleBanana: return {"BANANA", rgba(230, 200, 40)};
+    case Item::GreenShell: case Item::TripleGreen: return {"GREEN", rgba(50, 170, 60)};
+    case Item::RedShell: case Item::TripleRed: return {"RED", rgba(210, 50, 40)};
+    case Item::SpikedShell: return {"SPIKED", rgba(60, 100, 230)};
+    case Item::Bomb: return {"BOMB", rgba(50, 50, 60)};
+    case Item::Mushroom: case Item::TripleMushroom: return {"SHROOM", rgba(220, 70, 60)};
+    case Item::GoldenMushroom: return {"GOLDEN", rgba(230, 180, 30)};
+    case Item::Bullet: return {"BULLET", rgba(40, 40, 50)};
+    case Item::Ink: return {"INK", rgba(60, 40, 90)};
+    case Item::Lightning: return {"ZAP", rgba(240, 220, 60)};
+    case Item::Star: return {"STAR", rgba(250, 210, 40)};
+    case Item::Fireball: return {"FIRE", rgba(240, 110, 30)};
+    case Item::Boomerang: return {"BOOMER", rgba(70, 130, 240)};
+    case Item::Chomper: return {"CHOMP", rgba(60, 160, 60)};
+    case Item::Horn: return {"HORN", rgba(200, 160, 60)};
+    case Item::LuckyEight: return {"LUCKY 8", rgba(160, 80, 200)};
+    case Item::Coin: return {"COIN", rgba(240, 200, 40)};
+    case Item::Ghost: return {"GHOST", rgba(200, 200, 220)};
+    default: return {"", rgba(0, 0, 0)};
+    }
+}
+
+void item_slot(render::Renderer& r, float x, float y, float size, sim::Item item, int uses, bool spinning, uint64_t tick) {
+    r.ui_rect(x - 2, y - 2, size + 4, size + 4, rgba(255, 255, 255, 200));
+    r.ui_rect(x, y, size, size, rgba(20, 20, 30, 220));
+    if (spinning) item = sim::Item(1 + (tick / 4) % uint64_t(sim::kItemCount));
+    if (item == sim::Item::None) return;
+    const ItemLook look = item_look(item);
+    r.ui_rect(x + 2, y + 2, size - 4, size - 4, (look.color & 0x00ffffffu) | 0xd0000000u);
+    const float scale = size > 40 ? 1.0f : 0.8f;
+    centered(r, x + size * 0.5f, y + size * 0.5f - 3.0f * scale, look.label, rgba(255, 255, 255), scale);
+    if (uses > 1 && !spinning) {
+        char buf[8];
+        std::snprintf(buf, sizeof buf, "x%d", uses);
+        r.ui_text(x + size - render::Renderer::ui_text_width(buf) - 2, y + size - 9, buf, rgba(255, 255, 255), 1.0f);
+    }
+}
+} // namespace
+
 void draw_results(render::Renderer& r, const std::string& title, const std::vector<ResultRow>& rows,
                   const std::string& footer) {
     const VkExtent2D ext = r.internal_extent();
@@ -96,6 +144,29 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
     std::snprintf(buf, sizeof buf, "%d%s", place, ordinal_suffix(place));
     const float pw = render::Renderer::ui_text_width(buf, 4.0f);
     r.ui_text(W - pw - 10, 6, buf, place == 1 ? rgba(255, 220, 40) : rgba(255, 255, 255), 4.0f);
+
+    // Item slots, top centre: the item in hand and the reserve.
+    {
+        const float big = 44.0f, small = 28.0f;
+        const float x = W * 0.5f - big * 0.5f + small * 0.5f;
+        const bool spin_main = k.roulette > 0 && k.item == sim::Item::None;
+        const bool spin_next = k.roulette > 0 && k.item != sim::Item::None;
+        item_slot(r, x - small - 8, 6, small, k.item_next, 1, spin_next, w.tick_count());
+        item_slot(r, x, 6, big, k.item, k.item_uses, spin_main, w.tick_count());
+        if (k.golden_frames > 0) centered(r, x + big * 0.5f, 56, "GOLDEN! TAP ITEM", rgba(255, 220, 60), 1.0f);
+        if (k.trailing) centered(r, x + big * 0.5f, 56, "HOLDING", rgba(200, 230, 255), 1.0f);
+    }
+    // Ink splats: they fade as the timer runs out.
+    if (k.ink_frames > 0) {
+        const uint8_t a = uint8_t(std::min(230, k.ink_frames * 3));
+        const float spots[6][3] = {{0.3f, 0.35f, 0.16f}, {0.62f, 0.3f, 0.2f}, {0.45f, 0.6f, 0.14f},
+                                   {0.75f, 0.62f, 0.12f}, {0.18f, 0.6f, 0.1f}, {0.52f, 0.45f, 0.1f}};
+        for (const auto& sp : spots) {
+            const float rad = sp[2] * H;
+            r.ui_rect(W * sp[0] - rad, H * sp[1] - rad * 0.7f, rad * 2.0f, rad * 1.4f, rgba(15, 10, 25, a));
+            r.ui_rect(W * sp[0] - rad * 0.7f, H * sp[1] - rad, rad * 1.4f, rad * 2.0f, rgba(15, 10, 25, a));
+        }
+    }
 
     // Speed and coins, bottom left
     const float kmh = std::abs(glm::length(k.velocity())) * 3.6f;

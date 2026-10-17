@@ -18,7 +18,7 @@
 //   kChannelChat     reliable, low priority: chat and emotes
 namespace gk::net {
 
-inline constexpr uint16_t kProtocolVersion = 2;
+inline constexpr uint16_t kProtocolVersion = 3;
 inline constexpr uint16_t kDefaultPort = 7777;
 inline constexpr uint8_t kChannelState = 0;
 inline constexpr uint8_t kChannelEvents = 1;
@@ -181,6 +181,9 @@ struct SnapshotMsg {
     uint32_t ack_input_tick = 0; // newest input tick from you that the server has used
     int8_t input_lead = 0;       // how many ticks early your inputs arrive (target ~2)
     std::vector<KartSnapshot> karts;
+    uint64_t rng = 0;                     // item roulette state, so prediction rolls the same
+    std::vector<int> boxes;               // item box respawn timers
+    std::vector<sim::ItemEntity> entities;
 };
 
 struct EventsMsg {
@@ -215,11 +218,17 @@ void write_input(Writer& w, const sim::KartInput& in);
 sim::KartInput read_input(Reader& r);
 void write_kart(Writer& w, const sim::KartState& s);
 sim::KartState read_kart(Reader& r);
+void write_entity(Writer& w, const sim::ItemEntity& e);
+sim::ItemEntity read_entity(Reader& r);
 
 // The placeholder bot driver, shared so clients predict bots exactly as the
 // server drives them.
 inline sim::KartInput bot_input(const sim::KartState& kart, const sim::Track& track, int seat) {
-    return sim::autopilot(kart, track, 6.0f + float(seat % 4));
+    sim::KartInput in = sim::autopilot(kart, track, 6.0f + float(seat % 4));
+    // Placeholder item use until the CPU drivers phase: every so often press
+    // the button for a few ticks, which fires or drops whatever is in hand.
+    if (kart.item != sim::Item::None && kart.roulette == 0 && (kart.sample + seat * 13) % 50 < 2) in.item = true;
+    return in;
 }
 
 uint32_t crc32(std::span<const uint8_t> data, uint32_t crc = 0);

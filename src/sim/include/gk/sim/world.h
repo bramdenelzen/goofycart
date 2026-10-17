@@ -14,6 +14,8 @@ struct RaceConfig {
     EngineClass engine = EngineClass::cc150;
     int laps = 3;
     int countdown_frames = 180; // "3", "2", "1", then GO
+    bool items = true;
+    uint64_t seed = 1;
 };
 
 // Everything needed to rewind the simulation (client-side reconciliation).
@@ -22,6 +24,9 @@ struct WorldState {
     int countdown_left = 0;
     int race_ticks = 0;
     std::vector<KartState> karts;
+    std::vector<ItemEntity> entities;
+    std::vector<int> box_respawn;
+    Rng rng;
 };
 
 // The authoritative race simulation: track, karts and race clock, stepped at
@@ -32,7 +37,7 @@ public:
 
     int add_kart(const KartParams& params);
     void set_kart_params(int kart, const KartParams& params) { params_[size_t(kart)] = params; }
-    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_}; }
+    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_, entities_, box_respawn_, rng_}; }
     void restore(const WorldState& s);
     void tick(std::span<const KartInput> inputs);
 
@@ -43,6 +48,13 @@ public:
     std::vector<KartState>& karts_mut() { return karts_; }
     const KartParams& params(int kart) const { return params_[size_t(kart)]; }
     const std::vector<KartEvent>& events() const { return events_; }
+    const std::vector<ItemEntity>& entities() const { return entities_; }
+    std::vector<ItemEntity>& entities_mut() { return entities_; }
+    // Frames until each item box is back (0 = there).
+    const std::vector<int>& box_respawn() const { return box_respawn_; }
+    const ItemTuning& item_tuning() const { return item_tuning_; }
+    // Test and debug hook: put an item in a kart's hand.
+    void give_item(int kart, Item item);
 
     uint64_t tick_count() const { return tick_; }
     int countdown_left() const { return countdown_left_; }
@@ -54,6 +66,16 @@ public:
 
 private:
     void collide_karts();
+    // items.cpp
+    void items_before_step(std::vector<KartInput>& inputs);
+    void items_after_step();
+    void use_item(int kart, const KartInput& in, bool pressed, bool released);
+    void throw_item(int kart, Item item, bool backwards, bool forwards);
+    void apply_hit(int kart, HitKind kind, int from);
+    bool shield_blocks(int kart, vec3 from_pos, bool any_side);
+    void update_entities();
+    void spawn_explosion(vec3 pos, int owner);
+    int kart_in_place(int place) const;
 
     Track track_;
     PhysicsTables tables_;
@@ -61,6 +83,11 @@ private:
     std::vector<KartState> karts_;
     std::vector<KartParams> params_;
     std::vector<KartEvent> events_;
+    std::vector<ItemEntity> entities_;
+    std::vector<int> box_respawn_;
+    std::vector<KartInput> step_inputs_;
+    Rng rng_;
+    ItemTuning item_tuning_;
     uint64_t tick_ = 0;
     int countdown_left_;
     int race_ticks_ = 0;

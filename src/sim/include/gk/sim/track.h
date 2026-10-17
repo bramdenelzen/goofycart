@@ -57,6 +57,7 @@ public:
     float length = 0.0f;             // centre spline length in metres
     float kill_y = -100.0f;          // falling below this triggers a respawn
     int laps = 3;
+    std::vector<vec3> item_boxes;    // centres, in rows across the road
 
     // Builds the collision structure. Call after filling the geometry.
     void finalize();
