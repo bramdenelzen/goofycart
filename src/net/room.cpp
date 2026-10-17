@@ -163,10 +163,9 @@ void Room::start_race() {
     rc.countdown_frames = config_.countdown;
     world_ = std::make_unique<sim::World>(sim::make_track(config_.tracks, current_track()), tables_, rc);
     seats_.assign(size_t(config_.seats), Seat{});
-    const int nd = int(parts_.drivers.size()), nb = int(parts_.bodies.size()), nt = int(parts_.tires.size());
     for (int i = 0; i < config_.seats; ++i) {
         Seat& s = seats_[size_t(i)];
-        s.build = clamp_build({i % nd, (i / 2) % nb, (i / 3) % nt, i % 2});
+        s.build = clamp_build(sim::cpu_build(parts_, i));
         s.name = parts_.drivers[size_t(s.build.driver)].name;
         s.params = params_for(s.build);
         s.params.rubber_band = sim::cpu_rubber_band(config_.cpu_level);

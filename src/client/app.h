@@ -126,11 +126,15 @@ private:
     std::map<std::string, std::pair<render::MeshId, render::MeshId>> track_meshes_;
     render::SceneLighting light_;
 
-    render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, glider_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0;
+    render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0;
     render::MeshId box_mesh_ = 0, banana_mesh_ = 0, green_mesh_ = 0, red_mesh_ = 0, spiked_mesh_ = 0, bomb_mesh_ = 0,
                    ball_mesh_ = 0, boomerang_mesh_ = 0, bullet_mesh_ = 0, chomper_mesh_ = 0;
     float flash_ = 0.0f; // white screen flash (lightning)
-    std::vector<render::MeshId> kart_meshes_;
+    std::vector<render::MeshId> kart_meshes_, glider_meshes_; // per kart in the race
+    std::map<uint64_t, std::pair<render::MeshId, render::MeshId>> build_meshes_; // (build, colour) -> kart, glider
+    std::pair<render::MeshId, render::MeshId> build_mesh(const sim::Build& b, int slot);
+    void set_kart_meshes(const std::vector<sim::Build>& builds);
+    sim::Build ghost_build_;
 
     vec3 cam_pos_{0.0f}, cam_look_{0.0f};
     float cam_fov_ = 70.0f;

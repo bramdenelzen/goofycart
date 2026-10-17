@@ -89,35 +89,6 @@ void MeshBuilder::append(const MeshData& other, const mat4& m) {
     for (auto i : other.indices) data_.indices.push_back(base + i);
 }
 
-MeshData make_kart_mesh(uint32_t body, uint32_t driver) {
-    // Kart faces +Z. About 1.6 m long, wheels touching y = 0.
-    MeshBuilder b;
-    const uint32_t dark = rgba(40, 40, 48);
-    const uint32_t hub = rgba(200, 200, 210);
-    const uint32_t seat = rgba(60, 60, 70);
-    b.box({0, 0.35f, -0.05f}, {0.45f, 0.12f, 0.75f}, body);           // chassis
-    b.quad({-0.30f, 0.30f, 1.05f}, {0.30f, 0.30f, 1.05f}, {0.45f, 0.47f, 0.70f}, {-0.45f, 0.47f, 0.70f}, body); // nose top
-    b.tri({0.45f, 0.23f, 0.70f}, {0.45f, 0.47f, 0.70f}, {0.30f, 0.30f, 1.05f}, body);
-    b.tri({-0.45f, 0.23f, 0.70f}, {-0.30f, 0.30f, 1.05f}, {-0.45f, 0.47f, 0.70f}, body);
-    b.quad({-0.30f, 0.23f, 1.05f}, {0.30f, 0.23f, 1.05f}, {0.30f, 0.30f, 1.05f}, {-0.30f, 0.30f, 1.05f}, body);
-    b.box({0, 0.62f, -0.45f}, {0.30f, 0.16f, 0.10f}, seat);            // seat back
-    b.box({0, 0.58f, -0.80f}, {0.50f, 0.04f, 0.12f}, dark);            // spoiler
-    b.box({0, 0.45f, 0.55f}, {0.05f, 0.12f, 0.05f}, dark);             // steering column
-    b.box({0, 0.25f, -0.85f}, {0.20f, 0.10f, 0.10f}, dark);            // engine
-    const float wx = 0.55f, wr = 0.24f;
-    for (float z : {0.60f, -0.62f})
-        for (float x : {-wx, wx}) {
-            b.cylinder_x({x, wr, z}, wr, 0.12f, 6, dark);
-            b.box({x + (x > 0 ? 0.125f : -0.125f), wr, z}, {0.01f, 0.08f, 0.08f}, hub);
-        }
-    // Driver: body and head
-    b.box({0, 0.70f, -0.20f}, {0.20f, 0.18f, 0.16f}, driver);
-    b.icosphere({0, 1.05f, -0.15f}, 0.20f, rgba(240, 200, 160));
-    b.box({0, 1.20f, -0.15f}, {0.21f, 0.06f, 0.21f}, driver);          // cap
-    b.box({0, 1.16f, 0.06f}, {0.21f, 0.02f, 0.08f}, driver);           // cap brim
-    return b.take();
-}
-
 MeshData make_ground_mesh(float half, int cells) {
     MeshBuilder b;
     const float step = 2.0f * half / float(cells);

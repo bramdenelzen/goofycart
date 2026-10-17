@@ -302,4 +302,10 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     return in;
 }
 
+Build cpu_build(const PartsCatalog& parts, int seat) {
+    auto pick = [seat](size_t n, int mul, int add) { return n == 0 ? 0 : int((size_t(seat) * size_t(mul) + size_t(add)) % n); };
+    return {pick(parts.drivers.size(), 7, 1), pick(parts.bodies.size(), 3, 0), pick(parts.tires.size(), 5, 0),
+            pick(parts.gliders.size(), 1, 0)};
+}
+
 } // namespace gk::sim

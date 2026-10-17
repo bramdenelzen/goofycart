@@ -45,7 +45,6 @@ private:
 };
 
 // Procedural placeholder content until the glTF pipeline lands.
-MeshData make_kart_mesh(uint32_t body_color, uint32_t driver_color);
 MeshData make_ground_mesh(float half_size, int cells);
 MeshData make_tree_mesh();
 

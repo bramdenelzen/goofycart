@@ -34,12 +34,21 @@ using StatArray = std::array<int, kStatCount>;
 enum class DriftType : uint8_t { Outward, Inward }; // karts/ATVs/standard bikes vs sport bikes
 enum class EngineClass : uint8_t { cc50, cc100, cc150, cc200 };
 
+// How a part looks; the simulation ignores it.
+struct PartLook {
+    std::string shape;          // hat, body shape, tyre profile or glider style
+    uint32_t color = 0xffffff;  // 0xRRGGBB
+    uint32_t color2 = 0x404040;
+    float size = 1.0f;
+};
+
 struct Part {
     std::string id;
     std::string name;
     StatArray points{};
     DriftType drift = DriftType::Outward; // bodies only
     bool is_bike = false;                 // bodies only: bikes keep charging mini-turbos in the air
+    PartLook look;
 };
 
 struct Build {

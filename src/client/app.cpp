@@ -1,6 +1,7 @@
 #include "app.h"
 
 #include "render/item_mesh.h"
+#include "render/kart_mesh.h"
 #include "render/track_mesh.h"
 
 #include "gk/core/fixed_step.h"
@@ -149,7 +150,6 @@ bool App::init() {
         else if (options_.menu == "course") screen_ = Screen::Course;
         show_track(course_track(course_, tracks_));
     }
-    glider_mesh_ = renderer_.upload_mesh(render::make_glider_mesh(render::rgba(250, 250, 250)));
     spark_mesh_ = renderer_.upload_mesh(render::make_spark_mesh());
     flame_mesh_ = renderer_.upload_mesh(render::make_flame_mesh());
     box_mesh_ = renderer_.upload_mesh(render::make_item_box_mesh());
@@ -162,12 +162,31 @@ bool App::init() {
     boomerang_mesh_ = renderer_.upload_mesh(render::make_boomerang_mesh());
     bullet_mesh_ = renderer_.upload_mesh(render::make_bullet_mesh());
     chomper_mesh_ = renderer_.upload_mesh(render::make_chomper_mesh());
-    for (int i = 0; i < 12; ++i)
-        kart_meshes_.push_back(renderer_.upload_mesh(
-            render::make_kart_mesh(kKartColors[i], kKartColors[(i + 5) % 12])));
+    set_kart_meshes({});
     log_info("Renderer ready, internal resolution {}x{}", renderer_.internal_extent().width,
              renderer_.internal_extent().height);
     return true;
+}
+
+std::pair<render::MeshId, render::MeshId> App::build_mesh(const sim::Build& b, int slot) {
+    const uint64_t key = uint64_t(slot % 12) | uint64_t(b.driver & 0xff) << 8 | uint64_t(b.body & 0xff) << 16 |
+                         uint64_t(b.tires & 0xff) << 24 | uint64_t(b.glider & 0xff) << 32;
+    auto it = build_meshes_.find(key);
+    if (it == build_meshes_.end()) {
+        const render::KartLook look = render::kart_look(parts_, b, kKartColors[size_t(slot % 12)]);
+        it = build_meshes_.emplace(key, std::pair{renderer_.upload_mesh(render::make_kart_mesh(look)),
+                                                  renderer_.upload_mesh(render::make_glider_mesh(look.glider))}).first;
+    }
+    return it->second;
+}
+
+void App::set_kart_meshes(const std::vector<sim::Build>& builds) {
+    kart_meshes_.assign(12, 0);
+    glider_meshes_.assign(12, 0);
+    for (int i = 0; i < 12; ++i) {
+        const sim::Build b = size_t(i) < builds.size() ? builds[size_t(i)] : sim::Build{i % int(parts_.drivers.size()), 0, 0, 0};
+        std::tie(kart_meshes_[size_t(i)], glider_meshes_[size_t(i)]) = build_mesh(b, i);
+    }
 }
 
 std::string App::race_track_id() const {
@@ -217,6 +236,7 @@ void App::start_race() {
         world_ = std::make_unique<sim::World>(sim::make_time_trial_world(std::move(track), tables_, rc, params_for(options_.build)));
         player_ = 0;
         recording_ = {.track = id, .name = "YOU", .engine = rc.engine, .laps = rc.laps, .build = options_.build};
+        set_kart_meshes({options_.build});
         recording_done_ = false;
         // Race the personal best if it still replays on this version, else a CPU.
         sim::Ghost best;
@@ -226,25 +246,32 @@ void App::start_race() {
             const sim::KartParams bp = params_for(best.build);
             if (sim::ghost_still_valid(best, sim::make_track(tracks_, id), tables_, bp)) {
                 best_tick_ = best.finish_tick;
+                ghost_build_ = best.build;
                 ghost_ = std::make_unique<sim::GhostRunner>(sim::make_track(tracks_, id), tables_, rc, bp, &best);
             } else {
                 log_info("Ghost {} no longer matches the game; racing a CPU ghost instead", path);
             }
         }
-        if (!ghost_) ghost_ = std::make_unique<sim::GhostRunner>(sim::make_track(tracks_, id), tables_, rc, params_for({0, 1, 0, 0}), nullptr);
+        if (!ghost_) {
+            ghost_build_ = {3, 4, 2, 0}; // the CPU ghost drives a heavy racer
+            ghost_ = std::make_unique<sim::GhostRunner>(sim::make_track(tracks_, id), tables_, rc, params_for(ghost_build_), nullptr);
+        }
         ghost_prev_ = ghost_->kart();
     } else {
         world_ = std::make_unique<sim::World>(std::move(track), tables_, rc);
         const int karts = std::clamp(options_.karts, 1, 12);
         // The player starts at the back of the grid, as in a Grand Prix opener.
         player_ = karts - 1;
+        std::vector<sim::Build> builds;
         for (int i = 0; i < karts; ++i) {
             sim::Build b = options_.build;
-            if (i != player_) b = {i % int(parts_.drivers.size()), i % int(parts_.bodies.size()), (i / 2) % int(parts_.tires.size()), 0};
+            if (i != player_) b = sim::cpu_build(parts_, i);
             sim::KartParams p = params_for(b);
             if (i != player_) p.rubber_band = sim::cpu_rubber_band(course_.cpu);
             world_->add_kart(p);
+            builds.push_back(b);
         }
+        set_kart_meshes(builds);
     }
     prev_ = world_->karts();
     cam_init_ = false;
@@ -272,8 +299,9 @@ void App::draw_ghost(float alpha) {
     const mat4 m = glm::rotate(glm::translate(mat4(1.0f), glm::mix(ghost_prev_.pos, s.pos, alpha)) *
                                    glm::mat4_cast(glm::slerp(ghost_prev_.rot, s.rot, alpha)),
                                -s.visual_drift_yaw, vec3(0, 1, 0));
-    renderer_.draw(kart_meshes_[size_t((player_ + 6) % 12)], m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
-    if (s.gliding) renderer_.draw(glider_mesh_, m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
+    const auto [kart, glider] = build_mesh(ghost_build_, 6);
+    renderer_.draw(kart, m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
+    if (s.gliding) renderer_.draw(glider, m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
 }
 
 void App::finish_offline_race() {
@@ -312,6 +340,9 @@ void App::update() {
     if (online_) {
         const sim::World* w = online_->world();
         if (online_->race_id_changed(online_race_)) {
+            std::vector<sim::Build> builds;
+            for (const auto& seat : online_->setup().seats) builds.push_back(seat.build);
+            set_kart_meshes(builds);
             cam_init_ = false;
             message_ = {};
         }
@@ -570,7 +601,7 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     }
     if (s.item != sim::Item::None && s.roulette == 0 && s.bullet_frames == 0)
         draw_held_item(s.item, s.item_uses, base, s.trailing);
-    if (s.gliding) renderer_.draw(glider_mesh_, m, to_tint(kKartColors[size_t(index % 12)]));
+    if (s.gliding) renderer_.draw(glider_meshes_[size_t(index % 12)], m);
 
     const auto& kc = world()->tables().constants;
     if (s.drift == sim::DriftState::Drifting && s.mt_charge >= kc.spark_threshold) {
@@ -858,7 +889,7 @@ void App::render_menu(float dt) {
     renderer_.draw(track_mesh_, mat4(1.0f));
     renderer_.draw(scenery_mesh_, mat4(1.0f));
     const int mesh = online_ ? std::max(online_->seat(), 0) : std::clamp(options_.karts, 1, 12) - 1;
-    renderer_.draw(kart_meshes_[size_t(mesh % 12)], glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot));
+    renderer_.draw(build_mesh(select_.build, mesh).first, glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot));
     switch (screen_) {
     case Screen::Title: draw_title(renderer_, title_); break;
     case Screen::Options: draw_options(renderer_, options_menu_, settings_); break;

@@ -14,7 +14,7 @@ day one because it is the one decision that is expensive to retrofit.
 | 5. Items (done) | Item boxes and server-side roulette, two-slot holding, distribution by place and gap; core items first, then all 22 race items | Every item works online |
 | 6. CPU drivers (done) | Racing lines, pure-pursuit steering, drifting, item use, difficulty and rubber-banding | Bots finish races competitively |
 | 7a. Tracks and menus (done) | Data-driven tracks (spline + features), 8 themed tracks in 2 cups, title / cup / course menus, offline Grand Prix with standings, VS race, Time Trials, server cup rotation | Every track finishes a 12-CPU race; menus reach every mode |
-| 7b. Content and backend | Audio, Time Trial ghosts and options menu (done), options menu, more characters and parts, accounts and matchmaking over HTTPS | |
+| 7b. Content and backend | Audio, Time Trial ghosts, options menu, 16 drivers and 23 parts (done), options menu, more characters and parts, accounts and matchmaking over HTTPS | |
 | 8. Ship | Packaging, macOS notarisation, region servers, crash reporting, playtests | |
 
 ## Physics parity

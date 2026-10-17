@@ -256,17 +256,6 @@ MeshData make_scenery_mesh(const sim::Track& t) {
     return b.take();
 }
 
-MeshData make_glider_mesh(uint32_t color) {
-    MeshBuilder b;
-    const uint32_t frame = rgba(60, 60, 70);
-    // Swept wing above the driver.
-    b.quad({-1.4f, 1.75f, -0.4f}, {1.4f, 1.75f, -0.4f}, {0.5f, 1.85f, 0.5f}, {-0.5f, 1.85f, 0.5f}, color);
-    b.quad({-0.5f, 1.85f, 0.5f}, {0.5f, 1.85f, 0.5f}, {1.4f, 1.75f, -0.4f}, {-1.4f, 1.75f, -0.4f}, color);
-    b.box({0.35f, 1.4f, 0.0f}, {0.03f, 0.35f, 0.03f}, frame);
-    b.box({-0.35f, 1.4f, 0.0f}, {0.03f, 0.35f, 0.03f}, frame);
-    return b.take();
-}
-
 MeshData make_spark_mesh() {
     MeshBuilder b;
     b.icosphere({0, 0, 0}, 0.12f, rgba(255, 255, 255));

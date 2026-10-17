@@ -1,5 +1,6 @@
 #pragma once
 #include "gk/sim/input.h"
+#include "gk/sim/stats.h"
 
 #include <string_view>
 
@@ -34,5 +35,9 @@ float cpu_rubber_band(CpuLevel level);
 // client produce the same input for the same state: clients predict CPU karts
 // exactly as the server drives them.
 KartInput cpu_input(const World& world, int kart, const CpuSkill& skill);
+
+// The parts the CPU in a grid slot drives: every slot a different driver
+// while the roster allows, and a spread of bodies, tyres and gliders.
+Build cpu_build(const PartsCatalog& parts, int seat);
 
 } // namespace gk::sim

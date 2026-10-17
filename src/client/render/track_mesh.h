@@ -24,7 +24,6 @@ MeshData make_track_mesh(const sim::Track& track);
 // Low-poly scenery placed around the track, by theme.
 MeshData make_scenery_mesh(const sim::Track& track);
 
-MeshData make_glider_mesh(uint32_t color);
 MeshData make_spark_mesh();
 MeshData make_flame_mesh();
 

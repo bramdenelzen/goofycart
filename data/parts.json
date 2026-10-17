@@ -1,25 +1,50 @@
 {
-  "_comment": "Gobby Kart's own characters and parts. Stat points per part are summed and clamped to Level 0..20. Order: speed_ground, speed_water, speed_air, acceleration, weight, handling_ground, handling_water, handling_air, traction, mini_turbo, invincibility.",
+  "_comment": "Gobby Kart's own characters and parts. Stat points per part are summed and clamped to Level 0..20. Order: speed_ground, speed_water, speed_air, acceleration, weight, handling_ground, handling_water, handling_air, traction, mini_turbo, invincibility. \"look\" is for the renderer only: colours as #rrggbb, a shape name and a size.",
   "drivers": [
-    { "id": "pip",    "name": "Pip",    "points": [2, 3, 3, 5, 1, 7, 7, 7, 5, 5, 6] },
-    { "id": "gobby",  "name": "Gobby",  "points": [5, 5, 5, 4, 5, 5, 5, 5, 4, 3, 4] },
-    { "id": "mossa",  "name": "Mossa",  "points": [6, 6, 6, 3, 6, 4, 4, 4, 4, 2, 3] },
-    { "id": "brute",  "name": "Brute",  "points": [8, 7, 7, 2, 9, 2, 3, 3, 3, 1, 1] }
+    {"id": "pip", "name": "Pip", "points": [2, 3, 3, 5, 1, 7, 7, 7, 5, 5, 6], "look": {"color": "#f0c8a0", "color2": "#8040c0", "shape": "cap", "size": 0.85}},
+    {"id": "gobby", "name": "Gobby", "points": [5, 5, 5, 4, 5, 5, 5, 5, 4, 3, 4], "look": {"color": "#88c060", "color2": "#e04030", "shape": "cap", "size": 1.0}},
+    {"id": "mossa", "name": "Mossa", "points": [6, 6, 6, 3, 6, 4, 4, 4, 4, 2, 3], "look": {"color": "#a0d0a0", "color2": "#2f7a4a", "shape": "beanie", "size": 1.05}},
+    {"id": "brute", "name": "Brute", "points": [8, 7, 7, 2, 9, 2, 3, 3, 3, 1, 1], "look": {"color": "#c08060", "color2": "#505060", "shape": "horns", "size": 1.25}},
+    {"id": "tiko", "name": "Tiko", "points": [2, 3, 3, 5, 1, 7, 7, 7, 5, 5, 6], "look": {"color": "#ffd870", "color2": "#3090e0", "shape": "ears", "size": 0.8}},
+    {"id": "nell", "name": "Nell", "points": [3, 3, 3, 5, 2, 6, 6, 6, 6, 5, 5], "look": {"color": "#f4d0b8", "color2": "#e070b0", "shape": "bow", "size": 0.9}},
+    {"id": "zest", "name": "Zest", "points": [3, 3, 3, 5, 2, 6, 6, 6, 6, 5, 5], "look": {"color": "#ffb040", "color2": "#40c040", "shape": "bandana", "size": 0.9}},
+    {"id": "juniper", "name": "Juniper", "points": [4, 4, 4, 4, 3, 6, 6, 6, 5, 4, 5], "look": {"color": "#d8a880", "color2": "#4060c0", "shape": "beanie", "size": 0.95}},
+    {"id": "quill", "name": "Quill", "points": [4, 4, 4, 4, 3, 6, 6, 6, 5, 4, 5], "look": {"color": "#b0b8ff", "color2": "#f0f0f0", "shape": "tophat", "size": 0.95}},
+    {"id": "coral", "name": "Coral", "points": [5, 5, 5, 4, 5, 5, 5, 5, 4, 3, 4], "look": {"color": "#ff9080", "color2": "#20b0b0", "shape": "bow", "size": 1.0}},
+    {"id": "marlo", "name": "Marlo", "points": [6, 6, 6, 3, 6, 4, 4, 4, 4, 2, 3], "look": {"color": "#9a6a48", "color2": "#f0a020", "shape": "helmet", "size": 1.05}},
+    {"id": "rook", "name": "Rook", "points": [7, 6, 6, 3, 7, 3, 3, 3, 6, 2, 2], "look": {"color": "#707888", "color2": "#202028", "shape": "helmet", "size": 1.15}},
+    {"id": "bramble", "name": "Bramble", "points": [7, 6, 6, 3, 7, 3, 3, 3, 6, 2, 2], "look": {"color": "#8a6038", "color2": "#609030", "shape": "ears", "size": 1.15}},
+    {"id": "flint", "name": "Flint", "points": [7, 7, 7, 2, 8, 3, 3, 3, 3, 2, 2], "look": {"color": "#a8a8a0", "color2": "#c03020", "shape": "bandana", "size": 1.2}},
+    {"id": "sable", "name": "Sable", "points": [7, 7, 7, 2, 8, 3, 3, 3, 3, 2, 2], "look": {"color": "#3a3040", "color2": "#a060e0", "shape": "crown", "size": 1.2}},
+    {"id": "ozzy", "name": "Ozzy", "points": [8, 7, 7, 2, 9, 2, 3, 3, 3, 1, 1], "look": {"color": "#60a0c0", "color2": "#f0e040", "shape": "horns", "size": 1.3}}
   ],
   "bodies": [
-    { "id": "standard", "name": "Standard Kart", "points": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2] },
-    { "id": "pipe",     "name": "Pipe Frame",    "points": [1, 2, 1, 4, 1, 4, 3, 3, 3, 4, 3] },
-    { "id": "buggy",    "name": "Mud Buggy",     "points": [3, 2, 2, 1, 4, 1, 1, 2, 4, 1, 2] },
-    { "id": "sport",    "name": "Sport Bike",    "points": [2, 2, 2, 3, 1, 3, 3, 3, 1, 3, 2], "drift": "inward", "bike": true }
+    {"id": "standard", "name": "Standard Kart", "points": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "look": {"shape": "kart", "color2": "#303038"}},
+    {"id": "pipe", "name": "Pipe Frame", "points": [1, 2, 1, 4, 1, 4, 3, 3, 3, 4, 3], "look": {"shape": "pipe", "color2": "#c0c0c8"}},
+    {"id": "buggy", "name": "Mud Buggy", "points": [3, 2, 2, 1, 4, 1, 1, 2, 4, 1, 2], "look": {"shape": "buggy", "color2": "#3a3a2a"}},
+    {"id": "sport", "name": "Sport Bike", "points": [2, 2, 2, 3, 1, 3, 3, 3, 1, 3, 2], "look": {"shape": "bike", "color2": "#202020"}, "drift": "inward", "bike": true},
+    {"id": "racer", "name": "Turbo Racer", "points": [3, 3, 3, 1, 3, 1, 2, 2, 1, 1, 1], "look": {"shape": "racer", "color2": "#f0f0f0"}},
+    {"id": "tub", "name": "Tin Tub", "points": [2, 3, 2, 2, 3, 2, 3, 2, 2, 2, 3], "look": {"shape": "tub", "color2": "#d0d0d8"}},
+    {"id": "trike", "name": "Dune Trike", "points": [1, 1, 2, 3, 1, 3, 2, 3, 3, 3, 2], "look": {"shape": "trike", "color2": "#704020"}},
+    {"id": "scooter", "name": "City Scooter", "points": [1, 2, 1, 4, 0, 4, 3, 4, 2, 4, 3], "look": {"shape": "scooter", "color2": "#e8e8e8"}, "drift": "inward", "bike": true},
+    {"id": "hauler", "name": "Hauler", "points": [4, 3, 3, 0, 5, 0, 1, 1, 3, 0, 2], "look": {"shape": "truck", "color2": "#404048"}},
+    {"id": "chopper", "name": "Chopper", "points": [3, 2, 3, 1, 3, 2, 2, 2, 2, 1, 1], "look": {"shape": "chopper", "color2": "#c0a040"}, "bike": true}
   ],
   "tires": [
-    { "id": "standard", "name": "Standard",  "points": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2] },
-    { "id": "roller",   "name": "Roller",    "points": [0, 1, 1, 5, 0, 2, 2, 2, 3, 5, 3] },
-    { "id": "slick",    "name": "Slick",     "points": [4, 3, 3, 1, 3, 1, 1, 1, 0, 1, 1] },
-    { "id": "monster",  "name": "Monster",   "points": [2, 2, 2, 0, 4, 0, 0, 0, 4, 0, 2] }
+    {"id": "standard", "name": "Standard", "points": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2], "look": {"shape": "normal", "color": "#282830", "color2": "#c8c8d2", "size": 1.0}},
+    {"id": "roller", "name": "Roller", "points": [0, 1, 1, 5, 0, 2, 2, 2, 3, 5, 3], "look": {"shape": "thin", "color": "#e0e0e0", "color2": "#f0c020", "size": 0.75}},
+    {"id": "slick", "name": "Slick", "points": [4, 3, 3, 1, 3, 1, 1, 1, 0, 1, 1], "look": {"shape": "wide", "color": "#202024", "color2": "#d03030", "size": 1.0}},
+    {"id": "monster", "name": "Monster", "points": [2, 2, 2, 0, 4, 0, 0, 0, 4, 0, 2], "look": {"shape": "chunky", "color": "#303030", "color2": "#a0a0a0", "size": 1.45}},
+    {"id": "button", "name": "Button", "points": [1, 1, 1, 4, 0, 3, 3, 3, 2, 4, 3], "look": {"shape": "thin", "color": "#e05050", "color2": "#f8f8f8", "size": 0.7}},
+    {"id": "knobby", "name": "Knobby", "points": [2, 2, 2, 1, 2, 1, 1, 1, 5, 1, 2], "look": {"shape": "chunky", "color": "#3a3020", "color2": "#d0b060", "size": 1.2}},
+    {"id": "cushion", "name": "Cushion", "points": [1, 2, 2, 3, 1, 2, 3, 2, 3, 3, 4], "look": {"shape": "wide", "color": "#5070c0", "color2": "#f0f0f0", "size": 1.05}},
+    {"id": "wooden", "name": "Wooden", "points": [2, 3, 2, 2, 2, 1, 2, 1, 4, 2, 3], "look": {"shape": "normal", "color": "#a07040", "color2": "#603818", "size": 1.0}}
   ],
   "gliders": [
-    { "id": "wing",     "name": "Wing",      "points": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
-    { "id": "parafoil", "name": "Parafoil",  "points": [0, 0, 0, 2, 0, 1, 1, 2, 1, 2, 1] }
+    {"id": "wing", "name": "Wing", "points": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "look": {"shape": "wing", "color": "#f8f8f8", "color2": "#404048"}},
+    {"id": "parafoil", "name": "Parafoil", "points": [0, 0, 0, 2, 0, 1, 1, 2, 1, 2, 1], "look": {"shape": "parafoil", "color": "#f06030", "color2": "#f0d040"}},
+    {"id": "kite", "name": "Kite", "points": [1, 1, 2, 1, 1, 0, 1, 2, 1, 1, 1], "look": {"shape": "kite", "color": "#40a0f0", "color2": "#f0f0f0"}},
+    {"id": "umbrella", "name": "Umbrella", "points": [0, 1, 0, 2, 0, 1, 1, 1, 1, 2, 1], "look": {"shape": "umbrella", "color": "#e04080", "color2": "#f8f8f8"}},
+    {"id": "leaf", "name": "Big Leaf", "points": [0, 0, 1, 2, 0, 1, 0, 2, 0, 2, 1], "look": {"shape": "leaf", "color": "#50a040", "color2": "#305020"}}
   ]
 }

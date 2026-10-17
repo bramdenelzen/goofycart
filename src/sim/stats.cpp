@@ -100,6 +100,15 @@ bool PartsCatalog::load(const std::string& path, std::string* error) {
                 for (int i = 0; i < kStatCount && i < int(pts.size()); ++i) p.points[i] = pts[i].get<int>();
                 p.drift = e.value("drift", "outward") == "inward" ? DriftType::Inward : DriftType::Outward;
                 p.is_bike = e.value("bike", false);
+                if (const auto it = e.find("look"); it != e.end()) {
+                    auto hex = [](const std::string& h, uint32_t fallback) {
+                        return h.size() == 7 && h[0] == '#' ? uint32_t(std::stoul(h.substr(1), nullptr, 16)) : fallback;
+                    };
+                    p.look.shape = it->value("shape", "");
+                    p.look.color = hex(it->value("color", ""), p.look.color);
+                    p.look.color2 = hex(it->value("color2", ""), p.look.color2);
+                    p.look.size = it->value("size", 1.0f);
+                }
                 out.push_back(std::move(p));
             }
         };

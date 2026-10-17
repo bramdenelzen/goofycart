@@ -105,6 +105,15 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 | `--name NAME` | Your name online |
 | `--lag MS --loss PCT --jitter MS` | Simulate a bad connection (added round trip, packet loss, jitter) |
 
+## Racers and parts
+
+16 drivers in seven weight classes (Pip and Tiko are the lightest, Brute and
+Ozzy the heaviest), 10 bodies (karts, a buggy, a tub, a trike, a hauler and
+three bikes), 8 tyre sets and 5 gliders, all in `data/parts.json`. Each part
+adds stat points; the sum per stat is the kart's level 0 to 20. Each part
+also has a `look` (colours, a hat or body shape, tyre size) that the client
+builds the low-poly kart from, so new parts need no art files.
+
 ## Tracks
 
 Tracks are data: each file in `data/tracks/` is a closed spline of

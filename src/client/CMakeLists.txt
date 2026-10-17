@@ -38,6 +38,7 @@ add_executable(gk_client
   settings.cpp
   render/mesh.cpp
   render/track_mesh.cpp
+  render/kart_mesh.cpp
   render/item_mesh.cpp
   render/renderer.cpp
 )
