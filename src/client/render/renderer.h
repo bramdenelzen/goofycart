@@ -126,7 +126,10 @@ private:
     Image create_image(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect);
     void destroy_image(Image& img);
     void finish_readback(Frame& f);
+    bool create_textures();
 
+    Image textures_;                   // the texture array (textures.h)
+    VkSampler sampler_ = VK_NULL_HANDLE;
     SDL_Window* window_ = nullptr;
     RendererOptions options_;
     std::string device_name_;

@@ -1,5 +1,7 @@
 #include "kart_mesh.h"
 
+#include "textures.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -47,12 +49,14 @@ struct Wheel {
 
 void wheels(MeshBuilder& b, const std::vector<Wheel>& ws, const sim::PartLook& t) {
     const float hw = t.shape == "thin" ? 0.06f : t.shape == "wide" ? 0.17f : t.shape == "chunky" ? 0.16f : 0.12f;
-    const int sides = t.shape == "chunky" ? 8 : 6;
+    const int sides = t.shape == "chunky" ? 12 : 10;
     const uint32_t tread = hex_rgba(t.color), hub = hex_rgba(t.color2);
     for (const Wheel& w : ws) {
         const float r = 0.24f * t.size * w.scale;
         const vec3 c(w.x, r, w.z);
+        b.texture(TexTread, 0.25f);
         b.cylinder_x(c, r, hw, sides, tread);
+        b.texture(TexWhite);
         const float side = w.x > 0.01f ? 1.0f : w.x < -0.01f ? -1.0f : 0.0f;
         if (side != 0.0f) b.box(c + vec3(side * (hw + 0.005f), 0, 0), {0.01f, r * 0.35f, r * 0.35f}, hub);
         else for (float s : {-1.0f, 1.0f}) b.box(c + vec3(s * (hw + 0.005f), 0, 0), {0.01f, r * 0.35f, r * 0.35f}, hub);
@@ -128,6 +132,7 @@ MeshData make_kart_mesh(const KartLook& l) {
     bool bike = false;
     std::vector<Wheel> ws{{-0.55f, 0.6f}, {0.55f, 0.6f}, {-0.55f, -0.62f}, {0.55f, -0.62f}};
     MeshBuilder body;
+    body.texture(TexPanel, 0.8f);
 
     if (shape == "pipe") {
         for (float x : {-0.4f, 0.4f}) body.box({x, 0.32f, 0}, {0.04f, 0.04f, 0.8f}, trim);
@@ -216,6 +221,7 @@ MeshData make_kart_mesh(const KartLook& l) {
         body.box({0, 0.45f, 0.55f}, {0.05f, 0.12f, 0.05f}, kDark);
         body.box({0, 0.25f, -0.85f}, {0.20f, 0.10f, 0.10f}, kDark);
     }
+    body.texture(TexWhite);
     driver(body, seat, l.driver, bike);
     b.append(body.data(), glm::translate(mat4(1.0f), vec3(0, lift, 0)));
     wheels(b, ws, l.tires);

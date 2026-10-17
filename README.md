@@ -1,7 +1,7 @@
 # Gobby Kart
 
 A multiplayer kart racer in the style of Mario Kart 8 Deluxe, written in C++20
-with Vulkan. Low-res, low-poly art; 12 racers per race with CPU drivers filling
+with Vulkan. Low-res art with chunky procedural textures (no image files); 12 racers per race with CPU drivers filling
 empty seats; a dedicated server with server-authoritative racing over UDP.
 
 Status: early development. See [docs/ROADMAP.md](docs/ROADMAP.md) for phases.

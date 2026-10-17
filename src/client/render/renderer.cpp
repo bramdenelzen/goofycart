@@ -3,6 +3,8 @@
 #define VMA_DYNAMIC_VULKAN_FUNCTIONS 1
 #include "renderer.h"
 
+#include "textures.h"
+
 #include "gk/core/log.h"
 
 #include <SDL3/SDL.h>
@@ -152,19 +154,25 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
     ai.pVulkanFunctions = &funcs;
     GK_VK_CHECK(vmaCreateAllocator(&ai, &allocator_));
 
-    // Descriptor layout: one uniform buffer with per-frame camera and lighting.
-    VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
-                                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    if (!create_textures()) return false;
+
+    // Descriptor layout: a uniform buffer with per-frame camera and lighting,
+    // and the texture array.
+    const VkDescriptorSetLayoutBinding bindings[2] = {
+        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+    };
     VkDescriptorSetLayoutCreateInfo dsl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    dsl.bindingCount = 1;
-    dsl.pBindings = &binding;
+    dsl.bindingCount = 2;
+    dsl.pBindings = bindings;
     GK_VK_CHECK(vkCreateDescriptorSetLayout(device_, &dsl, nullptr, &set_layout_));
 
-    VkDescriptorPoolSize pool_size{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kFramesInFlight};
+    const VkDescriptorPoolSize pool_sizes[2] = {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kFramesInFlight},
+                                                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight}};
     VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dp.maxSets = kFramesInFlight;
-    dp.poolSizeCount = 1;
-    dp.pPoolSizes = &pool_size;
+    dp.poolSizeCount = 2;
+    dp.pPoolSizes = pool_sizes;
     GK_VK_CHECK(vkCreateDescriptorPool(device_, &dp, nullptr, &descriptor_pool_));
 
     for (auto& f : frames_) {
@@ -193,13 +201,19 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
         da.pSetLayouts = &set_layout_;
         GK_VK_CHECK(vkAllocateDescriptorSets(device_, &da, &f.set));
         VkDescriptorBufferInfo bi{f.uniforms.buffer, 0, sizeof(FrameUniforms)};
-        VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        w.dstSet = f.set;
-        w.dstBinding = 0;
-        w.descriptorCount = 1;
-        w.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        w.pBufferInfo = &bi;
-        vkUpdateDescriptorSets(device_, 1, &w, 0, nullptr);
+        VkDescriptorImageInfo ii{sampler_, textures_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet w[2] = {{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}, {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+        w[0].dstSet = f.set;
+        w[0].dstBinding = 0;
+        w[0].descriptorCount = 1;
+        w[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        w[0].pBufferInfo = &bi;
+        w[1].dstSet = f.set;
+        w[1].dstBinding = 1;
+        w[1].descriptorCount = 1;
+        w[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        w[1].pImageInfo = &ii;
+        vkUpdateDescriptorSets(device_, 2, w, 0, nullptr);
     }
 
     if (!create_pipeline()) return false;
@@ -232,6 +246,8 @@ void Renderer::shutdown() {
     vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
     vkDestroyPipeline(device_, ui_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, ui_layout_, nullptr);
+    destroy_image(textures_);
+    vkDestroySampler(device_, sampler_, nullptr);
     vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
     vkDestroyDescriptorSetLayout(device_, set_layout_, nullptr);
     vmaDestroyAllocator(allocator_);
@@ -322,15 +338,17 @@ bool Renderer::create_pipeline() {
     stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main", nullptr};
 
     VkVertexInputBindingDescription vb{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription attrs[3] = {
+    VkVertexInputAttributeDescription attrs[5] = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, pos)},
         {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)},
         {2, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(Vertex, color)},
+        {3, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)},
+        {4, 0, VK_FORMAT_R32_UINT, offsetof(Vertex, layer)},
     };
     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     vi.vertexBindingDescriptionCount = 1;
     vi.pVertexBindingDescriptions = &vb;
-    vi.vertexAttributeDescriptionCount = 3;
+    vi.vertexAttributeDescriptionCount = 5;
     vi.pVertexAttributeDescriptions = attrs;
 
     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
@@ -545,6 +563,99 @@ Renderer::Image Renderer::create_image(VkExtent2D extent, VkFormat format, VkIma
         return {};
     }
     return img;
+}
+
+bool Renderer::create_textures() {
+    const std::vector<uint8_t> pixels = make_texture_layers();
+    VkImageCreateInfo ic{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ic.imageType = VK_IMAGE_TYPE_2D;
+    ic.format = VK_FORMAT_R8G8B8A8_UNORM;
+    ic.extent = {uint32_t(kTexSize), uint32_t(kTexSize), 1};
+    ic.mipLevels = kTexMips;
+    ic.arrayLayers = TexCount;
+    ic.samples = VK_SAMPLE_COUNT_1_BIT;
+    ic.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ic.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    VmaAllocationCreateInfo ac{};
+    ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    if (vmaCreateImage(allocator_, &ic, &ac, &textures_.image, &textures_.alloc, nullptr) != VK_SUCCESS) {
+        log_error("Texture allocation failed");
+        return false;
+    }
+    VkImageViewCreateInfo vc{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vc.image = textures_.image;
+    vc.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    vc.format = ic.format;
+    vc.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, uint32_t(kTexMips), 0, uint32_t(TexCount)};
+    GK_VK_CHECK(vkCreateImageView(device_, &vc, nullptr, &textures_.view));
+
+    // Chunky texels up close, the smaller mips further away.
+    VkSamplerCreateInfo sc{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    sc.magFilter = VK_FILTER_NEAREST;
+    sc.minFilter = VK_FILTER_NEAREST;
+    sc.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sc.addressModeU = sc.addressModeV = sc.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sc.maxLod = float(kTexMips);
+    GK_VK_CHECK(vkCreateSampler(device_, &sc, nullptr, &sampler_));
+
+    // Upload through a staging buffer, once.
+    Buffer staging = create_buffer(pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+    if (!staging.mapped) return false;
+    std::memcpy(staging.mapped, pixels.data(), pixels.size());
+    vmaFlushAllocation(allocator_, staging.alloc, 0, VK_WHOLE_SIZE);
+    std::vector<VkBufferImageCopy> copies;
+    VkDeviceSize offset = 0;
+    for (uint32_t layer = 0; layer < TexCount; ++layer)
+        for (uint32_t mip = 0; mip < uint32_t(kTexMips); ++mip) {
+            const uint32_t size = uint32_t(kTexSize) >> mip;
+            VkBufferImageCopy c{};
+            c.bufferOffset = offset;
+            c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, layer, 1};
+            c.imageExtent = {size, size, 1};
+            copies.push_back(c);
+            offset += VkDeviceSize(size) * size * 4;
+        }
+
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VkCommandPoolCreateInfo cp{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    cp.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    cp.queueFamilyIndex = queue_family_;
+    GK_VK_CHECK(vkCreateCommandPool(device_, &cp, nullptr, &pool));
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VkCommandBufferAllocateInfo ca{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    ca.commandPool = pool;
+    ca.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    ca.commandBufferCount = 1;
+    GK_VK_CHECK(vkAllocateCommandBuffers(device_, &ca, &cmd));
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &bi);
+    VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = textures_.image;
+    b.subresourceRange = vc.subresourceRange;
+    b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr,
+                         1, &b);
+    vkCmdCopyBufferToImage(cmd, staging.buffer, textures_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           uint32_t(copies.size()), copies.data());
+    b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 1, &b);
+    vkEndCommandBuffer(cmd);
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cmd;
+    GK_VK_CHECK(vkQueueSubmit(queue_, 1, &si, VK_NULL_HANDLE));
+    vkQueueWaitIdle(queue_);
+    vkDestroyCommandPool(device_, pool, nullptr);
+    destroy_buffer(staging);
+    return true;
 }
 
 void Renderer::destroy_image(Image& img) {

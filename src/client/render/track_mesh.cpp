@@ -1,6 +1,10 @@
 #include "track_mesh.h"
 
+#include "textures.h"
+
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace gk::render {
 namespace {
@@ -83,31 +87,106 @@ const ThemeStyle& theme_style(const std::string& theme) {
     return kThemes[0].second;
 }
 
+// Texture for a surface in a theme: offroad and the ground below take the
+// theme's terrain.
+uint32_t surface_texture(const std::string& theme, sim::Surface s) {
+    using sim::Surface;
+    auto terrain = [&](bool heavy) -> uint32_t {
+        if (theme == "snow") return TexSnow;
+        if (theme == "desert") return heavy ? TexDirt : TexSand;
+        if (theme == "canyon") return heavy ? TexRock : TexDirt;
+        if (theme == "volcano") return TexRock;
+        if (theme == "sky") return TexCloud;
+        return heavy ? TexDirt : TexGrass;
+    };
+    switch (s) {
+    case Surface::Road: return TexAsphalt;
+    case Surface::OffroadLight: return terrain(false);
+    case Surface::OffroadMedium: return terrain(true);
+    case Surface::OffroadHeavy: return terrain(true);
+    case Surface::Sand: return TexSand;
+    case Surface::Ice: return TexIce;
+    case Surface::Water: return TexWater;
+    case Surface::BoostPad: return TexArrows;
+    case Surface::GlideRamp: return TexArrows;
+    case Surface::TrickRamp: return TexStripes;
+    case Surface::Wall: return TexPanel;
+    case Surface::OutOfBounds: return terrain(false);
+    case Surface::Count: break;
+    }
+    return TexWhite;
+}
+
+// What obstacles are made of, by theme: texture and colour.
+std::pair<uint32_t, uint32_t> obstacle_look(const std::string& theme, bool pillar) {
+    if (theme == "desert" || theme == "canyon") return {TexRock, rgba(176, 120, 82)};
+    if (theme == "snow") return {TexIce, rgba(180, 220, 245)};
+    if (theme == "volcano") return {TexPanel, rgba(90, 84, 90)};
+    if (theme == "sky") return {TexPanel, rgba(236, 236, 248)};
+    if (theme == "night") return {TexPanel, pillar ? rgba(80, 60, 140) : rgba(60, 200, 230)};
+    if (pillar) return {TexRock, rgba(150, 150, 140)};
+    return {TexWood, rgba(196, 150, 96)}; // crates
+}
+
 MeshData make_track_mesh(const sim::Track& t) {
     const ThemeStyle& th = theme_style(t.theme);
     MeshBuilder b;
     const sim::CenterSample& start = t.center.front();
-    for (const auto& tri : t.triangles) {
+    const int n = int(t.center.size());
+    constexpr int kStride = 9; // vertices per centre sample (track_builder.cpp)
+    const uint32_t grid_end = uint32_t(n * kStride);
+    std::vector<int> obstacle_of(t.triangles.size(), -1);
+    for (size_t o = 0; o < t.obstacles.size(); ++o)
+        for (uint32_t i = 0; i < t.obstacles[o].tri_count; ++i) obstacle_of[t.obstacles[o].first_tri + i] = int(o);
+
+    // Texture coordinates that follow the road: along it by distance and
+    // across it by metres from the centre (or up a wall).
+    auto road_uv = [&](uint32_t vi, bool wall, float tile, bool seam) {
+        const int sample = int(vi / kStride), col = int(vi % kStride);
+        const sim::CenterSample& c = t.center[size_t(sample)];
+        const float s = (seam && sample == 0) ? t.length : c.s;
+        const vec3 d = t.vertices[vi] - c.pos;
+        if (wall) return vec2(s / tile, (col >= 7 ? -glm::dot(d, c.up) : 0.0f) / tile);
+        return vec2(glm::dot(d, c.right) / tile, s / tile);
+    };
+
+    for (size_t ti = 0; ti < t.triangles.size(); ++ti) {
+        const auto& tri = t.triangles[ti];
         const vec3 a = t.vertices[tri.a], c1 = t.vertices[tri.b], c2 = t.vertices[tri.c];
         const vec3 centroid = (a + c1 + c2) / 3.0f;
-        uint32_t color = surface_color(th, tri.surface);
-        if (tri.surface == sim::Surface::Wall) {
-            color = checker(centroid, 2.0f) ? th.wall_a : th.wall_b;
-        } else if (tri.surface == sim::Surface::OutOfBounds) {
-            // keep flat
-        } else {
-            color = shade(color, checker(centroid, 3.0f) ? 1.0f : 0.92f);
-            const float along = glm::dot(centroid - start.pos, start.tangent);
-            const float across = glm::dot(centroid - start.pos, start.right);
-            if (tri.surface == sim::Surface::Road && std::abs(along) < 1.0f && std::abs(across) < start.half_width)
-                color = (int(std::floor(across)) & 1) ? rgba(20, 20, 20) : rgba(240, 240, 240);
+        if (obstacle_of[ti] >= 0) {
+            const auto& o = t.obstacles[size_t(obstacle_of[ti])];
+            const auto [tex, color] = obstacle_look(t.theme, o.sides > 4);
+            b.texture(tex, o.sides > 4 ? 2.0f : 2.0f * std::max(o.half.x, o.half.y));
+            b.tri(a, c1, c2, color);
+            continue;
         }
-        b.tri(a, c1, c2, color);
-        if (tri.surface == sim::Surface::OutOfBounds) continue;
-        if (tri.surface == sim::Surface::Wall) {
-            b.tri(a, c2, c1, shade(color, 0.7f)); // outside face
+        uint32_t color = surface_color(th, tri.surface);
+        if (tri.surface == sim::Surface::Wall) color = checker(centroid, 2.0f) ? th.wall_a : th.wall_b;
+        const float along = glm::dot(centroid - start.pos, start.tangent);
+        const float across = glm::dot(centroid - start.pos, start.right);
+        if (tri.surface == sim::Surface::Road && std::abs(along) < 1.0f && std::abs(across) < start.half_width)
+            color = (int(std::floor(across)) & 1) ? rgba(20, 20, 20) : rgba(240, 240, 240);
+        b.texture(surface_texture(t.theme, tri.surface), tri.surface == sim::Surface::OutOfBounds ? 8.0f : 2.0f);
+
+        const bool on_grid = tri.a < grid_end && tri.b < grid_end && tri.c < grid_end;
+        if (!on_grid) {
+            b.tri(a, c1, c2, color);
+            continue;
+        }
+        const bool wall = tri.surface == sim::Surface::Wall;
+        const bool seam = std::max({tri.a, tri.b, tri.c}) / kStride == uint32_t(n - 1) &&
+                          std::min({tri.a, tri.b, tri.c}) / kStride == 0;
+        const bool pad = tri.surface == sim::Surface::BoostPad || tri.surface == sim::Surface::GlideRamp;
+        const float tile = pad ? 4.0f : tri.surface == sim::Surface::TrickRamp ? 3.0f : 2.0f;
+        const vec2 ua = road_uv(tri.a, wall, tile, seam), ub = road_uv(tri.b, wall, tile, seam),
+                   uc = road_uv(tri.c, wall, tile, seam);
+        b.tri_uv(a, c1, c2, ua, ub, uc, color);
+        if (wall) {
+            b.tri_uv(a, c2, c1, ua, uc, ub, shade(color, 0.7f)); // outside face
         } else {
             const vec3 down(0.0f, -1.2f, 0.0f);
+            b.texture(TexRock, 3.0f);
             b.tri(a + down, c2 + down, c1 + down, th.underside);
         }
     }
@@ -151,6 +230,7 @@ MeshData make_scenery_mesh(const sim::Track& t) {
             }
             if (!clear) continue;
             const float h = top.y - floor_y;
+            b.texture(t.theme == "night" || t.theme == "volcano" || t.theme == "sky" ? TexPanel : TexRock, 2.0f);
             b.box(vec3(top.x, floor_y + h * 0.5f, top.z), vec3(0.8f, h * 0.5f, 0.8f), th.wall_b);
         }
     }
@@ -171,8 +251,10 @@ MeshData make_scenery_mesh(const sim::Track& t) {
             case S::Trees: {
                 base.y -= 6.0f + rnd() * 14.0f;
                 const float r = 3.0f + rnd() * 4.0f;
-                b.cone(base, r, -3.5f - rnd() * 3.0f, 6, rgba(110, 82, 58));
-                b.cone(base, r, 0.4f, 6, rgba(96, 168, 70));
+                b.texture(TexDirt, 2.0f);
+                b.cone(base, r, -3.5f - rnd() * 3.0f, 10, rgba(110, 82, 58));
+                b.texture(TexGrass, 2.0f);
+                b.cone(base, r, 0.4f, 10, rgba(96, 168, 70));
                 const int trees = 1 + int(rnd() * 3.0f);
                 for (int k = 0; k < trees; ++k) {
                     const vec3 off(rnd() * r - r * 0.5f, 0.2f, rnd() * r - r * 0.5f);
@@ -184,10 +266,12 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 base.y = floor_y;
                 const float h = 4.0f + rnd() * 5.0f;
                 const uint32_t g = rgba(70, 150, 80);
+                b.texture(TexBark, 1.0f);
                 b.box(base + vec3(0, h * 0.5f, 0), vec3(0.5f, h * 0.5f, 0.5f), g);
                 b.box(base + vec3(0.9f, h * 0.55f, 0), vec3(0.4f, 0.3f, 0.4f), g);
                 b.box(base + vec3(1.2f, h * 0.7f, 0), vec3(0.3f, h * 0.2f, 0.3f), g);
-                b.cone(base, 3.0f + rnd() * 4.0f, 1.2f, 6, rgba(230, 196, 132));
+                b.texture(TexSand, 2.0f);
+                b.cone(base, 3.0f + rnd() * 4.0f, 1.2f, 10, rgba(230, 196, 132));
                 break;
             }
             case S::Harbor: {
@@ -196,24 +280,30 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                     const float yaw = rnd() * 6.28f;
                     const mat4 m = glm::rotate(glm::translate(mat4(1.0f), base), yaw, kUp);
                     MeshBuilder boat;
+                    boat.texture(TexWood, 1.5f);
                     boat.box({0, 0.5f, 0}, {1.2f, 0.5f, 3.0f}, rgba(240, 240, 240));
                     boat.box({0, 1.4f, -0.5f}, {0.8f, 0.5f, 1.0f}, rgba(220, 60, 50));
                     boat.box({0, 3.0f, 0.8f}, {0.08f, 2.0f, 0.08f}, rgba(90, 70, 50));
                     b.append(boat.take(), m);
                 } else { // buoy
-                    b.cone(base, 0.8f, 1.8f, 6, rgba(250, 120, 40));
+                    b.texture(TexStripes, 1.0f);
+                    b.cone(base, 0.8f, 1.8f, 10, rgba(250, 120, 40));
                 }
                 break;
             }
             case S::Pines: {
                 base.y -= 4.0f + rnd() * 10.0f;
-                b.cone(base, 5.0f + rnd() * 3.0f, -4.0f, 6, rgba(120, 120, 130));
-                b.cone(base, 5.0f, 0.5f, 6, rgba(240, 245, 252));
+                b.texture(TexRock, 2.0f);
+                b.cone(base, 5.0f + rnd() * 3.0f, -4.0f, 10, rgba(120, 120, 130));
+                b.texture(TexSnow, 2.0f);
+                b.cone(base, 5.0f, 0.5f, 10, rgba(240, 245, 252));
                 for (int k = 0; k < 2; ++k) {
                     const vec3 p = base + vec3(rnd() * 4.0f - 2.0f, 0.4f, rnd() * 4.0f - 2.0f);
-                    b.cone(p, 1.6f, 3.0f, 6, rgba(40, 100, 70));
-                    b.cone(p + vec3(0, 2.0f, 0), 1.2f, 2.6f, 6, rgba(46, 112, 78));
-                    b.cone(p + vec3(0, 3.8f, 0), 0.7f, 1.4f, 6, rgba(240, 245, 252));
+                    b.texture(TexLeaves, 1.0f);
+                    b.cone(p, 1.6f, 3.0f, 8, rgba(40, 100, 70));
+                    b.cone(p + vec3(0, 2.0f, 0), 1.2f, 2.6f, 8, rgba(46, 112, 78));
+                    b.texture(TexSnow, 1.0f);
+                    b.cone(p + vec3(0, 3.8f, 0), 0.7f, 1.4f, 8, rgba(240, 245, 252));
                 }
                 break;
             }
@@ -221,22 +311,25 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 base.y = floor_y;
                 const float h = (c.pos.y - floor_y) + 6.0f + rnd() * 25.0f;
                 const float r = 5.0f + rnd() * 8.0f;
+                b.texture(TexRock, 3.0f);
                 for (int k = 0; k < 3; ++k) {
                     const float seg = h / 3.0f;
-                    b.cone(base + vec3(0, seg * float(k), 0), r * (1.0f - 0.12f * float(k)), seg * 1.05f, 7,
+                    b.cone(base + vec3(0, seg * float(k), 0), r * (1.0f - 0.12f * float(k)), seg * 1.05f, 11,
                            k % 2 ? rgba(186, 104, 64) : rgba(206, 124, 78));
                 }
-                b.cone(base + vec3(0, h, 0), r * 0.64f, 0.5f, 7, rgba(216, 150, 96));
+                b.cone(base + vec3(0, h, 0), r * 0.64f, 0.5f, 11, rgba(216, 150, 96));
                 break;
             }
             case S::Lava: {
                 base.y = floor_y;
                 const float h = (c.pos.y - floor_y) + 2.0f + rnd() * 14.0f;
-                b.cone(base, 2.5f + rnd() * 3.0f, h, 5, rgba(46, 38, 40));
+                b.texture(TexRock, 2.0f);
+                b.cone(base, 2.5f + rnd() * 3.0f, h, 8, rgba(46, 38, 40));
                 break;
             }
             case S::Clouds: {
                 base.y = c.pos.y - 8.0f - rnd() * 16.0f;
+                b.texture(TexCloud, 3.0f);
                 for (int k = 0; k < 4; ++k)
                     b.icosphere(base + vec3(rnd() * 10.0f - 5.0f, rnd() * 2.0f, rnd() * 10.0f - 5.0f), 3.0f + rnd() * 4.0f,
                                 rgba(250, 250, 255));
@@ -246,6 +339,7 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 base.y = floor_y;
                 const float h = (c.pos.y - floor_y) + 8.0f + rnd() * 40.0f;
                 const float w = 4.0f + rnd() * 5.0f;
+                b.texture(TexPanel, 4.0f);
                 b.box(base + vec3(0, h * 0.5f, 0), vec3(w, h * 0.5f, w), rgba(30, 30, 46));
                 // Lit windows on the side facing the track.
                 const vec3 face = glm::normalize(vec3(c.pos.x - base.x, 0, c.pos.z - base.z));
@@ -255,6 +349,7 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                         if (rnd() < 0.55f) {
                             const vec3 p = base + face * (w + 0.05f) + across * wx + vec3(0, wy, 0);
                             const uint32_t lit = rnd() < 0.5f ? rgba(255, 220, 120) : rgba(120, 220, 255);
+                            b.texture(TexWhite);
                             b.quad(p - across * 0.5f, p + across * 0.5f, p + across * 0.5f + kUp * 1.2f,
                                    p - across * 0.5f + kUp * 1.2f, lit);
                         }
@@ -264,6 +359,7 @@ MeshData make_scenery_mesh(const sim::Track& t) {
         }
     }
     // Sky decoration: clouds by day, stars at night.
+    b.texture(TexCloud, 4.0f);
     const int clouds = th.scenery == S::City ? 0 : th.scenery == S::Clouds ? 70 : th.scenery == S::Lava ? 0 : 40;
     for (int i = 0; i < clouds; ++i) {
         const float a = rnd() * 2.0f * kPi;

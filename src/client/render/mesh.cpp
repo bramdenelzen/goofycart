@@ -1,17 +1,34 @@
 #include "mesh.h"
 
+#include "textures.h"
+
 #include <cmath>
 
 namespace gk::render {
+
+vec2 MeshBuilder::project(vec3 p, vec3 n) const {
+    const vec3 a = glm::abs(n);
+    const vec2 uv = a.y >= a.x && a.y >= a.z ? vec2(p.x, p.z) : a.x >= a.z ? vec2(p.z, -p.y) : vec2(p.x, -p.y);
+    return uv / tile_;
+}
 
 void MeshBuilder::tri(vec3 a, vec3 b, vec3 c, uint32_t color) {
     vec3 n = glm::cross(b - a, c - a);
     const float len = glm::length(n);
     n = len > 1e-12f ? n / len : kUp;
     const auto base = static_cast<uint32_t>(data_.vertices.size());
-    data_.vertices.push_back({a, n, color});
-    data_.vertices.push_back({b, n, color});
-    data_.vertices.push_back({c, n, color});
+    for (const vec3& p : {a, b, c}) data_.vertices.push_back({p, n, color, project(p, n), layer_});
+    data_.indices.insert(data_.indices.end(), {base, base + 1, base + 2});
+}
+
+void MeshBuilder::tri_uv(vec3 a, vec3 b, vec3 c, vec2 ua, vec2 ub, vec2 uc, uint32_t color) {
+    vec3 n = glm::cross(b - a, c - a);
+    const float len = glm::length(n);
+    n = len > 1e-12f ? n / len : kUp;
+    const auto base = static_cast<uint32_t>(data_.vertices.size());
+    data_.vertices.push_back({a, n, color, ua, layer_});
+    data_.vertices.push_back({b, n, color, ub, layer_});
+    data_.vertices.push_back({c, n, color, uc, layer_});
     data_.indices.insert(data_.indices.end(), {base, base + 1, base + 2});
 }
 
@@ -19,11 +36,18 @@ void MeshBuilder::quad(vec3 a, vec3 b, vec3 c, vec3 d, uint32_t color) {
     vec3 n = glm::cross(b - a, c - a);
     const float len = glm::length(n);
     n = len > 1e-12f ? n / len : kUp;
+    quad_uv(a, b, c, d, project(a, n), project(b, n), project(c, n), project(d, n), color);
+}
+
+void MeshBuilder::quad_uv(vec3 a, vec3 b, vec3 c, vec3 d, vec2 ua, vec2 ub, vec2 uc, vec2 ud, uint32_t color) {
+    vec3 n = glm::cross(b - a, c - a);
+    const float len = glm::length(n);
+    n = len > 1e-12f ? n / len : kUp;
     const auto base = static_cast<uint32_t>(data_.vertices.size());
-    data_.vertices.push_back({a, n, color});
-    data_.vertices.push_back({b, n, color});
-    data_.vertices.push_back({c, n, color});
-    data_.vertices.push_back({d, n, color});
+    data_.vertices.push_back({a, n, color, ua, layer_});
+    data_.vertices.push_back({b, n, color, ub, layer_});
+    data_.vertices.push_back({c, n, color, uc, layer_});
+    data_.vertices.push_back({d, n, color, ud, layer_});
     data_.indices.insert(data_.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
 }
 
@@ -78,14 +102,23 @@ void MeshBuilder::icosphere(vec3 c, float r, uint32_t color) {
     const int f[20][3] = {{0, 11, 5}, {0, 5, 1},  {0, 1, 7},   {0, 7, 10}, {0, 10, 11}, {1, 5, 9}, {5, 11, 4},
                           {11, 10, 2}, {10, 7, 6}, {7, 1, 8},  {3, 9, 4},  {3, 4, 2},   {3, 2, 6}, {3, 6, 8},
                           {3, 8, 9},  {4, 9, 5},  {2, 4, 11}, {6, 2, 10}, {8, 6, 7},   {9, 8, 1}};
-    for (auto& tr : f) tri(v[tr[0]], v[tr[1]], v[tr[2]], color);
+    // Split each face in four once (80 faces): round enough at this resolution.
+    for (auto& tr : f) {
+        const vec3 a = v[tr[0]], b = v[tr[1]], d = v[tr[2]];
+        auto mid = [&](vec3 p, vec3 q) { return c + glm::normalize((p + q) * 0.5f - c) * r; };
+        const vec3 ab = mid(a, b), bd = mid(b, d), da = mid(d, a);
+        tri(a, ab, da, color);
+        tri(ab, b, bd, color);
+        tri(da, bd, d, color);
+        tri(ab, bd, da, color);
+    }
 }
 
 void MeshBuilder::append(const MeshData& other, const mat4& m) {
     const auto base = static_cast<uint32_t>(data_.vertices.size());
     const glm::mat3 nm = glm::transpose(glm::inverse(glm::mat3(m)));
     for (const auto& v : other.vertices)
-        data_.vertices.push_back({vec3(m * vec4(v.pos, 1.0f)), glm::normalize(nm * v.normal), v.color});
+        data_.vertices.push_back({vec3(m * vec4(v.pos, 1.0f)), glm::normalize(nm * v.normal), v.color, v.uv, v.layer});
     for (auto i : other.indices) data_.indices.push_back(base + i);
 }
 
@@ -104,9 +137,12 @@ MeshData make_ground_mesh(float half, int cells) {
 
 MeshData make_tree_mesh() {
     MeshBuilder b;
+    b.texture(TexBark, 1.0f);
     b.box({0, 0.6f, 0}, {0.15f, 0.6f, 0.15f}, rgba(110, 72, 40));
-    b.cone({0, 1.0f, 0}, 1.1f, 1.6f, 6, rgba(40, 120, 56));
-    b.cone({0, 2.0f, 0}, 0.8f, 1.3f, 6, rgba(52, 140, 64));
+    b.texture(TexLeaves, 1.0f);
+    b.cone({0, 1.0f, 0}, 1.1f, 1.6f, 9, rgba(40, 120, 56));
+    b.cone({0, 2.0f, 0}, 0.8f, 1.3f, 9, rgba(52, 140, 64));
+    b.cone({0, 2.9f, 0}, 0.5f, 0.9f, 9, rgba(60, 152, 70));
     return b.take();
 }
 
