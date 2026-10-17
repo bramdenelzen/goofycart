@@ -4,14 +4,23 @@
   "theme": "snow",
   "half_width": 6.5,
   "verge_surface": "offroad_heavy",
-  "points": [[0,0,0],[0,2,60],[12,5,110],[50,8,135],[95,10,125],[112,11,90],[90,12,60],[60,12,55],[45,12,20],[60,11,-20],[95,9,-30],[110,6,-70],[85,3,-110],[40,1,-110],[10,0,-75],[0,0,-35]],
+  "_comment": "Two icy hairpin switchbacks up the mountain, icicles on the summit road and a glide back down.",
+  "points": [[0,0,0],[0,0,60],[10,2,95],[40,4,102],[58,6,78],[60,8,30],[66,10,-10],[86,12,-36],[110,13,-22],[115,14,20],[118,15,70],[100,16,110],[50,17,130],[0,16,135],[-40,14,110],[-55,12,60],[-55,4,-10],[-45,2,-55],[-15,0,-55]],
   "features": [
-    { "type": "road", "surface": "ice", "from": [5, 10], "to": [7, 0] },
-    { "type": "road", "surface": "ice", "from": [11, 0], "to": [12, 20] },
-    { "type": "trick_ramp", "at": [2, 10], "length": 10, "height": 1.5 },
-    { "type": "boost_pad", "at": [9, 10], "length": 8, "lanes": [1, 2] },
-    { "type": "item_boxes", "at": [1, 0] },
-    { "type": "item_boxes", "at": [7, 10] },
-    { "type": "item_boxes", "at": [13, 0] }
+    { "type": "trick_ramp", "at": [1, 0], "length": 10, "height": 1.5 },
+    { "type": "road", "surface": "ice", "from": [2, 10], "to": [4, 0] },
+    { "type": "boost_pad", "at": [5, 0], "length": 8, "lanes": [1, 2] },
+    { "type": "road", "surface": "ice", "from": [6, 10], "to": [8, 10] },
+    { "type": "obstacle", "at": [9, 20], "offset": 3.0, "shape": "pillar", "width": 2, "length": 2, "height": 3 },
+    { "type": "obstacle", "at": [10, 10], "offset": -3.0, "shape": "pillar", "width": 2, "length": 2, "height": 3 },
+    { "type": "trick_ramp", "at": [11, 20], "length": 9, "height": 1.4 },
+    { "type": "obstacle", "at": [12, 15], "offset": 2.5, "shape": "pillar", "width": 2, "length": 2, "height": 3 },
+    { "type": "obstacle", "at": [12, 40], "offset": -2.5, "shape": "pillar", "width": 2, "length": 2, "height": 3 },
+    { "type": "glide_ramp", "at": [15, 0], "length": 18, "height": 3, "gap": 45 },
+    { "type": "boost_pad", "at": [17, 0], "length": 8, "lanes": [1, 2] },
+    { "type": "item_boxes", "at": [1, 30] },
+    { "type": "item_boxes", "at": [5, 20] },
+    { "type": "item_boxes", "at": [10, 30] },
+    { "type": "item_boxes", "at": [14, 0] }
   ]
 }

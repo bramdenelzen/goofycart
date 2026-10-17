@@ -127,6 +127,34 @@ MeshData make_scenery_mesh(const sim::Track& t) {
     float floor_y = lo.y - 20.0f;
     for (const auto& v : t.vertices) floor_y = std::min(floor_y, v.y);
 
+    // Columns under bridges: where the road passes over another part of the
+    // track, posts down to the ground on both sides, kept off the road below.
+    const int n = int(t.center.size());
+    for (int i = 0; i < n; i += 5) {
+        const sim::CenterSample& c = t.center[size_t(i)];
+        bool over_road = false;
+        for (int j = 0; j < n && !over_road; ++j) {
+            const int along = std::abs(i - j);
+            if (std::min(along, n - along) < 20) continue;
+            const sim::CenterSample& o = t.center[size_t(j)];
+            over_road = o.pos.y < c.pos.y - 6.0f &&
+                        glm::length(vec2(o.pos.x - c.pos.x, o.pos.z - c.pos.z)) < c.half_width + o.half_width + 12.0f;
+        }
+        if (!over_road || !c.has_floor) continue;
+        for (float side : {-1.0f, 1.0f}) {
+            const vec3 top = c.pos + c.right * side * (c.half_width + 2.0f) - vec3(0, 1.2f, 0);
+            bool clear = true;
+            for (int j = 0; j < n && clear; ++j) {
+                const sim::CenterSample& o = t.center[size_t(j)];
+                clear = o.pos.y > top.y - 1.0f ||
+                        glm::length(vec2(o.pos.x - top.x, o.pos.z - top.z)) > o.half_width + 7.0f;
+            }
+            if (!clear) continue;
+            const float h = top.y - floor_y;
+            b.box(vec3(top.x, floor_y + h * 0.5f, top.z), vec3(0.8f, h * 0.5f, 0.8f), th.wall_b);
+        }
+    }
+
     // Props beside the track, away from the road.
     for (size_t i = 0; i < t.center.size(); i += 9) {
         const sim::CenterSample& c = t.center[i];

@@ -108,6 +108,7 @@ Track build_track(const TrackDef& def) {
     std::vector<VergeSpan> verges;
     std::vector<float> box_rows;
     std::vector<float> trick_heights, glide_heights;
+    std::vector<std::pair<float, const TrackFeature*>> obstacles;
     for (const TrackFeature& f : def.features) {
         const float a = s_of(f.at);
         switch (f.kind) {
@@ -130,6 +131,10 @@ Track build_track(const TrackDef& def) {
         case TrackFeature::Kind::Road: road_surfaces.push_back({range(a, s_of(f.to)), f.surface}); break;
         case TrackFeature::Kind::Verge: verges.push_back({range(a, s_of(f.to)), f.left, f.right, f.width, f.surface}); break;
         case TrackFeature::Kind::ItemBoxes: box_rows.push_back(a); break;
+        case TrackFeature::Kind::Obstacle:
+            obstacles.push_back({a, &f});
+            if (std::abs(f.offset) < 0.5f * f.width + 1.0f) no_respawn.push_back(range(a - 8.0f, a + 8.0f)); // covers the centre
+            break;
         case TrackFeature::Kind::NoWalls:
             if (f.left) no_walls_l.push_back(range(a, s_of(f.to)));
             if (f.right) no_walls_r.push_back(range(a, s_of(f.to)));
@@ -214,6 +219,46 @@ Track build_track(const TrackDef& def) {
         // Inward-facing walls on both sides.
         if (!in_any(no_walls_l, s)) quad(V(i, 0), V(j, 0), V(j, kCols), V(i, kCols), Surface::Wall);
         if (!in_any(no_walls_r, s)) quad(V(j, kCols - 1), V(i, kCols - 1), V(i, kCols + 1), V(j, kCols + 1), Surface::Wall);
+    }
+
+    // Obstacles: prisms on the road, faces outward, base sunk a little so a
+    // banked road never shows a gap underneath.
+    auto sample_at = [&](float s_at) {
+        s_at = std::fmod(std::fmod(s_at, total) + total, total);
+        return std::min(n - 1, int(std::round(s_at / step))) % n;
+    };
+    for (const auto& [s_at, f] : obstacles) {
+        Track::Obstacle o;
+        o.sample = sample_at(s_at);
+        const CenterSample& c = t.center[size_t(o.sample)];
+        o.forward = c.tangent, o.right = c.right, o.up = c.up;
+        o.half = vec3(0.5f * f->width, 0.5f * f->height, 0.5f * f->length);
+        o.pos = c.pos + c.right * f->offset - c.up * 0.3f;
+        o.sides = std::clamp(f->sides, 3, 16);
+        o.first_tri = uint32_t(t.triangles.size());
+        const uint32_t v0 = uint32_t(t.vertices.size());
+        const int k = o.sides;
+        // Corners at half-angle offsets, so 4 sides make a box aligned with the road.
+        for (int i = 0; i < k; ++i) {
+            const float ang = (float(i) + 0.5f) / float(k) * 2.0f * kPi, r = 1.0f / std::cos(kPi / float(k));
+            const vec3 foot = o.pos + o.right * (std::cos(ang) * r * o.half.x) + o.forward * (std::sin(ang) * r * o.half.z);
+            t.vertices.push_back(foot);
+            t.vertices.push_back(foot + o.up * (2.0f * o.half.y + 0.3f));
+        }
+        const vec3 mid = o.pos + o.up * (o.half.y + 0.15f);
+        auto face = [&](uint32_t a, uint32_t b, uint32_t c) { // wound to face away from the middle
+            const vec3 pa = t.vertices[a], pb = t.vertices[b], pc = t.vertices[c];
+            if (glm::dot(glm::cross(pb - pa, pc - pa), (pa + pb + pc) / 3.0f - mid) < 0.0f) std::swap(b, c);
+            t.triangles.push_back({a, b, c, Surface::Wall});
+        };
+        for (int i = 0; i < k; ++i) {
+            const uint32_t a = v0 + uint32_t(2 * i), b = v0 + uint32_t(2 * ((i + 1) % k));
+            face(a, b, b + 1);
+            face(a, b + 1, a + 1);
+        }
+        for (int i = 1; i + 1 < k; ++i) face(v0 + 1, v0 + uint32_t(2 * i + 1), v0 + uint32_t(2 * i + 3));
+        o.tri_count = uint32_t(t.triangles.size()) - o.first_tri;
+        t.obstacles.push_back(o);
     }
 
     // Out-of-bounds floor far below the track.
@@ -350,6 +395,7 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
             else if (type == "verge") tf.kind = K::Verge;
             else if (type == "item_boxes") tf.kind = K::ItemBoxes;
             else if (type == "no_walls") tf.kind = K::NoWalls;
+            else if (type == "obstacle") tf.kind = K::Obstacle;
             else throw std::runtime_error("unknown feature type " + type);
             tf.at = parse_pos(f.contains("at") ? f["at"] : f.at("from"));
             if (f.contains("to")) tf.to = parse_pos(f["to"]);
@@ -357,6 +403,16 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
             tf.height = f.value("height", tf.height);
             tf.gap = f.value("gap", tf.gap);
             tf.width = f.value("width", tf.width);
+            tf.offset = f.value("offset", tf.offset);
+            if (tf.kind == K::Obstacle) {
+                tf.length = f.value("length", 2.5f);
+                tf.width = f.value("width", 2.5f);
+                tf.height = f.value("height", 2.5f);
+                const std::string shape = f.value("shape", std::string("block"));
+                if (shape == "block") tf.sides = 4;
+                else if (shape == "pillar") tf.sides = 8;
+                else throw std::runtime_error("unknown obstacle shape " + shape);
+            }
             if (f.contains("lanes")) {
                 tf.lanes = 0;
                 for (const auto& l : f["lanes"]) tf.lanes |= 1 << std::clamp(l.get<int>(), 0, 3);

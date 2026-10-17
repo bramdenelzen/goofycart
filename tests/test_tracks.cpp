@@ -49,6 +49,10 @@ TEST_CASE("every track is a clean lap for a CPU, and a 12-kart race finishes") {
         bool surfaces[int(Surface::Count)] = {};
         for (const auto& tri : track.triangles) surfaces[int(tri.surface)] = true;
         CHECK(surfaces[int(Surface::BoostPad)]);
+        CHECK(surfaces[int(Surface::GlideRamp)]);
+        CHECK(std::count_if(def.features.begin(), def.features.end(),
+                            [](const TrackFeature& f) { return f.kind == TrackFeature::Kind::TrickRamp; }) >= 2);
+        CHECK(track.obstacles.size() >= 2);
 
         World w(std::move(track), tables, RaceConfig{.laps = 2, .countdown_frames = 180, .seed = 3});
         for (int i = 0; i < 12; ++i) {
@@ -64,7 +68,7 @@ TEST_CASE("every track is a clean lap for a CPU, and a 12-kart race finishes") {
             w.tick(in);
             ++frames;
             for (const auto& e : w.events()) {
-                if (e.type == KartEventType::Respawn) {
+                if (e.type == KartEventType::Respawn && !w.karts()[size_t(e.kart)].finished) { // finished karts coast without steering
                     ++respawns;
                     MESSAGE("respawn of kart " << e.kart << " near sample " << w.karts()[size_t(e.kart)].last_safe_sample);
                 }
@@ -93,5 +97,46 @@ TEST_CASE("building a track twice gives the same geometry") {
             same_tris &= a.triangles[i].a == b.triangles[i].a && a.triangles[i].b == b.triangles[i].b &&
                          a.triangles[i].c == b.triangles[i].c && a.triangles[i].surface == b.triangles[i].surface;
         CHECK(same_tris);
+    }
+}
+
+TEST_CASE("where a track passes over itself there is room underneath") {
+    // A bridge needs the kart, its camera and the deck's underside to fit.
+    int crossings = 0;
+    for (const TrackDef& def : catalog().tracks) {
+        CAPTURE(def.id);
+        const Track t = build_track(def);
+        const int n = int(t.center.size());
+        bool crosses = false;
+        for (int i = 0; i < n; ++i)
+            for (int j = i + 20; j < n && n - (j - i) >= 20; ++j) {
+                const CenterSample &a = t.center[size_t(i)], &b = t.center[size_t(j)];
+                const float d = glm::length(vec2(a.pos.x - b.pos.x, a.pos.z - b.pos.z));
+                if (d > a.half_width + b.half_width + 10.0f) continue;
+                CAPTURE(i);
+                CAPTURE(j);
+                CHECK(std::abs(a.pos.y - b.pos.y) >= 8.0f);
+                crosses |= d < 2.0f;
+            }
+        crossings += crosses;
+    }
+    CHECK(crossings >= 4);
+}
+
+TEST_CASE("obstacles are solid from every side") {
+    for (const TrackDef& def : catalog().tracks) {
+        CAPTURE(def.id);
+        const Track t = build_track(def);
+        for (const Track::Obstacle& o : t.obstacles) {
+            for (const vec3 dir : {o.right, -o.right, o.forward, -o.forward}) {
+                const float reach = std::abs(glm::dot(dir, o.right)) * o.half.x + std::abs(glm::dot(dir, o.forward)) * o.half.z;
+                const vec3 sphere = o.pos + o.up * 1.0f + dir * (reach + 0.3f);
+                std::vector<WallContact> contacts;
+                t.collide_sphere(sphere, 0.55f, contacts);
+                bool pushed_out = false;
+                for (const WallContact& c : contacts) pushed_out |= c.surface == Surface::Wall && glm::dot(c.normal, dir) > 0.7f;
+                CHECK(pushed_out);
+            }
+        }
     }
 }

@@ -5,15 +5,24 @@
   "half_width": 6.5,
   "verge": 4,
   "verge_surface": "offroad_heavy",
-  "points": [[0,0,0],[0,0,60],[15,1,100],[50,2,110],[75,3,85],[70,4,50],[95,5,25],[130,5,40],[150,4,80],[175,3,60],[180,2,10],[160,1,-40],[115,0,-60],[70,0,-55],[40,0,-70],[10,0,-50]],
+  "_comment": "A chicane through the machinery, a long gantry bridge over the start straight, a glide over the lava pool and open edges.",
+  "points": [[0,0,0],[0,0,50],[8,0,80],[40,1,90],[60,2,70],[55,3,40],[75,4,20],[110,5,25],[140,7,50],[162,9,22],[152,11,-18],[110,13,-30],[60,13,-5],[0,13,25],[-40,11,40],[-75,7,22],[-90,2,-25],[-62,1,-62],[-25,0,-62],[-5,0,-30]],
   "features": [
-    { "type": "no_walls", "from": [3, 0], "to": [5, 0], "side": "left" },
-    { "type": "no_walls", "from": [11, 0], "to": [12, 20], "side": "right" },
     { "type": "boost_pad", "at": [1, 0], "length": 8, "lanes": [1, 2] },
-    { "type": "boost_pad", "at": [12, 25], "length": 8, "lanes": [1, 2] },
+    { "type": "obstacle", "at": [3, 15], "offset": -3.0, "shape": "block", "width": 2.5, "length": 4, "height": 2 },
+    { "type": "obstacle", "at": [4, 15], "offset": 3.0, "shape": "block", "width": 2.5, "length": 4, "height": 2 },
+    { "type": "obstacle", "at": [5, 15], "offset": -3.0, "shape": "block", "width": 2.5, "length": 4, "height": 2 },
     { "type": "trick_ramp", "at": [7, 5], "length": 10, "height": 1.5 },
+    { "type": "no_walls", "from": [8, 0], "to": [9, 10], "side": "left" },
+    { "type": "boost_pad", "at": [10, 10], "length": 8, "lanes": [0, 1, 2, 3] },
+    { "type": "obstacle", "at": [11, 30], "offset": 3.0, "shape": "block" },
+    { "type": "obstacle", "at": [12, 20], "offset": -3.0, "shape": "block" },
+    { "type": "glide_ramp", "at": [14, 10], "length": 16, "height": 3, "gap": 40 },
+    { "type": "no_walls", "from": [16, 0], "to": [17, 20], "side": "right" },
+    { "type": "trick_ramp", "at": [18, 0], "length": 9, "height": 1.3 },
     { "type": "item_boxes", "at": [1, 30] },
-    { "type": "item_boxes", "at": [6, 0] },
-    { "type": "item_boxes", "at": [11, 0] }
+    { "type": "item_boxes", "at": [6, 10] },
+    { "type": "item_boxes", "at": [11, 0] },
+    { "type": "item_boxes", "at": [16, 20] }
   ]
 }

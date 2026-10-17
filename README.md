@@ -151,10 +151,29 @@ builds the low-poly kart from, so new parts need no art files.
 Tracks are data: each file in `data/tracks/` is a closed spline of
 `[x, y, z, half_width]` control points plus features placed by
 `[control point, metres]`: trick ramps, glide ramps over a gap, boost pads
-(by lane), road surfaces (offroad, sand, ice, water), verges, item box rows
-and stretches without walls. `data/tracks/tracks.json` groups them into cups.
-The game builds the collision mesh, respawn points, CPU racing line and a
-themed low-poly render mesh with scenery from that.
+(by lane), road surfaces (offroad, sand, ice, water), verges, item box rows,
+stretches without walls and obstacles (`block` or `pillar`, placed by
+`offset` from the centre line). Where the spline passes over itself the road
+becomes a bridge; it needs 8 m of headroom, which a test checks.
+`data/tracks/tracks.json` groups tracks into cups. The game builds the
+collision mesh, respawn points, CPU racing line (which steers round
+obstacles) and a themed render mesh with scenery from that.
+
+`gk_trackmap data/tracks/tracks.json out_dir [track_id] [--race]` draws each
+track from above as a PNG with its control points numbered, lists where it
+crosses itself, and with `--race` runs a 12-CPU race on it and reports lap
+times, wall hits and falls: the quickest way to try a layout change.
+
+| Track | What's on it |
+| --- | --- |
+| Meadow Circuit | Figure of eight: a bridge over the start straight, then a glide off it |
+| Dune Drift | Rock slalom on sand, a hairpin, dune rollers, a glide off the high dune |
+| Harbor Hop | Square dock corners with crates, a pier bridge, a lighthouse hairpin, a glide to the water |
+| Frost Pass | Two icy switchbacks, icicles on the summit road, a glide back down |
+| Canyon Run | Square corners, a chicane between rock pillars, a long glide into the canyon |
+| Lava Works | A chicane through machinery, a gantry bridge, a glide over the lava, open edges |
+| Cloud Spire | A spiral over the start, pillars at the top, two glides down |
+| Neon Raceway | City blocks, a split lane, a flyover and a jump off its end |
 
 | Cup | Tracks (ids) |
 | --- | --- |

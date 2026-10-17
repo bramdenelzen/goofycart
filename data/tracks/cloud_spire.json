@@ -5,15 +5,24 @@
   "half_width": 7,
   "verge": 3,
   "verge_surface": "offroad_light",
-  "points": [[0,0,0],[0,3,70],[15,7,120],[55,10,140],[100,12,130],[125,14,95],[120,14,55],[100,4,-20],[80,2,-60],[40,1,-80],[5,0,-55]],
+  "_comment": "A spiral up round the spire that passes over the start, pillars at the top, then two glides back down to the clouds.",
+  "points": [[0,0,0],[0,1,50],[20,3,85],[60,5,95],[95,7,70],[100,9,30],[80,11,0],[40,13,-12],[5,15,8],[-25,16,50],[-10,17,95],[30,18,125],[80,18,130],[150,9,105],[162,7,45],[150,5,-20],[80,1,-62],[30,0,-62],[2,0,-32]],
   "features": [
-    { "type": "glide_ramp", "at": [6, 0], "length": 22, "height": 3, "gap": 60 },
-    { "type": "no_walls", "from": [2, 0], "to": [4, 0] },
-    { "type": "boost_pad", "at": [1, 20], "length": 8, "lanes": [1, 2] },
-    { "type": "boost_pad", "at": [8, 10], "length": 8, "lanes": [0, 1, 2, 3] },
-    { "type": "trick_ramp", "at": [9, 0], "length": 10, "height": 1.5 },
-    { "type": "item_boxes", "at": [1, 0] },
-    { "type": "item_boxes", "at": [4, 10] },
-    { "type": "item_boxes", "at": [8, 30] }
+    { "type": "boost_pad", "at": [1, 0], "length": 8, "lanes": [1, 2] },
+    { "type": "trick_ramp", "at": [3, 0], "length": 9, "height": 1.3 },
+    { "type": "no_walls", "from": [4, 0], "to": [6, 0], "side": "left" },
+    { "type": "boost_pad", "at": [7, 0], "length": 8, "lanes": [0, 1, 2, 3] },
+    { "type": "obstacle", "at": [9, 10], "offset": 3.0, "shape": "pillar", "width": 2.2, "length": 2.2, "height": 5 },
+    { "type": "obstacle", "at": [10, 0], "offset": -3.0, "shape": "pillar", "width": 2.2, "length": 2.2, "height": 5 },
+    { "type": "obstacle", "at": [11, 0], "offset": 3.0, "shape": "pillar", "width": 2.2, "length": 2.2, "height": 5 },
+    { "type": "glide_ramp", "at": [12, 0], "length": 18, "height": 3, "gap": 50 },
+    { "type": "trick_ramp", "at": [14, 0], "length": 10, "height": 1.5 },
+    { "type": "glide_ramp", "at": [15, 0], "length": 16, "height": 2.5, "gap": 40 },
+    { "type": "boost_pad", "at": [17, 0], "length": 8, "lanes": [1, 2] },
+    { "type": "item_boxes", "at": [1, 30] },
+    { "type": "item_boxes", "at": [5, 0] },
+    { "type": "item_boxes", "at": [9, 30] },
+    { "type": "item_boxes", "at": [13, 30] },
+    { "type": "item_boxes", "at": [16, 30] }
   ]
 }

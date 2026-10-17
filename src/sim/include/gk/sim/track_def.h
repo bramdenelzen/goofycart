@@ -14,13 +14,15 @@ struct TrackPos {
 
 // One piece of a track layout. Which fields matter depends on the kind.
 struct TrackFeature {
-    enum class Kind { TrickRamp, GlideRamp, BoostPad, Road, Verge, ItemBoxes, NoWalls };
+    enum class Kind { TrickRamp, GlideRamp, BoostPad, Road, Verge, ItemBoxes, NoWalls, Obstacle };
     Kind kind = Kind::Road;
     TrackPos at, to;        // ramps, pads and boxes use `at`; ranges use at..to
-    float length = 8.0f;    // ramps and pads (m)
-    float height = 1.5f;    // ramps (m)
+    float length = 8.0f;    // ramps, pads and obstacles (m, along the road)
+    float height = 1.5f;    // ramps and obstacles (m)
     float gap = 0.0f;       // glide ramps: the chasm after the lip (m)
-    float width = 9.0f;     // verges (m)
+    float width = 9.0f;     // verges and obstacles (m, across the road)
+    float offset = 0.0f;    // obstacles: from the centre line, + to the right (m)
+    int sides = 4;          // obstacles: 4 a block, 8 a round pillar
     int lanes = 0b1111;     // boost pads: which of the 4 lanes (bit 0 = leftmost)
     bool left = true, right = true; // verges and walls: which side
     Surface surface = Surface::Road;

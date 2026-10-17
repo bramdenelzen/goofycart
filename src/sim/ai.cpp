@@ -109,7 +109,15 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
 
     // ---- where to aim: racing line, nudged for item boxes and obstacles
     const float look = skill.lookahead + speed * 0.4f;
-    const int target_sample = t.wrap(k.sample + std::max(1, int(std::ceil(look / spacing))));
+    int target_sample = t.wrap(k.sample + std::max(1, int(std::ceil(look / spacing))));
+    // On the wrong side of an obstacle ahead: aim at the gap beside it.
+    for (int s = k.sample + 1; t.wrap(s) != target_sample; ++s) {
+        const int i = t.wrap(s);
+        if (!t.line[size_t(i)].blocked) continue;
+        const float lat = glm::dot(k.pos - t.center[size_t(i)].pos, t.center[size_t(i)].right);
+        if (lat < t.line[size_t(i)].lo - 0.3f || lat > t.line[size_t(i)].hi + 0.3f) target_sample = t.wrap(i + 2);
+        break;
+    }
     const CenterSample& tc = t.center[size_t(target_sample)];
     const Track::LinePoint& lp = t.line[size_t(target_sample)];
     float offset = lp.offset * skill.line_follow + skill.lane;
@@ -144,7 +152,19 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         }
         offset += shift;
     }
-    offset = std::clamp(offset, lp.lo, lp.hi);
+    // Obstacles between here and the target: aim so the straight path there
+    // passes them on the open side.
+    float lo = lp.lo, hi = lp.hi;
+    for (int s = k.sample + 1; t.wrap(s) != target_sample; ++s) {
+        const Track::LinePoint& b = t.line[size_t(t.wrap(s))];
+        if (!b.blocked) continue;
+        if (std::max(lo, b.lo) > std::min(hi, b.hi)) { // can't satisfy both: the nearer obstacle wins
+            lo = b.lo, hi = b.hi;
+            break;
+        }
+        lo = std::max(lo, b.lo), hi = std::min(hi, b.hi);
+    }
+    offset = std::clamp(offset, lo, hi);
     const vec3 target = tc.pos + tc.right * offset;
 
     // ---- pure pursuit: the arc through the target gives the yaw rate we need.
@@ -169,6 +189,22 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     if (to.z < 0.5f) steer = sign(to.x); // target behind: turn round
     steer = std::clamp(steer, -1.0f, 1.0f);
     in.steer = steer;
+
+    // Pinned nose-first against a wall or an obstacle: back off, swinging the
+    // nose towards the target, until there's room to drive round it.
+    if (k.grounded && k.speed < 2.0f && !k.knocked()) {
+        bool blocked = false;
+        for (float side : {-0.7f, 0.0f, 0.7f}) {
+            const auto hit = t.raycast(k.pos + k.up() * 0.5f + k.right() * side, k.forward(), 2.2f);
+            blocked |= hit && hit->surface == Surface::Wall;
+        }
+        if (blocked) {
+            in.accelerate = false;
+            in.brake = true;
+            in.steer = 0.0f;
+            return in;
+        }
+    }
 
     // ---- drifting
     // Drift into any corner that keeps turning the same way for a while, even

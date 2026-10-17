@@ -3,14 +3,21 @@
   "name": "Meadow Circuit",
   "theme": "meadow",
   "half_width": 7.5,
-  "points": [[0,0,0],[0,0,70],[6,1,120],[30,2,150],[70,2,160],[110,2,145],[130,1,110],[118,0,75],[135,0,40],[130,0,0],[105,0,-30],[65,0,-45],[28,0,-38],[6,0,-20]],
+  "_comment": "A figure of eight: the back straight crosses the start straight on a bridge, then glides off it.",
+  "points": [[0,0,-70],[0,0,-20],[0,0,30],[8,0,75],[40,0,105],[85,1,105],[115,2,80],[115,3,45],[85,6,15],[40,10,2],[0,10,0],[-40,10,-2],[-85,6,-15],[-115,3,-45],[-115,2,-80],[-85,1,-110],[-40,0,-118],[-10,0,-105]],
   "features": [
-    { "type": "trick_ramp", "at": [1, 8], "length": 10, "height": 1.4 },
-    { "type": "boost_pad", "at": [4, 0], "length": 8, "lanes": [1, 2] },
-    { "type": "boost_pad", "at": [10, 10], "length": 8, "lanes": [0, 1] },
-    { "type": "verge", "from": 3, "to": 6, "side": "right", "width": 9, "surface": "offroad_medium" },
-    { "type": "item_boxes", "at": [0, 40] },
-    { "type": "item_boxes", "at": [5, 0] },
-    { "type": "item_boxes", "at": [11, 0] }
+    { "type": "trick_ramp", "at": [1, 4], "length": 10, "height": 1.4 },
+    { "type": "boost_pad", "at": [3, 0], "length": 8, "lanes": [1, 2] },
+    { "type": "obstacle", "at": [4, 10], "offset": 3.5, "shape": "block" },
+    { "type": "obstacle", "at": [5, 4], "offset": -3.5, "shape": "block" },
+    { "type": "verge", "from": 4, "to": 7, "side": "left", "width": 9, "surface": "offroad_medium" },
+    { "type": "boost_pad", "at": [8, 0], "length": 8, "lanes": [2, 3] },
+    { "type": "glide_ramp", "at": [11, 0], "length": 16, "height": 2.5, "gap": 40 },
+    { "type": "obstacle", "at": [14, 0], "offset": -3.0, "shape": "pillar", "width": 2.2, "length": 2.2 },
+    { "type": "obstacle", "at": [15, 0], "offset": 3.0, "shape": "pillar", "width": 2.2, "length": 2.2 },
+    { "type": "trick_ramp", "at": [16, 0], "length": 9, "height": 1.3 },
+    { "type": "item_boxes", "at": [1, 30] },
+    { "type": "item_boxes", "at": [7, 0] },
+    { "type": "item_boxes", "at": [13, 0] }
   ]
 }
