@@ -12,6 +12,8 @@ struct ClientActions {
     bool look_back = false;
     bool pause_pressed = false;
     bool toggle_resolution_pressed = false;
+    bool toggle_help_pressed = false;
+    bool restart_pressed = false;
     bool quit_requested = false;
 };
 

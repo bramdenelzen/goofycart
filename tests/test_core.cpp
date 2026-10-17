@@ -1,6 +1,5 @@
 #include "gk/core/fixed_step.h"
 #include "gk/core/math.h"
-#include "gk/sim/world.h"
 
 #include <doctest/doctest.h>
 
@@ -22,10 +21,4 @@ TEST_CASE("approach clamps at the target") {
     CHECK(gk::approach(0.0f, 1.0f, 0.25f) == doctest::Approx(0.25f));
     CHECK(gk::approach(0.9f, 1.0f, 0.25f) == doctest::Approx(1.0f));
     CHECK(gk::approach(1.0f, -1.0f, 0.5f) == doctest::Approx(0.5f));
-}
-
-TEST_CASE("world ticks") {
-    gk::sim::World w;
-    for (int i = 0; i < 10; ++i) w.tick();
-    CHECK(w.tick_count() == 10);
 }

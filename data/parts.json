@@ -1,0 +1,25 @@
+{
+  "_comment": "Gobby Kart's own characters and parts. Stat points per part are summed and clamped to Level 0..20. Order: speed_ground, speed_water, speed_air, acceleration, weight, handling_ground, handling_water, handling_air, traction, mini_turbo, invincibility.",
+  "drivers": [
+    { "id": "pip",    "name": "Pip",    "points": [2, 3, 3, 5, 1, 7, 7, 7, 5, 5, 6] },
+    { "id": "gobby",  "name": "Gobby",  "points": [5, 5, 5, 4, 5, 5, 5, 5, 4, 3, 4] },
+    { "id": "mossa",  "name": "Mossa",  "points": [6, 6, 6, 3, 6, 4, 4, 4, 4, 2, 3] },
+    { "id": "brute",  "name": "Brute",  "points": [8, 7, 7, 2, 9, 2, 3, 3, 3, 1, 1] }
+  ],
+  "bodies": [
+    { "id": "standard", "name": "Standard Kart", "points": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2] },
+    { "id": "pipe",     "name": "Pipe Frame",    "points": [1, 2, 1, 4, 1, 4, 3, 3, 3, 4, 3] },
+    { "id": "buggy",    "name": "Mud Buggy",     "points": [3, 2, 2, 1, 4, 1, 1, 2, 4, 1, 2] },
+    { "id": "sport",    "name": "Sport Bike",    "points": [2, 2, 2, 3, 1, 3, 3, 3, 1, 3, 2], "drift": "inward", "bike": true }
+  ],
+  "tires": [
+    { "id": "standard", "name": "Standard",  "points": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2] },
+    { "id": "roller",   "name": "Roller",    "points": [0, 1, 1, 5, 0, 2, 2, 2, 3, 5, 3] },
+    { "id": "slick",    "name": "Slick",     "points": [4, 3, 3, 1, 3, 1, 1, 1, 0, 1, 1] },
+    { "id": "monster",  "name": "Monster",   "points": [2, 2, 2, 0, 4, 0, 0, 0, 4, 0, 2] }
+  ],
+  "gliders": [
+    { "id": "wing",     "name": "Wing",      "points": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+    { "id": "parafoil", "name": "Parafoil",  "points": [0, 0, 0, 2, 0, 1, 1, 2, 1, 2, 1] }
+  ]
+}

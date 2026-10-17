@@ -59,7 +59,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
-        run: xvfb-run -a -s "-screen 0 1280x720x24" ./build/release/src/client/gk_client --frames 30 --screenshot smoke.png
+        run: xvfb-run -a -s "-screen 0 1280x720x24" ./build/release/src/client/gk_client --autodrive --frames 300 --screenshot smoke.png
 
       - name: Upload smoke screenshot
         if: runner.os == 'Linux'

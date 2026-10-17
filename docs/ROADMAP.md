@@ -7,8 +7,8 @@ day one because it is the one decision that is expensive to retrofit.
 
 | Phase | Scope | Done when |
 | --- | --- | --- |
-| 1. Foundation | CMake presets, pinned dependencies, CI on Windows, macOS and Linux; SDL3 window; Vulkan 1.3 renderer with low-res upscaling; headless `gk_server`; unit tests | CI green on all three; client renders a low-poly scene |
-| 2. Feel prototype | Greybox track with hills, a ramp, a glide section and every surface class; kart controller with MK8-style stats, drift, mini-turbos (blue, orange, purple), tricks, rocket start, gliders, off-road, respawn; chase camera; HUD; gamepad | One kart drives a full lap on a controller |
+| 1. Foundation (done) | CMake presets, pinned dependencies, CI on Windows, macOS and Linux; SDL3 window; Vulkan 1.3 renderer with low-res upscaling; headless `gk_server`; unit tests | CI green on all three; client renders a low-poly scene |
+| 2. Feel prototype (done) | Greybox track with hills, a ramp, a glide section and every surface class; kart controller with MK8-style stats, drift, mini-turbos (blue, orange, purple), tricks, rocket start, gliders, off-road, respawn; chase camera; HUD; gamepad | One kart drives a full lap on a controller |
 | 3. Netcode spine | UDP transport with reliable and unreliable lanes; server at 60 Hz; inputs, snapshots, prediction and reconciliation, remote kart extrapolation; latency and loss simulation | 2 to 4 clients race smoothly at 150 ms and 2% loss |
 | 4. Race loop | Laps and ordered checkpoints, places, results with MK8 points, countdown, lobby, 12 seats with bot fill and disconnect takeover | A 12-kart race runs start to finish on the server |
 | 5. Items | Item boxes and server-side roulette, two-slot holding, distribution by place and gap; core items first, then all 22 race items | Every item works online |

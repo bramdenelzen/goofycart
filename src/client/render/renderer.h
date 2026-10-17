@@ -17,6 +17,11 @@ namespace gk::render {
 
 using MeshId = uint32_t;
 
+struct UiVertex {
+    vec2 pos;       // pixels in the internal (low-res) image, origin top-left
+    uint32_t color; // RGBA8
+};
+
 struct Camera {
     vec3 position{0, 3, -6};
     vec3 target{0, 0.5f, 0};
@@ -53,6 +58,12 @@ public:
     bool begin_frame(const Camera& camera, const SceneLighting& lighting);
     void draw(MeshId mesh, const mat4& model, vec4 tint = vec4(1.0f));
     void end_frame();
+
+    // 2D overlay in internal-resolution pixels, drawn after the 3D scene.
+    void ui_rect(float x, float y, float w, float h, uint32_t color);
+    // Text in the stb_easy_font face (about 6 x 7 px per glyph at scale 1).
+    void ui_text(float x, float y, const char* text, uint32_t color, float scale = 1.0f, bool shadow = true);
+    static float ui_text_width(const char* text, float scale = 1.0f);
 
     // Saves the next presented frame's low-res image to a PNG file.
     void request_screenshot(std::string path) { screenshot_path_ = std::move(path); }
@@ -98,6 +109,7 @@ private:
         Buffer uniforms;
         VkDescriptorSet set = VK_NULL_HANDLE;
         Buffer readback; // screenshot target
+        Buffer ui;       // per-frame overlay vertices
         std::string readback_path;
         VkExtent2D readback_extent{};
     };
@@ -107,6 +119,7 @@ private:
     bool create_offscreen();
     void destroy_offscreen();
     bool create_pipeline();
+    bool create_ui_pipeline();
     Buffer create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible);
     void destroy_buffer(Buffer& b);
     Image create_image(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect);
@@ -141,6 +154,10 @@ private:
     VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout_ = VK_NULL_HANDLE;
     VkPipeline mesh_pipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout ui_layout_ = VK_NULL_HANDLE;
+    VkPipeline ui_pipeline_ = VK_NULL_HANDLE;
+    static constexpr uint32_t kMaxUiVertices = 120000;
+    std::vector<UiVertex> ui_vertices_;
 
     std::array<Frame, kFramesInFlight> frames_{};
     uint32_t frame_index_ = 0;

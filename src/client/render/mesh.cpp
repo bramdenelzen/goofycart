@@ -60,8 +60,13 @@ void MeshBuilder::cone(vec3 b, float r, float h, int sides, uint32_t color) {
         const float a1 = 2.0f * kPi * float(i + 1) / float(sides);
         const vec3 p0 = b + vec3(std::cos(a0) * r, 0, std::sin(a0) * r);
         const vec3 p1 = b + vec3(std::cos(a1) * r, 0, std::sin(a1) * r);
-        tri(p1, p0, tip, color);
-        tri(b, p0, p1, color);
+        if (h >= 0.0f) {
+            tri(p1, p0, tip, color);
+            tri(b, p0, p1, color);
+        } else { // pointing down: flip the winding so faces stay outward
+            tri(p0, p1, tip, color);
+            tri(b, p1, p0, color);
+        }
     }
 }
 

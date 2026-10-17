@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_main.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -17,6 +18,16 @@ int main(int argc, char** argv) {
         else if (std::strcmp(a, "--validation") == 0) opt.validation = true;
         else if (std::strcmp(a, "--width") == 0) opt.window_width = std::atoi(next());
         else if (std::strcmp(a, "--height") == 0) opt.window_height = std::atoi(next());
+        else if (std::strcmp(a, "--autodrive") == 0) opt.autodrive = true;
+        else if (std::strcmp(a, "--karts") == 0) opt.karts = std::atoi(next());
+        else if (std::strcmp(a, "--cc") == 0) {
+            const int cc = std::atoi(next());
+            opt.engine = cc <= 50 ? gk::sim::EngineClass::cc50 : cc <= 100 ? gk::sim::EngineClass::cc100
+                       : cc <= 150 ? gk::sim::EngineClass::cc150 : gk::sim::EngineClass::cc200;
+        } else if (std::strcmp(a, "--build") == 0) {
+            // driver,body,tires,glider indices into data/parts.json
+            std::sscanf(next(), "%d,%d,%d,%d", &opt.build.driver, &opt.build.body, &opt.build.tires, &opt.build.glider);
+        }
     }
     if (const char* v = std::getenv("GK_VALIDATION"); v && *v == '1') opt.validation = true;
     gk::App app;

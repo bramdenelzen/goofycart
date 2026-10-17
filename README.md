@@ -5,6 +5,10 @@ with Vulkan. Low-res, low-poly art; 12 racers per race with CPU drivers filling
 empty seats; a dedicated server with server-authoritative racing over UDP.
 
 Status: early development. See [docs/ROADMAP.md](docs/ROADMAP.md) for phases.
+Right now you can race 3 laps of a greybox test track against 11 simple
+line-following karts: drifting with blue, orange and purple mini-turbos,
+hops, tricks off ramps, a glider section over a chasm, dash panels, rocket
+starts, off-road, sand, ice and mud, and Lakitu-style respawns.
 
 ## Layout
 
@@ -15,7 +19,7 @@ Status: early development. See [docs/ROADMAP.md](docs/ROADMAP.md) for phases.
 | `src/server` | `gk_server`: headless dedicated server |
 | `src/client` | `gk_client`: SDL3 window and input, Vulkan renderer |
 | `shaders` | GLSL sources and prebuilt SPIR-V headers |
-| `data` | Stat tables and tuning data |
+| `data` | Level tables (`physics.json`) and parts (`parts.json`); every MK8-derived number is tagged datamined or provisional |
 | `tests` | Unit tests (doctest) |
 
 ## Building
@@ -56,13 +60,23 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 | `--fullres` | Render at full window resolution instead of the low-res upscaled look (F2 toggles) |
 | `--validation` | Enable Vulkan validation layers (or `GK_VALIDATION=1`) |
 | `--frames N --screenshot out.png` | Run N frames, save the last one, quit |
+| `--autodrive` | Your kart drives itself |
+| `--cc 50\|100\|150\|200` | Engine class (default 150) |
+| `--build D,B,T,G` | Driver, body, tires and glider indices from `data/parts.json` |
+| `--karts N` | Racers on the grid, 1 to 12 |
 
 ## Controls
 
-Keyboard: arrows or WASD steer, X or Space accelerate, Z or Down brake,
-Shift hop/drift, E use item, C look back, Esc quit. Gamepads (Xbox,
-PlayStation, Switch Pro and generic) work out of the box: left stick steer,
-A/Cross accelerate, B/Circle brake, R hop/drift, L or left trigger item.
+Keyboard: arrows or WASD steer, X or Space accelerate, Z brake, Shift
+hop/drift (press it at a ramp lip to trick), Up/Down pitch the glider, E use
+item, C look back, R restart, F1 help, F2 low-res toggle, Esc quit.
+
+Gamepads (Xbox, PlayStation, Switch Pro and generic) work out of the box:
+left stick steer and pitch, A/Cross accelerate, B/Circle brake, R hop/drift,
+L or left trigger item, X/Square look back, Back/Select restart.
+
+Rocket start: press accelerate as the "2" fades (about 1 to 1.7 s before GO).
+Holding it from the start burns out the engine.
 
 ## Legal
 

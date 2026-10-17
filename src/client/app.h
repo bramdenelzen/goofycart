@@ -1,8 +1,13 @@
 #pragma once
+#include "hud.h"
 #include "input.h"
 #include "render/renderer.h"
 
+#include "gk/sim/world.h"
+
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace gk {
 
@@ -13,6 +18,10 @@ struct AppOptions {
     bool validation = false;
     int max_frames = -1;          // quit after this many frames (CI smoke tests)
     std::string screenshot_path;  // saved on the last frame when max_frames is set
+    bool autodrive = false;       // the player kart drives itself (demos, screenshots)
+    int karts = 12;
+    sim::EngineClass engine = sim::EngineClass::cc150;
+    sim::Build build{1, 0, 0, 0};
 };
 
 class App {
@@ -22,17 +31,32 @@ public:
 private:
     bool init();
     void shutdown();
-    void update(float dt);
-    void render();
+    void start_race();
+    void update();
+    void handle_events();
+    void update_camera(float dt);
+    void render(float alpha, float dt);
+    void draw_kart(int index, const sim::KartState& s, float alpha);
 
     AppOptions options_;
     SDL_Window* window_ = nullptr;
     render::Renderer renderer_;
     InputMapper input_;
 
-    render::MeshId kart_mesh_ = 0, ground_mesh_ = 0, tree_mesh_ = 0;
-    float kart_yaw_ = 0.0f;
-    float orbit_ = 0.0f;
+    sim::PhysicsTables tables_;
+    sim::PartsCatalog parts_;
+    std::unique_ptr<sim::World> world_;
+    std::vector<sim::KartState> prev_;
+    int player_ = 0;
+
+    render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, glider_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0;
+    std::vector<render::MeshId> kart_meshes_;
+
+    vec3 cam_pos_{0.0f}, cam_look_{0.0f};
+    float cam_fov_ = 70.0f;
+    bool cam_init_ = false;
+    HudMessage message_;
+    bool show_help_ = true;
     uint64_t frame_ = 0;
 };
 

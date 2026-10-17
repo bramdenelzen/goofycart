@@ -1,4 +1,6 @@
-set(GK_SHADERS ${PROJECT_SOURCE_DIR}/shaders/mesh.vert ${PROJECT_SOURCE_DIR}/shaders/mesh.frag)
+set(GK_SHADERS
+  ${PROJECT_SOURCE_DIR}/shaders/mesh.vert ${PROJECT_SOURCE_DIR}/shaders/mesh.frag
+  ${PROJECT_SOURCE_DIR}/shaders/ui.vert ${PROJECT_SOURCE_DIR}/shaders/ui.frag)
 
 # Compile shaders at build time when glslangValidator is available, otherwise
 # fall back to the checked-in SPIR-V headers in shaders/prebuilt.
@@ -29,7 +31,9 @@ add_executable(gk_client
   main.cpp
   app.cpp
   input.cpp
+  hud.cpp
   render/mesh.cpp
+  render/track_mesh.cpp
   render/renderer.cpp
 )
 add_dependencies(gk_client gk_shaders)

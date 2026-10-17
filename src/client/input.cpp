@@ -34,12 +34,14 @@ void InputMapper::handle_event(const SDL_Event& e) {
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
         if (e.gbutton.button == SDL_GAMEPAD_BUTTON_START) actions_.pause_pressed = true;
-        if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK) actions_.toggle_resolution_pressed = true;
+        if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK) actions_.restart_pressed = true;
         break;
     case SDL_EVENT_KEY_DOWN:
         if (e.key.repeat) break;
         if (e.key.key == SDLK_ESCAPE) actions_.pause_pressed = true;
         if (e.key.key == SDLK_F2) actions_.toggle_resolution_pressed = true;
+        if (e.key.key == SDLK_F1) actions_.toggle_help_pressed = true;
+        if (e.key.key == SDLK_R) actions_.restart_pressed = true;
         break;
     case SDL_EVENT_QUIT:
         actions_.quit_requested = true;

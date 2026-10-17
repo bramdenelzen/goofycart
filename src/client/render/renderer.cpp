@@ -13,6 +13,10 @@
 
 #include "mesh_frag.h"
 #include "mesh_vert.h"
+#include "ui_frag.h"
+#include "ui_vert.h"
+
+#include <stb_easy_font.h>
 
 #include <algorithm>
 #include <cstring>
@@ -166,6 +170,8 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
 
         f.uniforms = create_buffer(sizeof(FrameUniforms), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, true);
         if (!f.uniforms.buffer) return false;
+        f.ui = create_buffer(sizeof(UiVertex) * kMaxUiVertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+        if (!f.ui.buffer) return false;
         VkDescriptorSetAllocateInfo da{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         da.descriptorPool = descriptor_pool_;
         da.descriptorSetCount = 1;
@@ -182,6 +188,7 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
     }
 
     if (!create_pipeline()) return false;
+    if (!create_ui_pipeline()) return false;
     if (!create_swapchain()) return false;
     if (!create_offscreen()) return false;
     return true;
@@ -194,6 +201,7 @@ void Renderer::shutdown() {
         finish_readback(f);
         destroy_buffer(f.readback);
         destroy_buffer(f.uniforms);
+        destroy_buffer(f.ui);
         vkDestroySemaphore(device_, f.acquired, nullptr);
         vkDestroyFence(device_, f.fence, nullptr);
         vkDestroyCommandPool(device_, f.pool, nullptr);
@@ -207,6 +215,8 @@ void Renderer::shutdown() {
     destroy_swapchain();
     vkDestroyPipeline(device_, mesh_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
+    vkDestroyPipeline(device_, ui_pipeline_, nullptr);
+    vkDestroyPipelineLayout(device_, ui_layout_, nullptr);
     vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
     vkDestroyDescriptorSetLayout(device_, set_layout_, nullptr);
     vmaDestroyAllocator(allocator_);
@@ -359,6 +369,110 @@ bool Renderer::create_pipeline() {
     return true;
 }
 
+bool Renderer::create_ui_pipeline() {
+    VkShaderModule vs = make_shader(device_, k_ui_vert, sizeof(k_ui_vert));
+    VkShaderModule fs = make_shader(device_, k_ui_frag, sizeof(k_ui_frag));
+    if (!vs || !fs) return false;
+    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(vec2)};
+    VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pl.pushConstantRangeCount = 1;
+    pl.pPushConstantRanges = &push;
+    GK_VK_CHECK(vkCreatePipelineLayout(device_, &pl, nullptr, &ui_layout_));
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main", nullptr};
+    stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main", nullptr};
+    VkVertexInputBindingDescription vb{0, sizeof(UiVertex), VK_VERTEX_INPUT_RATE_VERTEX};
+    VkVertexInputAttributeDescription attrs[2] = {
+        {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(UiVertex, pos)},
+        {1, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(UiVertex, color)},
+    };
+    VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    vi.vertexBindingDescriptionCount = 1;
+    vi.pVertexBindingDescriptions = &vb;
+    vi.vertexAttributeDescriptionCount = 2;
+    vi.pVertexAttributeDescriptions = attrs;
+    VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    vp.viewportCount = 1;
+    vp.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    rs.polygonMode = VK_POLYGON_MODE_FILL;
+    rs.cullMode = VK_CULL_MODE_NONE;
+    rs.lineWidth = 1.0f;
+    VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    VkPipelineColorBlendAttachmentState cba{};
+    cba.blendEnable = VK_TRUE;
+    cba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    cba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    cba.colorBlendOp = VK_BLEND_OP_ADD;
+    cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    cba.alphaBlendOp = VK_BLEND_OP_ADD;
+    cba.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    cb.attachmentCount = 1;
+    cb.pAttachments = &cba;
+    VkDynamicState dyn[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dy{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    dy.dynamicStateCount = 2;
+    dy.pDynamicStates = dyn;
+    VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+    rendering.colorAttachmentCount = 1;
+    rendering.pColorAttachmentFormats = &color_format_;
+    rendering.depthAttachmentFormat = depth_format_;
+    VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    gp.pNext = &rendering;
+    gp.stageCount = 2;
+    gp.pStages = stages;
+    gp.pVertexInputState = &vi;
+    gp.pInputAssemblyState = &ia;
+    gp.pViewportState = &vp;
+    gp.pRasterizationState = &rs;
+    gp.pMultisampleState = &ms;
+    gp.pDepthStencilState = &ds;
+    gp.pColorBlendState = &cb;
+    gp.pDynamicState = &dy;
+    gp.layout = ui_layout_;
+    const VkResult r = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &ui_pipeline_);
+    vkDestroyShaderModule(device_, vs, nullptr);
+    vkDestroyShaderModule(device_, fs, nullptr);
+    GK_VK_CHECK(r);
+    return true;
+}
+
+void Renderer::ui_rect(float x, float y, float w, float h, uint32_t color) {
+    if (!frame_active_) return;
+    const UiVertex a{{x, y}, color}, b{{x + w, y}, color}, c{{x + w, y + h}, color}, d{{x, y + h}, color};
+    ui_vertices_.insert(ui_vertices_.end(), {a, b, c, a, c, d});
+}
+
+void Renderer::ui_text(float x, float y, const char* text, uint32_t color, float scale, bool shadow) {
+    if (!frame_active_ || !text) return;
+    const float off = std::max(1.0f, std::floor(scale * 0.3f));
+    if (shadow) ui_text(x + off, y + off, text, rgba(0, 0, 0, uint8_t((color >> 24) * 3 / 4)), scale, false);
+    struct EasyVertex {
+        float x, y, z;
+        unsigned char c[4];
+    };
+    static EasyVertex buffer[4 * 1000];
+    unsigned char col[4] = {0, 0, 0, 0};
+    const int quads = stb_easy_font_print(0.0f, 0.0f, const_cast<char*>(text), col, buffer, sizeof(buffer));
+    for (int q = 0; q < quads; ++q) {
+        const EasyVertex* v = &buffer[q * 4];
+        UiVertex out[4];
+        for (int i = 0; i < 4; ++i) out[i] = {{x + v[i].x * scale, y + v[i].y * scale}, color};
+        ui_vertices_.insert(ui_vertices_.end(), {out[0], out[1], out[2], out[0], out[2], out[3]});
+    }
+}
+
+float Renderer::ui_text_width(const char* text, float scale) {
+    return float(stb_easy_font_width(const_cast<char*>(text))) * scale;
+}
+
 Renderer::Buffer Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible) {
     Buffer b;
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -491,6 +605,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
     clear_color_ = lighting.sky;
 
     draws_.clear();
+    ui_vertices_.clear();
     frame_active_ = true;
     return true;
 }
@@ -563,6 +678,17 @@ void Renderer::end_frame() {
         push.tint = d.tint;
         vkCmdPushConstants(cmd, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
         vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+    }
+    if (!ui_vertices_.empty()) {
+        const size_t count = std::min<size_t>(ui_vertices_.size(), kMaxUiVertices);
+        std::memcpy(f.ui.mapped, ui_vertices_.data(), count * sizeof(UiVertex));
+        vmaFlushAllocation(allocator_, f.ui.alloc, 0, VK_WHOLE_SIZE);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_);
+        const vec2 inv(2.0f / float(offscreen_extent_.width), 2.0f / float(offscreen_extent_.height));
+        vkCmdPushConstants(cmd, ui_layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(inv), &inv);
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &f.ui.buffer, &offset);
+        vkCmdDraw(cmd, uint32_t(count), 1, 0, 0);
     }
     vkCmdEndRendering(cmd);
 
