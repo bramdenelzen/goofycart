@@ -93,8 +93,10 @@ void build_racing_line(Track& t) {
     }
 
     // Relax: wide stencil first to find the overall shape, then narrow to smooth.
+    // The final 1-sample pass matters: wider stencils alone leave every third
+    // sample on its own chain, free to zig-zag against its neighbours.
     std::vector<float> next(static_cast<size_t>(n));
-    for (int stencil : {12, 6, 3}) {
+    for (int stencil : {12, 6, 3, 1}) {
         for (int iter = 0; iter < 300; ++iter) {
             for (int i = 0; i < n; ++i) {
                 Track::LinePoint& lp = t.line[size_t(i)];

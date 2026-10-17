@@ -64,6 +64,13 @@ TEST_CASE("the racing line stays on the road and cuts corners") {
     for (size_t i = 0; i < t.line.size(); ++i) len += glm::length(t.line_point(int(i) + 1) - t.line_point(int(i)));
     MESSAGE("centre " << t.length << " m, racing line " << len << " m");
     CHECK(len < t.length);
+    // Smooth: no zig-zag between neighbouring samples (second difference).
+    float kink = 0.0f;
+    for (int i = 0; i < int(t.line.size()); ++i)
+        kink = std::max(kink, std::abs(t.line[size_t(t.wrap(i - 1))].offset - 2.0f * t.line[size_t(i)].offset +
+                                       t.line[size_t(t.wrap(i + 1))].offset));
+    MESSAGE("largest kink " << kink << " m");
+    CHECK(kink < 0.5f);
 }
 
 TEST_CASE("CPUs lap the greybox loop cleanly, harder ones faster, with tricks") {
