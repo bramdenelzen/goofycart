@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-24.04
+          - name: Windows
+            os: windows-2022
+          - name: macOS
+            os: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build glslang-tools mesa-vulkan-drivers xvfb \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
+            libwayland-dev libxkbcommon-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libgl-dev
+
+      - name: Install macOS packages
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: cmake --preset release
+
+      - name: Build
+        run: cmake --build --preset release
+
+      - name: Unit tests
+        run: ctest --preset release
+
+      - name: Server smoke test
+        run: ./build/release/src/server/gk_server --ticks 60
+
+      - name: Prebuilt shaders are up to date
+        if: runner.os == 'Linux'
+        run: |
+          python3 tools/compile_shaders.py glslangValidator shaders/prebuilt shaders/*.vert shaders/*.frag
+          git diff --exit-code shaders/prebuilt
+
+      - name: Client smoke test (software Vulkan)
+        if: runner.os == 'Linux'
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+        run: xvfb-run -a -s "-screen 0 1280x720x24" ./build/release/src/client/gk_client --frames 30 --screenshot smoke.png
+
+      - name: Upload smoke screenshot
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshot
+          path: smoke.png

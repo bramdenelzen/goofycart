@@ -1,0 +1,37 @@
+cmake_minimum_required(VERSION 3.24)
+project(GobbyKart VERSION 0.1.0 LANGUAGES C CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+option(GK_BUILD_CLIENT "Build the game client (needs SDL3 + Vulkan headers)" ON)
+option(GK_BUILD_SERVER "Build the headless dedicated server" ON)
+option(GK_BUILD_TESTS "Build unit tests" ON)
+
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
+include(Dependencies)
+
+# Shared warning flags for our own targets (not third-party code).
+add_library(gk_warnings INTERFACE)
+if(MSVC)
+  target_compile_options(gk_warnings INTERFACE /W4 /permissive- /utf-8)
+else()
+  target_compile_options(gk_warnings INTERFACE -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers)
+endif()
+
+add_subdirectory(src/core)
+add_subdirectory(src/sim)
+if(GK_BUILD_SERVER)
+  add_subdirectory(src/server)
+endif()
+if(GK_BUILD_CLIENT)
+  add_subdirectory(src/client)
+endif()
+if(GK_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
