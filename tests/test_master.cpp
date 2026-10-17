@@ -7,6 +7,8 @@
 #include <httplib.h>
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <thread>
 
 using namespace gk::online;
@@ -132,6 +134,21 @@ TEST_CASE("the HTTP API end to end") {
     CHECK(game.report({{other->id, acc->id}}));
     CHECK(player.me(acc->token)->rating < 1000);
     CHECK_FALSE(wrong.report({{acc->id}}));
+
+    // Crash reports: waiting ones are sent, then removed; junk is refused.
+    const auto dir = std::filesystem::temp_directory_path() / "gk_test_crashes";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    std::ofstream(dir / "crash-1.txt") << "Gobby Kart crash report\nprogram: test\n";
+    std::ofstream(dir / "crash-2.txt") << "not a report";
+    std::ofstream(dir / "notes.txt") << "left alone";
+    CHECK(player.send_crash_reports(dir.string()) == 1);
+    CHECK(state.crash_count() == 1);
+    CHECK_FALSE(std::filesystem::exists(dir / "crash-1.txt"));
+    CHECK_FALSE(std::filesystem::exists(dir / "crash-2.txt"));
+    CHECK(std::filesystem::exists(dir / "notes.txt"));
+    CHECK_FALSE(state.store_crash("Gobby Kart crash report\n" + std::string(MasterState::kMaxCrashBytes, 'x')));
+    std::filesystem::remove_all(dir);
 
     http.stop();
     t.join();

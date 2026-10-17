@@ -8,6 +8,7 @@
 //   POST /v1/servers/heartbeat   (X-Server-Key) server    -> {}
 //   POST /v1/sessions/verify     (X-Server-Key) {"token"} -> account, or 404
 //   POST /v1/results             (X-Server-Key) {"accounts":[ids in finishing order]} -> {"ratings":{id:rating}}
+//   POST /v1/crashes             crash report (text/plain)  -> {}
 //   GET  /healthz
 #include "gk/online/master.h"
 

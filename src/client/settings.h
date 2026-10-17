@@ -10,6 +10,7 @@ struct Settings {
     bool fullscreen = false;
     bool show_help = true;              // control hints in races (F1)
     bool rumble = true;
+    bool crash_reports = true;          // send crash reports to the master server
     std::string master_url;             // ONLINE's master server (also --master)
 
     bool load(const std::string& path);

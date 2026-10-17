@@ -42,6 +42,7 @@ struct AppOptions {
     std::string name = "Player";
     std::string master_url;       // master server for ONLINE (accounts, matchmaking)
     std::string region;           // preferred server region for matchmaking
+    std::string crash;            // --crash segv|abort|throw: test the crash reporter
     net::LinkConditions link; // simulated lag and loss for testing
 };
 
@@ -124,6 +125,7 @@ private:
     bool connect_online(const std::string& host, uint16_t port, const std::string& token);
     void leave_online();
     std::future<MatchResult> matching_;
+    std::future<void> crash_upload_; // last runs' crash reports, sent at launch
     std::string online_error_;
     std::string account_label_; // "NAME (rating)" once signed in
     bool transport_ready_ = false;

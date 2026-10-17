@@ -140,7 +140,8 @@ themed low-poly render mesh with scenery from that.
 ## Options
 
 OPTIONS on the title menu sets master, music and effects volume, the low-res
-look, fullscreen, control hints and rumble. Settings are saved to
+look, fullscreen, control hints, rumble and whether crash reports are sent
+(see [docs/ONLINE.md](docs/ONLINE.md#crash-reports)). Settings are saved to
 `settings.txt` in the same user data folder as the ghosts.
 
 ## Time Trials

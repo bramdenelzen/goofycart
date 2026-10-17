@@ -27,6 +27,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(a, "--menu") == 0) opt.menu = next();
         else if (std::strcmp(a, "--master") == 0) opt.master_url = next();
         else if (std::strcmp(a, "--region") == 0) opt.region = next();
+        else if (std::strcmp(a, "--crash") == 0) opt.crash = next();
         else if (std::strcmp(a, "--connect") == 0) {
             // host or host:port
             std::string target = next();

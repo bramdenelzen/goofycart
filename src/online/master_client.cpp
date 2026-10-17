@@ -1,5 +1,8 @@
 #include "gk/online/master_client.h"
 
+#include "gk/core/crash.h"
+#include "gk/core/log.h"
+
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
@@ -111,6 +114,22 @@ std::vector<ServerEntry> MasterClient::servers(int protocol) {
     if (const auto j = call([&] { return impl_->http.Get("/v1/servers", params, httplib::Headers{}); }, error_))
         for (const auto& s : j->value("servers", json::array())) out.push_back(server_from(s));
     return out;
+}
+
+bool MasterClient::send_crash(const std::string& report) {
+    return call([&] { return impl_->http.Post("/v1/crashes", report, "text/plain"); }, error_).has_value();
+}
+
+int MasterClient::send_crash_reports(const std::string& dir) {
+    int sent = 0;
+    for (const std::string& path : pending_crash_reports(dir)) {
+        const httplib::Result r = impl_->http.Post("/v1/crashes", read_crash_report(path), "text/plain");
+        if (!r) break; // unreachable: keep them for next time
+        if (r->status >= 200 && r->status < 300) ++sent;
+        remove_crash_report(path);
+    }
+    if (sent) log_info("Sent {} crash report(s) to the master server", sent);
+    return sent;
 }
 
 bool MasterClient::heartbeat(const ServerEntry& s) {

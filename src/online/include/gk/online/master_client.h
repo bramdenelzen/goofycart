@@ -30,11 +30,16 @@ public:
     std::optional<AccountInfo> me(const std::string& token);
     std::optional<ServerEntry> match(const std::string& region, int protocol);
     std::vector<ServerEntry> servers(int protocol);
+    bool send_crash(const std::string& report);
 
     // Game servers
     bool heartbeat(const ServerEntry& self);
     std::optional<AccountInfo> verify(const std::string& token);
     bool report(const RaceReport& r);
+
+    // Sends the crash reports waiting in `dir` and removes the ones the
+    // master took (or refused as invalid). Returns how many were sent.
+    int send_crash_reports(const std::string& dir);
 
 private:
     struct Impl;

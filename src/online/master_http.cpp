@@ -101,6 +101,11 @@ void install_master_routes(httplib::Server& http, MasterState& state, std::strin
         reply(res, 200, account_json(*a));
     });
 
+    http.Post("/v1/crashes", [&state](const httplib::Request& req, httplib::Response& res) {
+        if (!state.store_crash(req.body)) return reply(res, 400, {{"error", "not a crash report, too big, or the store is full"}});
+        reply(res, 201, json::object());
+    });
+
     http.Post("/v1/results", [&state, server_ok](const httplib::Request& req, httplib::Response& res) {
         if (!server_ok(req)) return reply(res, 403, {{"error", "bad server key"}});
         const auto b = body_json(req);

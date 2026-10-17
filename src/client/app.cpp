@@ -6,6 +6,7 @@
 #include "gk/online/master_client.h"
 #include "render/track_mesh.h"
 
+#include "gk/core/crash.h"
 #include "gk/core/fixed_step.h"
 #include "gk/core/log.h"
 #include "gk/sim/data.h"
@@ -118,6 +119,7 @@ bool App::init() {
     if (char* pref = SDL_GetPrefPath("Gobby", "GobbyKart")) {
         pref_dir_ = pref;
         SDL_free(pref);
+        install_crash_handler(pref_dir_ + "crashes", "gk_client", GK_VERSION);
     }
     window_ = SDL_CreateWindow("Gobby Kart", options_.window_width, options_.window_height,
                                SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
@@ -132,6 +134,11 @@ bool App::init() {
     if (const std::string sp = settings_path(); !sp.empty()) settings_.load(sp);
     if (options_.full_resolution) settings_.low_res = false;
     apply_settings();
+    if (const std::string url = !options_.master_url.empty() ? options_.master_url : settings_.master_url;
+        settings_.crash_reports && !url.empty() && !pref_dir_.empty())
+        crash_upload_ = std::async(std::launch::async, [url, dir = pref_dir_ + "crashes"] {
+            online::MasterClient(url).send_crash_reports(dir);
+        });
     // Scripted runs (CI, screenshots) mix into SDL's dummy device so the audio
     // path still runs without speakers.
     if (options_.max_frames >= 0) SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
@@ -165,6 +172,7 @@ bool App::init() {
     bullet_mesh_ = renderer_.upload_mesh(render::make_bullet_mesh());
     chomper_mesh_ = renderer_.upload_mesh(render::make_chomper_mesh());
     set_kart_meshes({});
+    if (!options_.crash.empty()) crash_now(options_.crash);
     log_info("Renderer ready, internal resolution {}x{}", renderer_.internal_extent().width,
              renderer_.internal_extent().height);
     return true;

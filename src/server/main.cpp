@@ -6,6 +6,7 @@
 // matchmaking): --server-key (or GK_SERVER_KEY), --region, --name, and
 // --public-host if players should connect to another address than the one
 // the server reaches the master from.
+#include "gk/core/crash.h"
 #include "gk/core/fixed_step.h"
 #include "gk/core/log.h"
 #include "gk/net/room.h"
@@ -31,7 +32,7 @@ int main(int argc, char** argv) {
     bool fast = false;   // step as fast as possible (tests)
     uint16_t port = gk::net::kDefaultPort;
     gk::net::RoomConfig cfg;
-    std::string master_url, server_key;
+    std::string master_url, server_key, crash;
     gk::online::ServerEntry self;
     self.name = "Gobby Kart server";
     if (const char* k = std::getenv("GK_SERVER_KEY")) server_key = k;
@@ -51,6 +52,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--region") == 0) self.region = next();
         else if (std::strcmp(argv[i], "--name") == 0) self.name = next();
         else if (std::strcmp(argv[i], "--public-host") == 0) self.host = next();
+        else if (std::strcmp(argv[i], "--crash") == 0) crash = next(); // test the crash reporter
         else if (std::strcmp(argv[i], "--bots") == 0) cfg.idle_without_humans = false; // race even when empty
         else if (std::strcmp(argv[i], "--cc") == 0) {
             const int cc = std::atoi(next());
@@ -58,6 +60,7 @@ int main(int argc, char** argv) {
                        : cc <= 150 ? gk::sim::EngineClass::cc150 : gk::sim::EngineClass::cc200;
         }
     }
+    gk::install_crash_handler("crashes", "gk_server", GK_VERSION);
     std::signal(SIGINT, on_signal);
     std::signal(SIGTERM, on_signal);
 
@@ -93,6 +96,7 @@ int main(int argc, char** argv) {
             self.max_players = cfg.seats;
             master = std::make_unique<gk::MasterLink>(master_url, server_key, self);
         }
+        if (!crash.empty()) gk::crash_now(crash);
         gk::log_info("gk_server ready at {} Hz, {} seats, {} laps, {} races per Grand Prix", gk::kTickRate, cfg.seats,
                      cfg.laps, cfg.races_per_gp);
 

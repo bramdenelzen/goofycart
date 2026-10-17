@@ -30,6 +30,7 @@ bool Settings::load(const std::string& path) {
         else if (key == "fullscreen") fullscreen = v != 0;
         else if (key == "show_help") show_help = v != 0;
         else if (key == "rumble") rumble = v != 0;
+        else if (key == "crash_reports") crash_reports = v != 0;
     }
     return true;
 }
@@ -37,7 +38,8 @@ bool Settings::load(const std::string& path) {
 bool Settings::save(const std::string& path) const {
     std::ofstream f(path, std::ios::trunc);
     f << "master=" << master << "\nmusic=" << music << "\nsfx=" << sfx << "\nlow_res=" << low_res
-      << "\nfullscreen=" << fullscreen << "\nshow_help=" << show_help << "\nrumble=" << rumble << "\nmaster_url=" << master_url << "\n";
+      << "\nfullscreen=" << fullscreen << "\nshow_help=" << show_help << "\nrumble=" << rumble
+      << "\ncrash_reports=" << crash_reports << "\nmaster_url=" << master_url << "\n";
     return bool(f);
 }
 

@@ -41,6 +41,7 @@ void MasterLink::run() {
     using clock = std::chrono::steady_clock;
     auto next_beat = clock::now();
     bool was_ok = false;
+    client_.send_crash_reports("crashes"); // from earlier runs of this server
     std::unique_lock lock(mutex_);
     while (!quit_) {
         wake_.wait_until(lock, next_beat, [this] { return quit_ || !checks_.empty() || !reports_.empty(); });

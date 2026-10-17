@@ -67,6 +67,7 @@ int main(int argc, char** argv) {
     }
     const auto start = std::chrono::steady_clock::now();
     auto clock = [start] { return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count(); };
+    http->set_payload_max_length(256 * 1024);
     online::install_master_routes(*http, state, server_key, clock);
     if (server_key.empty()) log_warn("No --server-key: anyone can register servers and report results");
 

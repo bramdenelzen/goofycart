@@ -65,10 +65,18 @@ public:
     // and win counts. Returns the new ratings by account id.
     std::map<std::string, int> report(const RaceReport& r);
 
+    // Keeps a crash report sent by a game or server, in crashes/ next to the
+    // accounts file. False for anything that is not a report, is too big, or
+    // once kMaxCrashes are stored (old ones are for an operator to clear).
+    bool store_crash(const std::string& report);
+    int crash_count() const;
+
     bool save() const;
     bool load();
 
     static constexpr double kServerTimeout = 30.0;
+    static constexpr size_t kMaxCrashBytes = 64 * 1024;
+    static constexpr int kMaxCrashes = 2000;
 
 private:
     bool save_locked() const;
@@ -78,6 +86,7 @@ private:
     std::map<std::string, Account> accounts_;      // by id
     std::map<std::string, std::string> by_token_;  // token hash -> id
     std::map<std::string, ServerEntry> servers_;   // by host:port
+    int crashes_ = 0;
 };
 
 std::string sha256_hex(const std::string& data);

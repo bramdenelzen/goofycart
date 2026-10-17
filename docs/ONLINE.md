@@ -47,11 +47,27 @@ gk_master --port 7780 --data /var/lib/gobbykart/accounts.json \
 | `POST /v1/servers/heartbeat` | game server (`X-Server-Key`) | `{"port","name","region","protocol","players","max_players","phase","track"[,"host"]}` |
 | `POST /v1/sessions/verify` | game server | `{"token"}` → account, or 404 |
 | `POST /v1/results` | game server | `{"accounts":[ids in finishing order]}` → new ratings |
+| `POST /v1/crashes` | anyone | a crash report (text, up to 64 KB) |
 | `GET /healthz` | anyone | `{"ok":true}` |
 
 Matchmaking prefers the player's region, then a server whose lobby is open
 (so you race next instead of watching), then the busiest one, never a full
 one. Servers that miss heartbeats for 30 seconds drop off the list.
+
+### Crash reports
+
+When the game or a server crashes it writes `crash-<time>.txt` (program,
+version, platform, the signal or exception, a stack trace as module +
+offset, and the last log lines) to `crashes/` in the user data folder, or
+the server's working directory. The game sends them to its master server on
+its next launch unless CRASH REPORTS is off in OPTIONS; a server sends its
+own when it starts with `--master`. The master keeps them in `crashes/` next
+to the `--data` file, at most 2000, for an operator to read and clear.
+
+Symbolise a frame with the build's unstripped binary: `addr2line -Cfe
+gk_client 0x2f922` (Linux), `atos -o gk_client -l 0x100000000 0x...`
+(macOS) or the `.pdb` (Windows). `gk_client --crash segv` (or `abort`,
+`throw`) and the same for `gk_server` crash on purpose to test it.
 
 ## Game servers
 

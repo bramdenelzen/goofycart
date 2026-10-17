@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <ctime>
+#include <filesystem>
 #include <fstream>
 #include <random>
 
@@ -137,6 +139,26 @@ std::map<std::string, int> MasterState::report(const RaceReport& r) {
     return out;
 }
 
+bool MasterState::store_crash(const std::string& report) {
+    if (report.size() > kMaxCrashBytes || report.rfind("Gobby Kart crash report\n", 0) != 0) return false;
+    std::lock_guard lock(mutex_);
+    if (crashes_ >= kMaxCrashes) return false;
+    ++crashes_;
+    if (path_.empty()) return true;
+    std::error_code ec;
+    const auto dir = std::filesystem::absolute(path_, ec).parent_path() / "crashes";
+    std::filesystem::create_directories(dir, ec);
+    const auto file = dir / (std::to_string(std::time(nullptr)) + "-" + random_hex(4) + ".txt");
+    std::ofstream f(file, std::ios::binary);
+    f << report;
+    return bool(f);
+}
+
+int MasterState::crash_count() const {
+    std::lock_guard lock(mutex_);
+    return crashes_;
+}
+
 bool MasterState::save() const {
     std::lock_guard lock(mutex_);
     return save_locked();
@@ -178,6 +200,10 @@ bool MasterState::load() {
             by_token_[a.token_hash] = a.id;
             accounts_[a.id] = a;
         }
+        std::error_code ec;
+        const auto dir = std::filesystem::absolute(path_, ec).parent_path() / "crashes";
+        crashes_ = 0;
+        for (const auto& e : std::filesystem::directory_iterator(dir, ec)) crashes_ += e.is_regular_file(ec) ? 1 : 0;
     } catch (const std::exception&) {
         return false;
     }

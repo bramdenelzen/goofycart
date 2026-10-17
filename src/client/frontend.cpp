@@ -97,8 +97,8 @@ void draw_online_status(render::Renderer& r, const std::string& text, bool faile
 // ---------------------------------------------------------------- options
 
 namespace {
-constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "BACK"};
-constexpr int kOptionCount = 8;
+constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "CRASH REPORTS", "BACK"};
+constexpr int kOptionCount = 9;
 } // namespace
 
 OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions& act) {
@@ -116,6 +116,7 @@ OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions&
     case 4: st.fullscreen = !st.fullscreen; break;
     case 5: st.show_help = !st.show_help; break;
     case 6: st.rumble = !st.rumble; break;
+    case 7: st.crash_reports = !st.crash_reports; break;
     default: return OptionsAction::None;
     }
     return OptionsAction::Changed;
@@ -137,7 +138,7 @@ void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st
             for (int b = 0; b < 10; ++b)
                 r.ui_rect(vx + float(b) * 11, y, 9, 8, b < v ? rgba(90, 200, 255) : rgba(255, 255, 255, 40));
         } else if (i < kOptionCount - 1) {
-            const bool on = i == 3 ? st.low_res : i == 4 ? st.fullscreen : i == 5 ? st.show_help : st.rumble;
+            const bool on = i == 3 ? st.low_res : i == 4 ? st.fullscreen : i == 5 ? st.show_help : i == 6 ? st.rumble : st.crash_reports;
             r.ui_text(vx, y, on ? "< ON >" : "< OFF >", rgba(255, 255, 255), 1.0f);
         }
         y += 16.0f;
