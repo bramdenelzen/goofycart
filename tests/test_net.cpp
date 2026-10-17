@@ -424,3 +424,20 @@ TEST_CASE("an empty room goes back to the lobby") {
     CHECK_FALSE(h.room.racing());
     CHECK(h.room.phase() == RoomPhase::Lobby);
 }
+
+TEST_CASE("clients race on the server's track, not their previous one") {
+    // Each client builds the track from its own data; the first race, and
+    // every race after a track change, must use the track the server named.
+    sim::TrackCatalog catalog;
+    std::string err;
+    REQUIRE(catalog.load(sim::data_path("tracks/tracks.json"), &err));
+    RoomConfig cfg = quick_config();
+    cfg.tracks = catalog;
+    cfg.track = catalog.tracks.back().id; // not the default first track
+    Harness h(20, 0.0f, cfg);
+    ClientGame& g = h.connect(1, "A");
+    g.set_tracks(catalog);
+    REQUIRE(h.run_until([&] { return h.room.racing() && g.world(); }, 5000));
+    CHECK(h.room.world()->track().id == cfg.track);
+    CHECK(g.world()->track().id == cfg.track);
+}
