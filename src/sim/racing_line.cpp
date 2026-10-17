@@ -36,6 +36,14 @@ float reach(const Track& t, const CenterSample& c, float dir) {
     return last;
 }
 
+// Whether a wall stands beyond the drivable road on this side; without one
+// the line keeps further from the edge.
+bool walled(const Track& t, const CenterSample& c, float dir, float road_reach) {
+    const vec3 from = c.pos + c.right * (road_reach * dir) + c.up * 0.8f;
+    const auto hit = t.raycast(from, c.right * dir, 14.0f);
+    return hit && hit->surface == Surface::Wall;
+}
+
 // Lateral extent of any boost pad across the road at this sample.
 bool pad_span(const Track& t, const CenterSample& c, float& lo, float& hi) {
     lo = 1e9f, hi = -1e9f;
@@ -71,11 +79,13 @@ void build_racing_line(Track& t) {
         const CenterSample& c = t.center[size_t(i)];
         Track::LinePoint& lp = t.line[size_t(i)];
         const float taper = float(gap_dist[size_t(i)]) * spacing * 0.08f;
-        lp.hi = std::clamp(reach(t, c, 1.0f) - kMargin, 0.0f, taper);
-        lp.lo = -std::clamp(reach(t, c, -1.0f) - kMargin, 0.0f, taper);
+        const float rr = reach(t, c, 1.0f), rl = reach(t, c, -1.0f);
+        constexpr float kOpenMargin = 2.0f; // extra room from an edge you can fall off
+        lp.hi = std::clamp(rr - kMargin - (walled(t, c, 1.0f, rr) ? 0.0f : kOpenMargin), 0.0f, taper);
+        lp.lo = -std::clamp(rl - kMargin - (walled(t, c, -1.0f, rl) ? 0.0f : kOpenMargin), 0.0f, taper);
         // Run over boost pads.
         float pad_lo, pad_hi;
-        if (pad_span(t, c, pad_lo, pad_hi)) {
+        if (pad_span(t, c, pad_lo, pad_hi) && pad_hi - pad_lo > 1.5f) { // skip slivers at a pad's ends
             const float mid = 0.5f * (pad_lo + pad_hi), half = std::max(0.0f, 0.5f * (pad_hi - pad_lo) - 0.6f);
             lp.lo = std::max(lp.lo, std::min(mid - half, lp.hi));
             lp.hi = std::min(lp.hi, std::max(mid + half, lp.lo));
