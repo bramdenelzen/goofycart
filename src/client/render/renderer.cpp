@@ -86,7 +86,18 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
 
     vkb::InstanceBuilder ib(vkGetInstanceProcAddr);
     ib.set_app_name("Gobby Kart").set_engine_name("gobbykart").require_api_version(1, 3, 0);
-    for (Uint32 i = 0; i < ext_count; ++i) ib.enable_extension(sdl_exts[i]);
+    const auto sys = vkb::SystemInfo::get_system_info(vkGetInstanceProcAddr);
+    for (Uint32 i = 0; i < ext_count; ++i) {
+        // SDL on macOS always asks for portability enumeration, which only the
+        // Vulkan loader has; MoltenVK loaded directly (as in the app bundle)
+        // does not. vk-bootstrap turns it on, with its flag, when it exists.
+        if (std::strcmp(sdl_exts[i], VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) continue;
+        if (sys && !sys->is_extension_available(sdl_exts[i])) {
+            log_error("The Vulkan library has no {} (needed for the window)", sdl_exts[i]);
+            return false;
+        }
+        ib.enable_extension(sdl_exts[i]);
+    }
     if (options_.validation) ib.request_validation_layers(true).use_default_debug_messenger();
     auto inst = ib.build();
     if (!inst) {

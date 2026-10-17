@@ -31,7 +31,7 @@ jobs:
 
       - name: Install macOS packages
         if: runner.os == 'macOS'
-        run: brew install ninja
+        run: brew install ninja molten-vk
 
       - name: Set up MSVC
         if: runner.os == 'Windows'
@@ -90,6 +90,21 @@ jobs:
         with:
           name: smoke-screenshot
           path: smoke.png
+
+      # MoltenVK only, no Vulkan loader or SDK: what a player's Mac has with the app.
+      - name: Client smoke test (MoltenVK, no Vulkan loader)
+        if: runner.os == 'macOS'
+        run: |
+          test ! -e /opt/homebrew/lib/libvulkan.1.dylib
+          ./build/release/src/client/gk_client --autodrive --mute --frames 300 --screenshot smoke-macos.png 2>&1 | tee client.log
+          grep -q "GPU:" client.log
+
+      - name: Upload macOS smoke screenshot
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-screenshot-macos
+          path: smoke-macos.png
 
   server-image:
     name: Server image

@@ -106,10 +106,20 @@ bool App::init() {
     course_.engine = options_.engine;
     course_.cpu = options_.cpu_level;
 #ifdef __APPLE__
-    // A packaged app carries MoltenVK in Contents/Frameworks.
-    if (const char* base = SDL_GetBasePath()) {
-        const std::string moltenvk = std::string(base) + "../Frameworks/libMoltenVK.dylib";
-        if (std::ifstream(moltenvk).good()) SDL_SetHint(SDL_HINT_VULKAN_LIBRARY, moltenvk.c_str());
+    // Which Vulkan library to use: SDL_VULKAN_LIBRARY if set, else the MoltenVK
+    // a packaged app carries in Contents/Frameworks, else Homebrew's loader or
+    // MoltenVK (dlopen does not search /opt/homebrew/lib by itself).
+    if (!SDL_GetHint(SDL_HINT_VULKAN_LIBRARY)) {
+        std::vector<std::string> candidates;
+        if (const char* base = SDL_GetBasePath()) candidates.push_back(std::string(base) + "../Frameworks/libMoltenVK.dylib");
+        for (const char* prefix : {"/opt/homebrew/lib/", "/usr/local/lib/"})
+            for (const char* lib : {"libvulkan.1.dylib", "libMoltenVK.dylib"}) candidates.push_back(std::string(prefix) + lib);
+        for (const std::string& lib : candidates)
+            if (std::ifstream(lib).good()) {
+                SDL_SetHint(SDL_HINT_VULKAN_LIBRARY, lib.c_str());
+                log_info("Vulkan library: {}", lib);
+                break;
+            }
     }
 #endif
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {

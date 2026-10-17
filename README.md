@@ -95,7 +95,9 @@ on cup N, moving to the next cup after each Grand Prix), `--track id` (always
 race one track).
 
 Running the client needs a Vulkan 1.3 driver: your GPU driver on Windows and
-Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
+Linux. On macOS the packaged app carries MoltenVK; a source build finds
+Homebrew's (`brew install molten-vk`, optionally `vulkan-loader`) or the
+LunarG Vulkan SDK, and `SDL_VULKAN_LIBRARY=/path/to/lib` picks another.
 
 | Flag | Effect |
 | --- | --- |
