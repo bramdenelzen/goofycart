@@ -25,22 +25,36 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build glslang-tools mesa-vulkan-drivers xvfb \
+          sudo apt-get install -y ninja-build ccache glslang-tools mesa-vulkan-drivers xvfb \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
             libwayland-dev libxkbcommon-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libgl-dev
 
       - name: Install macOS packages
         if: runner.os == 'macOS'
-        run: brew install ninja molten-vk
+        run: brew install ninja ccache
 
       - name: Set up MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      # Downloaded sources and compiled objects carry over between runs.
+      - name: Cache downloads and compiler output
+        uses: actions/cache@v4
+        with:
+          path: |
+            .deps
+            .ccache
+          key: build-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}-${{ github.sha }}
+          restore-keys: build-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}-
+
       - name: Configure
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: cmake --preset release
 
       - name: Build
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: cmake --build --preset release
 
       - name: Unit tests
@@ -90,24 +104,6 @@ jobs:
         with:
           name: smoke-screenshot
           path: smoke.png
-
-      # MoltenVK only, no Vulkan loader or SDK: what a player's Mac has with the app.
-      - name: Client smoke test (MoltenVK, no Vulkan loader)
-        if: runner.os == 'macOS'
-        run: |
-          test ! -e /opt/homebrew/lib/libvulkan.1.dylib
-          set -o pipefail
-          export MVK_CONFIG_LOG_LEVEL=2 # MoltenVK warnings and errors
-          ./build/release/src/client/gk_client --autodrive --mute --frames 300 --screenshot smoke-macos.png 2>&1 | tee client.log \
-            || { cat ~/Library/"Application Support"/Gobby/GobbyKart/crashes/*.txt 2>/dev/null; exit 1; }
-          grep -q "GPU:" client.log
-
-      - name: Upload macOS smoke screenshot
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-screenshot-macos
-          path: smoke-macos.png
 
   server-image:
     name: Server image

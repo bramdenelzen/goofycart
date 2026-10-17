@@ -12,6 +12,30 @@ option(GK_BUILD_TESTS "Build unit tests" ON)
 option(GK_MACOS_BUNDLE "Build the macOS client as an app bundle with MoltenVK inside" OFF)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+# ccache (or sccache) makes every rebuild after the first, even from a clean
+# build folder, take seconds: brew install ccache / choco install ccache / apt install ccache.
+option(GK_COMPILER_CACHE "Use ccache or sccache when installed" ON)
+if(GK_COMPILER_CACHE AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+  find_program(GK_CACHE_PROGRAM NAMES ccache sccache)
+  if(GK_CACHE_PROGRAM MATCHES "ccache")
+    # Jolt and SDL use precompiled headers, which ccache only caches when told
+    # to ignore their timestamps.
+    set(_launcher ${CMAKE_COMMAND} -E env
+        "CCACHE_SLOPPINESS=pch_defines,time_macros,include_file_mtime,include_file_ctime" ${GK_CACHE_PROGRAM})
+    set(CMAKE_C_COMPILER_LAUNCHER ${_launcher})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${_launcher})
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      add_compile_options("SHELL:-Xclang -fno-pch-timestamp")
+    endif()
+  elseif(GK_CACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER ${GK_CACHE_PROGRAM})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${GK_CACHE_PROGRAM})
+  endif()
+  if(GK_CACHE_PROGRAM)
+    message(STATUS "Compiler cache: ${GK_CACHE_PROGRAM}")
+  endif()
+endif()
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 include(Dependencies)

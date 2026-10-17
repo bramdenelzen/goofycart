@@ -1,8 +1,11 @@
 name: Release
 
-# Builds the portable game packages on all three platforms. Pushing a tag
-# like v0.2.0 also publishes them as a GitHub release; running it by hand
-# (Actions > Release > Run workflow) only uploads them as build artifacts.
+# Builds the ready-to-run game for Windows (zip) and macOS (DMG).
+# - Every push to the default branch replaces the "latest" pre-release, so
+#   the newest build is always one download away (no compiling).
+# - Pushing a tag like v0.2.0 publishes a versioned release.
+# - Running it by hand (Actions > Release > Run workflow) only uploads the
+#   packages as build artifacts.
 #
 # macOS: the app is signed with a Developer ID and notarized when these
 # repository secrets exist, and ad-hoc signed otherwise (players then have to
@@ -12,8 +15,13 @@ name: Release
 
 on:
   push:
+    branches: [claude/gobbykart-build-osdxg2]
     tags: ["v*"]
   workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -26,8 +34,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Linux
-            os: ubuntu-24.04
           - name: Windows
             os: windows-2022
           - name: macOS
@@ -35,39 +41,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux packages
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build glslang-tools \
-            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
-            libwayland-dev libxkbcommon-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libgl-dev
-
       - name: Install macOS packages
         if: runner.os == 'macOS'
-        run: brew install ninja molten-vk
+        run: brew install ninja ccache molten-vk
 
       - name: Set up MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Cache downloads and compiler output
+        uses: actions/cache@v4
+        with:
+          path: |
+            .deps
+            .ccache
+          key: release-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}-${{ github.sha }}
+          restore-keys: release-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}-
+
       - name: Configure
         shell: bash
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: |
           extra=()
           if [ "$RUNNER_OS" = macOS ]; then extra=(-DGK_MACOS_BUNDLE=ON); fi
-          # The C++ runtime inside the programs, so only glibc 2.39+ is needed.
-          if [ "$RUNNER_OS" = Linux ]; then extra=("-DCMAKE_EXE_LINKER_FLAGS=-static-libstdc++ -static-libgcc"); fi
           cmake --preset release "${extra[@]}"
 
       - name: Build
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: cmake --build --preset release
 
       - name: Unit tests
         run: ctest --preset release
 
-      - name: Package (zip / tarball)
-        if: runner.os != 'macOS'
+      - name: Package (zip)
+        if: runner.os == 'Windows'
         run: cpack --config build/release/CPackConfig.cmake -B dist
 
       - name: Package (signed app in a DMG)
@@ -92,7 +101,7 @@ jobs:
             /tmp/gk/gk_server --ticks 60 --port 7811
             hdiutil detach /tmp/gk
           else
-            for f in ../dist/*.zip ../dist/*.tar.gz; do if [ -f "$f" ]; then cmake -E tar xf "$f"; fi; done
+            cmake -E tar xf ../dist/*.zip
             ./GobbyKart*/gk_server --ticks 60 --port 7811
           fi
 
@@ -101,7 +110,6 @@ jobs:
           name: GobbyKart-${{ runner.os }}
           path: |
             dist/*.zip
-            dist/*.tar.gz
             dist/*.dmg
 
       # The packages are stripped; these turn crash report offsets into names.
@@ -116,7 +124,7 @@ jobs:
 
   publish:
     needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
@@ -124,7 +132,21 @@ jobs:
           pattern: GobbyKart-*
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+
+      - name: Versioned release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
+
+      - name: Replace the "latest" pre-release
+        if: startsWith(github.ref, 'refs/heads/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest dist/* --prerelease --target "$GITHUB_SHA" \
+            --title "Latest build ($(echo $GITHUB_SHA | cut -c1-7))" \
+            --notes "Built from $GITHUB_SHA. Windows: unzip and run gk_client.exe. macOS: open the DMG and drag Gobby Kart.app out."

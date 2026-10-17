@@ -12,8 +12,25 @@ if(POLICY CMP0169)
 endif()
 set(FETCHCONTENT_QUIET ON)
 
+# Downloaded sources are kept in .deps/ (next to this repository's sources)
+# and shared by every build folder, so only the very first configure on a
+# machine downloads anything. Delete .deps/ to download afresh.
+set(GK_DEPS_DIR "${PROJECT_SOURCE_DIR}/.deps" CACHE PATH "Shared download folder for third-party sources")
+set(GK_FETCHED "")
 macro(gk_fetch name repo tag)
-  FetchContent_Declare(${name} GIT_REPOSITORY ${repo} GIT_TAG ${tag} GIT_SHALLOW TRUE SYSTEM)
+  set(_dir "${GK_DEPS_DIR}/${name}-${tag}")
+  string(TOUPPER "${name}" _up)
+  if(EXISTS "${_dir}/.gk-complete")
+    set(FETCHCONTENT_SOURCE_DIR_${_up} "${_dir}")
+    FetchContent_Declare(${name} GIT_REPOSITORY ${repo} GIT_TAG ${tag} SYSTEM)
+  else()
+    set(_shallow TRUE)
+    if("${tag}" MATCHES "^[0-9a-f]+$")
+      set(_shallow FALSE) # a commit, which a shallow clone cannot name
+    endif()
+    FetchContent_Declare(${name} GIT_REPOSITORY ${repo} GIT_TAG ${tag} GIT_SHALLOW ${_shallow} SOURCE_DIR "${_dir}" SYSTEM)
+    list(APPEND GK_FETCHED "${_dir}")
+  endif()
 endmacro()
 
 # --- always (sim, server, tests) ---------------------------------------------
@@ -51,6 +68,8 @@ FetchContent_GetProperties(JoltPhysics)
 if(NOT joltphysics_POPULATED)
   FetchContent_Populate(JoltPhysics)
   add_subdirectory(${joltphysics_SOURCE_DIR}/Build ${joltphysics_BINARY_DIR} EXCLUDE_FROM_ALL SYSTEM)
+  # One translation unit per 16 sources: Jolt is otherwise the slowest part of a clean build.
+  set_target_properties(Jolt PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 16)
 endif()
 
 # HTTP(S) for accounts and matchmaking (master server, game servers, client).
@@ -109,6 +128,11 @@ if(GK_BUILD_CLIENT)
   set(SDL_STATIC ON CACHE BOOL "" FORCE)
   set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
   set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+  # Only what the game uses: a Vulkan window, input, audio. SDL's 2D renderer,
+  # GPU API, OpenGL and camera are a large part of its build time.
+  foreach(_off SDL_RENDER SDL_GPU SDL_CAMERA SDL_OPENGL SDL_OPENGLES)
+    set(${_off} OFF CACHE BOOL "" FORCE)
+  endforeach()
 
   gk_fetch(VulkanHeaders https://github.com/KhronosGroup/Vulkan-Headers.git vulkan-sdk-1.4.304.0)
   gk_fetch(volk https://github.com/zeux/volk.git vulkan-sdk-1.4.304.0)
@@ -116,7 +140,7 @@ if(GK_BUILD_CLIENT)
   gk_fetch(vkbootstrap https://github.com/charles-lunarg/vk-bootstrap.git v1.3.302)
   set(VK_BOOTSTRAP_TEST OFF CACHE BOOL "" FORCE)
   gk_fetch(VulkanMemoryAllocator https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git v3.2.1)
-  FetchContent_Declare(stb GIT_REPOSITORY https://github.com/nothings/stb.git GIT_TAG 2c980bb59875b0d32144a71867fbdebb2f77cd20)
+  gk_fetch(stb https://github.com/nothings/stb.git 2c980bb59875b0d32144a71867fbdebb2f77cd20)
 
   FetchContent_MakeAvailable(SDL3 VulkanHeaders)
   FetchContent_MakeAvailable(volk vkbootstrap VulkanMemoryAllocator)
@@ -129,3 +153,10 @@ if(GK_BUILD_CLIENT)
   add_library(gk_stb INTERFACE)
   target_include_directories(gk_stb SYSTEM INTERFACE ${stb_SOURCE_DIR})
 endif()
+
+# Mark what this configure downloaded as complete, for the next build folder.
+foreach(_dir IN LISTS GK_FETCHED)
+  if(EXISTS "${_dir}")
+    file(TOUCH "${_dir}/.gk-complete")
+  endif()
+endforeach()

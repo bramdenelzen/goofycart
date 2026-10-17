@@ -27,6 +27,12 @@ runs online on a dedicated server with up to 12 players.
 | `data` | Level tables (`physics.json`) and parts (`parts.json`); every MK8-derived number is tagged datamined or provisional |
 | `tests` | Unit tests (doctest) |
 
+## Getting the game without building
+
+Every push to the default branch replaces the **latest** pre-release on the
+GitHub Releases page with a ready-to-run Windows zip and macOS DMG: download,
+unzip or open, play. Tagged versions (`v0.2.0`) get their own release.
+
 ## Building
 
 You need CMake 3.24+, Ninja and a C++20 compiler (MSVC 2022, Clang 16+ or
@@ -38,6 +44,12 @@ cmake --preset release
 cmake --build --preset release
 ctest --preset release
 ```
+
+Only the first configure on a machine downloads the libraries (into `.deps/`,
+shared by every build folder). Install [ccache](https://ccache.dev)
+(`brew install ccache`, `choco install ccache`, `apt install ccache`) and it is
+used automatically: after the first build, even a build from an empty folder
+takes seconds.
 
 The `server` preset builds only the dedicated server and tests, with no SDL or
 Vulkan, for headless Linux machines.
