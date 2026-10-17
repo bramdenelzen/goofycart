@@ -17,10 +17,11 @@ running under systemd instead.
 
 ## Sizing
 
-A race server is one thread running the 60 Hz simulation for 12 karts plus
-a snapshot stream to each player, so one core runs several rooms; give each
-room its own port. Measure with a soak run before sizing a fleet (see
-"Checking a deployment"). The master does very little work
+A race server is one thread running the 60 Hz simulation for 12 karts. A
+measured room with 11 players (120 ms lag, 2% loss) used about 3% of a core,
+under 2 ms for its slowest tick, a flat 10 MB of memory, and about 23 KB/s
+out and 2.3 KB/s in per player. So one core runs many rooms; give each room
+its own port and plan bandwidth at roughly 250 KB/s per full room. The master does very little work
 (a request per player per race, a heartbeat per room every 10 s) and keeps
 everything in one JSON file and a `crashes/` folder.
 
