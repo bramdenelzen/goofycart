@@ -178,7 +178,7 @@ struct Harness {
                     const sim::World* w = c.game->world();
                     const int seat = c.game->seat();
                     if (w && seat >= 0) {
-                        in = bot_input(w->karts()[size_t(seat)], w->track(), 7);
+                        in = bot_input(*w, seat, sim::CpuLevel::Hard);
                         // Even-numbered clients weave, so the others mispredict them.
                         if (id % 2 == 0) in.steer = std::clamp(in.steer + 0.4f * std::sin(float(c.game->tick()) * 0.07f), -1.0f, 1.0f);
                         if (!w->racing()) in.accelerate = false;

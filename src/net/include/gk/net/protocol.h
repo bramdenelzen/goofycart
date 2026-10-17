@@ -3,6 +3,7 @@
 #include "gk/sim/input.h"
 #include "gk/sim/kart.h"
 #include "gk/sim/stats.h"
+#include "gk/sim/ai.h"
 #include "gk/sim/world.h"
 
 #include <algorithm>
@@ -18,7 +19,7 @@
 //   kChannelChat     reliable, low priority: chat and emotes
 namespace gk::net {
 
-inline constexpr uint16_t kProtocolVersion = 3;
+inline constexpr uint16_t kProtocolVersion = 4;
 inline constexpr uint16_t kDefaultPort = 7777;
 inline constexpr uint8_t kChannelState = 0;
 inline constexpr uint8_t kChannelEvents = 1;
@@ -111,6 +112,7 @@ struct RaceSetup {
     sim::EngineClass engine = sim::EngineClass::cc150;
     uint8_t laps = 3;
     uint16_t countdown = 180;
+    sim::CpuLevel cpu_level = sim::CpuLevel::Normal;
     uint32_t data_hash = 0;    // CRC of the server's physics tables, to catch mismatched data files
     std::vector<SeatInfo> seats;
 };
@@ -221,14 +223,10 @@ sim::KartState read_kart(Reader& r);
 void write_entity(Writer& w, const sim::ItemEntity& e);
 sim::ItemEntity read_entity(Reader& r);
 
-// The placeholder bot driver, shared so clients predict bots exactly as the
+// The CPU driver for a seat, shared so clients predict bots exactly as the
 // server drives them.
-inline sim::KartInput bot_input(const sim::KartState& kart, const sim::Track& track, int seat) {
-    sim::KartInput in = sim::autopilot(kart, track, 6.0f + float(seat % 4));
-    // Placeholder item use until the CPU drivers phase: every so often press
-    // the button for a few ticks, which fires or drops whatever is in hand.
-    if (kart.item != sim::Item::None && kart.roulette == 0 && (kart.sample + seat * 13) % 50 < 2) in.item = true;
-    return in;
+inline sim::KartInput bot_input(const sim::World& world, int seat, sim::CpuLevel level) {
+    return sim::cpu_input(world, seat, sim::cpu_skill(level, seat));
 }
 
 uint32_t crc32(std::span<const uint8_t> data, uint32_t crc = 0);

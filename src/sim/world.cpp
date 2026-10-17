@@ -41,8 +41,21 @@ void World::tick(std::span<const KartInput> inputs) {
     step_inputs_.assign(karts_.size(), KartInput{});
     for (size_t i = 0; i < karts_.size() && i < inputs.size(); ++i) step_inputs_[i] = inputs[i];
     if (config_.items && !frozen) items_before_step(step_inputs_);
+    // Rubber band: CPU karts close up on the leading player who is still racing.
+    float lead = -1e9f;
+    bool any_player = false;
+    for (size_t i = 0; i < karts_.size(); ++i)
+        if (params_[i].rubber_band <= 0.0f && !karts_[i].finished) {
+            lead = std::max(lead, kart_race_distance(karts_[i], track_));
+            any_player = true;
+        }
     for (size_t i = 0; i < karts_.size(); ++i) {
         KartStepContext ctx{track_, tables_.constants, params_[i], int(i), frozen, &events_};
+        const float rb = params_[i].rubber_band;
+        if (any_player && rb > 0.0f && !karts_[i].finished) {
+            const float gap = std::clamp((lead - kart_race_distance(karts_[i], track_)) / 120.0f, -0.5f, 1.0f);
+            ctx.top_speed_scale = 1.0f + rb * (gap > 0.0f ? 0.09f : 0.06f) * gap;
+        }
         kart_step(karts_[i], step_inputs_[i], ctx);
     }
     if (countdown_left_ > 0 && --countdown_left_ == 0) {

@@ -269,7 +269,7 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     // Engine speed
     float terrain = terrain_multiplier(s, p, k);
     if (s.boost_frames > 0 && s.boost_ignores_offroad) terrain = std::max(terrain, 1.0f);
-    const float top = p.top_speed * terrain * (1.0f + k.coin_speed_bonus * float(std::min(s.coins, k.max_coins)));
+    const float top = p.top_speed * ctx.top_speed_scale * terrain * (1.0f + k.coin_speed_bonus * float(std::min(s.coins, k.max_coins)));
     if (s.boost_frames > 0) {
         const float boosted = top * s.boost_mult;
         if (s.speed < boosted) s.speed = std::min(boosted, s.speed + k.boost_accel * kDt);

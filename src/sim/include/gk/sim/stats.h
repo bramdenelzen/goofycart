@@ -77,6 +77,9 @@ struct KartParams {
     int invincibility_frames = 60;
     DriftType drift = DriftType::Outward;
     bool is_bike = false;
+    // CPU karts only: how strongly they speed up when behind the leading player
+    // and ease off when ahead (0 = never, players are always 0).
+    float rubber_band = 0.0f;
 };
 
 // A piecewise-linear curve over Level 0..20 with a provenance tag.

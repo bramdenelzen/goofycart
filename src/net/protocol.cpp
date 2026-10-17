@@ -281,6 +281,7 @@ void write_params(Writer& w, const sim::KartParams& p) {
     w.u16(uint16_t(p.invincibility_frames));
     w.u8(uint8_t(p.drift));
     w.u8(uint8_t(p.is_bike));
+    w.f32(p.rubber_band);
 }
 
 sim::KartParams read_params(Reader& r) {
@@ -292,6 +293,7 @@ sim::KartParams read_params(Reader& r) {
     p.invincibility_frames = r.u16();
     p.drift = sim::DriftType(r.u8() & 1);
     p.is_bike = r.u8() != 0;
+    p.rubber_band = r.f32();
     return p;
 }
 
@@ -358,6 +360,7 @@ std::vector<uint8_t> encode(const RaceSetup& m) {
     w.u8(uint8_t(m.engine));
     w.u8(m.laps);
     w.u16(m.countdown);
+    w.u8(uint8_t(m.cpu_level));
     w.u32(m.data_hash);
     w.u8(uint8_t(m.seats.size()));
     for (const auto& s : m.seats) {
@@ -377,6 +380,7 @@ bool decode(std::span<const uint8_t> d, RaceSetup& m) {
     m.engine = sim::EngineClass(std::min<int>(r.u8(), 3));
     m.laps = r.u8();
     m.countdown = r.u16();
+    m.cpu_level = sim::CpuLevel(std::min<int>(r.u8(), 2));
     m.data_hash = r.u32();
     const uint8_t n = r.u8();
     if (n > kMaxSeats) return false;

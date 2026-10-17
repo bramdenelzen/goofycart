@@ -32,6 +32,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--laps") == 0) cfg.laps = std::atoi(next());
         else if (std::strcmp(argv[i], "--races") == 0) cfg.races_per_gp = std::atoi(next());
         else if (std::strcmp(argv[i], "--lobby") == 0) cfg.lobby_ticks = std::atoi(next()) * gk::kTickRate;
+        else if (std::strcmp(argv[i], "--cpu") == 0) cfg.cpu_level = gk::sim::parse_cpu_level(next()); // easy, normal, hard
         else if (std::strcmp(argv[i], "--bots") == 0) cfg.idle_without_humans = false; // race even when empty
         else if (std::strcmp(argv[i], "--cc") == 0) {
             const int cc = std::atoi(next());

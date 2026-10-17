@@ -77,7 +77,7 @@ seconds after the first player finishes. The room waits in the lobby while
 nobody is connected (`--bots` keeps it racing).
 
 Server flags: `--port`, `--laps`, `--races` (per Grand Prix), `--lobby`
-(seconds), `--cc`, `--bots`.
+(seconds), `--cc`, `--cpu easy|normal|hard`, `--bots`.
 
 Running the client needs a Vulkan 1.3 driver: your GPU driver on Windows and
 Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
@@ -91,6 +91,7 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 | `--cc 50\|100\|150\|200` | Engine class (default 150) |
 | `--build D,B,T,G` | Driver, body, tires and glider indices from `data/parts.json` |
 | `--karts N` | Racers on the grid, 1 to 12 |
+| `--cpu easy\|normal\|hard` | CPU driver difficulty offline (default normal) |
 | `--connect host[:port]` | Race online on a `gk_server` (default port 7777) |
 | `--name NAME` | Your name online |
 | `--lag MS --loss PCT --jitter MS` | Simulate a bad connection (added round trip, packet loss, jitter) |
@@ -127,6 +128,24 @@ Hold the item button to keep a banana, shell or bomb behind you as a shield
 and let go to throw it; hold Up to throw a banana or bomb forward, Down to
 throw a shell backwards. Triple items circle the kart and block one hit each.
 Item timings and odds are provisional (tagged in `src/sim/items.cpp`).
+
+## CPU drivers
+
+CPU karts fill every race to 12 (`src/sim/ai.cpp`). They follow a racing
+line computed for each track (wide into corners, inside at the apex, over
+boost pads), steer with pure pursuit, hop into drifts on corners tight
+enough to need one and hold them for mini-turbos, trick off ramps, time
+rocket starts, head for item boxes, steer round karts and bananas ahead,
+and use items with intent: shells at the kart in front, red shells when not
+leading, bananas and shells held behind as shields, mushrooms on straights,
+the horn against incoming shells. Easy CPUs keep to the middle of the road,
+never drift and lift off the throttle now and then; hard ones drive the full
+line and lean into drifts for faster sparks. Behind the leading player, CPUs
+speed up a little (up to 9% at hard), and they ease off when ahead of every
+player.
+
+The CPU driver is a pure function of the world state, so online clients
+predict CPU karts exactly as the server drives them.
 
 ## Netcode
 

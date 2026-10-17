@@ -129,7 +129,7 @@ void ClientGame::simulate_to(uint32_t target, bool forward) {
         const auto& karts = world_->karts();
         for (size_t i = 0; i < karts.size(); ++i) {
             // Mirrors the server: bots, and everyone past the finish line, use the bot driver.
-            if (!setup_.seats[i].human || karts[i].finished) step_inputs_[i] = bot_input(karts[i], world_->track(), int(i));
+            if (!setup_.seats[i].human || karts[i].finished) step_inputs_[i] = bot_input(*world_, int(i), setup_.cpu_level);
             else if (int(i) == seat_) step_inputs_[i] = input_at(t);
             else step_inputs_[i] = remote_inputs_[i];
         }

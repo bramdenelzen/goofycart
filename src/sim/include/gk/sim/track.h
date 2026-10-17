@@ -59,8 +59,21 @@ public:
     int laps = 3;
     std::vector<vec3> item_boxes;    // centres, in rows across the road
 
-    // Builds the collision structure. Call after filling the geometry.
+    // The CPU drivers' racing line, one entry per centre sample, built by
+    // finalize(): lateral offset along `right`, the drivable band around the
+    // centre and the line's signed curvature (1/m, positive turning right).
+    struct LinePoint {
+        float offset = 0.0f;
+        float lo = 0.0f, hi = 0.0f;
+        float curvature = 0.0f;
+    };
+    std::vector<LinePoint> line;
+    bool closed = true;              // the centre line loops (a lap circuit)
+
+    // Builds the collision structure and the racing line. Call after filling the geometry.
     void finalize();
+    vec3 line_point(int sample) const;
+    int wrap(int sample) const;
 
     std::optional<RayHit> raycast(vec3 origin, vec3 dir, float max_dist) const;
     // Contacts between a sphere and the track (walls and floors).

@@ -120,6 +120,7 @@ struct KartStepContext {
     int kart_index;
     bool frozen;                       // countdown: no driving yet
     std::vector<KartEvent>* events;
+    float top_speed_scale = 1.0f;      // CPU rubber band
 };
 
 void kart_spawn(KartState& s, const Track& track, int grid_slot);

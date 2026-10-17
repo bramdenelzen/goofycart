@@ -26,6 +26,7 @@ struct RoomConfig {
     sim::EngineClass engine = sim::EngineClass::cc150;
     int laps = 3;
     int countdown = 180;
+    sim::CpuLevel cpu_level = sim::CpuLevel::Normal;
     int seats = kMaxSeats;
     int races_per_gp = 4;
     int lobby_ticks = 60 * 20;         // kart selection before each race

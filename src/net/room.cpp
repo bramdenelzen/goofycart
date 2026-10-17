@@ -155,6 +155,7 @@ void Room::start_race() {
         s.build = clamp_build({i % nd, (i / 2) % nb, (i / 3) % nt, i % 2});
         s.name = parts_.drivers[size_t(s.build.driver)].name;
         s.params = params_for(s.build);
+        s.params.rubber_band = sim::cpu_rubber_band(config_.cpu_level);
         world_->add_kart(s.params);
     }
     for (auto& [id, c] : clients_) {
@@ -211,6 +212,7 @@ RaceSetup Room::make_setup() const {
     s.engine = config_.engine;
     s.laps = uint8_t(config_.laps);
     s.countdown = uint16_t(config_.countdown);
+    s.cpu_level = config_.cpu_level;
     s.data_hash = data_hash_;
     for (const Seat& seat : seats_) s.seats.push_back({seat.human, seat.name, seat.build, seat.params});
     return s;
@@ -337,7 +339,7 @@ void Room::step_race() {
             c.inputs.erase(c.inputs.begin(), c.inputs.upper_bound(next));
         }
         // Bots drive themselves; so does everyone after crossing the line.
-        if (!seat.human || karts[i].finished) in = bot_input(karts[i], world_->track(), int(i));
+        if (!seat.human || karts[i].finished) in = bot_input(*world_, int(i), config_.cpu_level);
         seat.last_input = in;
         step_inputs_[i] = in;
     }

@@ -4,6 +4,8 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
+
 namespace test {
 
 inline gk::sim::PhysicsTables tables() {
@@ -76,6 +78,60 @@ inline gk::sim::Track flat_track(gk::sim::Surface stripe = gk::sim::Surface::Roa
     }
     t.checkpoints = {0};
     t.length = 2000.0f;
+    t.finalize();
+    return t;
+}
+
+// A flat stadium loop: two straights joined by tight half circles, with
+// grass beyond the road edges. For CPU driving tests that need real corners.
+inline gk::sim::Track stadium_track(float radius = 22.0f, float straight = 90.0f, float half_width = 7.0f) {
+    using namespace gk;
+    using namespace gk::sim;
+    Track t;
+    t.name = "stadium";
+    const float pi = 3.14159265f;
+    const float total = 2.0f * straight + 2.0f * pi * radius;
+    const int n = int(total / 2.0f);
+    auto at = [&](float s, vec3& pos, vec3& tan) {
+        s = std::fmod(s, total);
+        if (s < straight) { pos = {radius, 0, s}; tan = {0, 0, 1}; return; }
+        s -= straight;
+        if (s < pi * radius) {
+            const float a = s / radius; // left turn round (0, 0, straight)
+            pos = {radius * std::cos(a), 0, straight + radius * std::sin(a)};
+            tan = {-std::sin(a), 0, std::cos(a)};
+            return;
+        }
+        s -= pi * radius;
+        if (s < straight) { pos = {-radius, 0, straight - s}; tan = {0, 0, -1}; return; }
+        s -= straight;
+        const float a = s / radius;
+        pos = {-radius * std::cos(a), 0, -radius * std::sin(a)};
+        tan = {std::sin(a), 0, -std::cos(a)};
+    };
+    for (int i = 0; i < n; ++i) {
+        CenterSample c;
+        c.s = float(i) * total / float(n);
+        at(c.s, c.pos, c.tangent);
+        c.right = glm::normalize(glm::cross(c.tangent, vec3(0, 1, 0)));
+        c.up = {0, 1, 0};
+        c.half_width = half_width;
+        t.center.push_back(c);
+        for (float lat : {-(half_width + 8.0f), -half_width, half_width, half_width + 8.0f})
+            t.vertices.push_back(c.pos + c.right * lat);
+    }
+    auto V = [&](int i, int col) { return uint32_t((i % n) * 4 + col); };
+    for (int i = 0; i < n; ++i) {
+        const Surface cols[3] = {Surface::OffroadMedium, Surface::Road, Surface::OffroadMedium};
+        for (int col = 0; col < 3; ++col) {
+            // Wound so cross(b - a, c - a) points up.
+            t.triangles.push_back({V(i, col), V(i, col + 1), V(i + 1, col + 1), cols[col]});
+            t.triangles.push_back({V(i, col), V(i + 1, col + 1), V(i + 1, col), cols[col]});
+        }
+    }
+    t.length = total;
+    for (int i = 0; i < n; i += 15) t.checkpoints.push_back(i);
+    t.kill_y = -20.0f;
     t.finalize();
     return t;
 }

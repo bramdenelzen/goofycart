@@ -104,7 +104,24 @@ Track::~Track() = default;
 Track::Track(Track&&) noexcept = default;
 Track& Track::operator=(Track&&) noexcept = default;
 
-void Track::finalize() { collision_ = std::make_unique<TrackCollision>(*this); }
+void build_racing_line(Track& track); // racing_line.cpp
+
+void Track::finalize() {
+    collision_ = std::make_unique<TrackCollision>(*this);
+    build_racing_line(*this);
+}
+
+int Track::wrap(int sample) const {
+    const int n = int(center.size());
+    if (n == 0) return 0;
+    if (closed) return ((sample % n) + n) % n;
+    return std::clamp(sample, 0, n - 1);
+}
+
+vec3 Track::line_point(int sample) const {
+    const CenterSample& c = center[size_t(wrap(sample))];
+    return line.empty() ? c.pos : c.pos + c.right * line[size_t(wrap(sample))].offset;
+}
 
 std::optional<RayHit> Track::raycast(vec3 origin, vec3 dir, float max_dist) const {
     return collision_ ? collision_->raycast(origin, dir, max_dist) : std::nullopt;

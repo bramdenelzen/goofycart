@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
                 sim::KartInput in;
                 const sim::World* w = b.game->world();
                 if (w && b.game->seat() >= 0) {
-                    in = net::bot_input(w->karts()[size_t(b.game->seat())], w->track(), 7);
+                    in = net::bot_input(*w, b.game->seat(), gk::sim::CpuLevel::Hard);
                     if (!w->racing()) in.accelerate = false;
                 }
                 if (b.game->step(in)) ++b.steps;

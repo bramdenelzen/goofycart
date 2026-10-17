@@ -154,7 +154,9 @@ void App::start_race() {
     for (int i = 0; i < karts; ++i) {
         sim::Build b = options_.build;
         if (i != player_) b = {i % int(parts_.drivers.size()), i % int(parts_.bodies.size()), (i / 2) % int(parts_.tires.size()), 0};
-        world_->add_kart(tables_.params(parts_.levels(b), parts_.body(b), rc.engine));
+        sim::KartParams p = tables_.params(parts_.levels(b), parts_.body(b), rc.engine);
+        if (i != player_) p.rubber_band = sim::cpu_rubber_band(options_.cpu_level);
+        world_->add_kart(p);
     }
     prev_ = world_->karts();
     cam_init_ = false;
@@ -173,8 +175,7 @@ void App::update() {
         if (w) prev_ = w->karts();
         sim::KartInput in = input_.sample();
         if (w && online_->seat() >= 0 && options_.autodrive) {
-            in = net::bot_input(w->karts()[size_t(player_)], w->track(), 7);
-            if (!w->racing()) in.accelerate = w->countdown_left() < 80;
+            in = net::bot_input(*w, player_, sim::CpuLevel::Hard);
         }
         online_->step(in);
         handle_events(online_->take_events());
@@ -189,10 +190,7 @@ void App::update() {
         if (int(i) == player_ && !options_.autodrive) {
             inputs[i] = input_.sample();
         } else {
-            // Placeholder CPU drivers until the AI phase: line followers with
-            // slightly different look-ahead so they spread out.
-            inputs[i] = net::bot_input(karts[i], world_->track(), int(i));
-            if (int(i) == player_ && world_->countdown_left() > 0) inputs[i].accelerate = world_->countdown_left() < 80;
+            inputs[i] = net::bot_input(*world_, int(i), int(i) == player_ ? sim::CpuLevel::Hard : options_.cpu_level);
         }
     }
     world_->tick(inputs);

@@ -7,6 +7,8 @@ add_library(gk_sim STATIC
   kart.cpp
   world.cpp
   items.cpp
+  racing_line.cpp
+  ai.cpp
   data.cpp
 )
 target_include_directories(gk_sim PUBLIC include)

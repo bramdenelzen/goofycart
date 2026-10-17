@@ -25,6 +25,7 @@ struct AppOptions {
     int karts = 12;
     sim::EngineClass engine = sim::EngineClass::cc150;
     sim::Build build{1, 0, 0, 0};
+    sim::CpuLevel cpu_level = sim::CpuLevel::Normal;
     // Online play: connect to a gk_server instead of racing locally.
     std::string connect_host;
     uint16_t connect_port = net::kDefaultPort;
