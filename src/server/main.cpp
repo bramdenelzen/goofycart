@@ -14,6 +14,7 @@
 #include "gk/sim/data.h"
 #include "master_link.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -104,15 +105,28 @@ int main(int argc, char** argv) {
         auto next = clock::now();
         const auto step = std::chrono::duration_cast<clock::duration>(std::chrono::duration<double>(gk::kTickSeconds));
         long ticks = 0;
+        // Per 30-second window: the slowest tick and the bandwidth, for sizing.
+        double worst_tick_ms = 0.0;
+        uint64_t sent_before = 0, received_before = 0;
         while (!g_quit && (max_ticks < 0 || ticks < max_ticks)) {
+            const auto tick_start = clock::now();
             net.service(room);
             room.tick();
             net.flush();
+            worst_tick_ms = std::max(worst_tick_ms, std::chrono::duration<double, std::milli>(clock::now() - tick_start).count());
             if (master) master->sync(room);
             ++ticks;
-            if (ticks % (60 * 30) == 0 && room.racing())
-                gk::log_info("race {}: {} human(s), tick {}, late inputs {}", room.race_id(), room.human_count(),
-                             room.world()->tick_count(), room.late_inputs());
+            if (ticks % (60 * 30) == 0) {
+                const double kb = 1.0 / (30.0 * 1024.0);
+                const uint64_t sent = net.bytes_sent(), received = net.bytes_received();
+                if (room.racing())
+                    gk::log_info("race {}: {} human(s), tick {}, late inputs {}, slowest tick {:.2f} ms, {:.1f} KB/s out, {:.1f} KB/s in",
+                                 room.race_id(), room.human_count(), room.world()->tick_count(), room.late_inputs(),
+                                 worst_tick_ms, double(sent - sent_before) * kb, double(received - received_before) * kb);
+                sent_before = sent;
+                received_before = received;
+                worst_tick_ms = 0.0;
+            }
             if (!fast) {
                 next += step;
                 if (clock::now() > next + std::chrono::milliseconds(250)) next = clock::now(); // after a stall

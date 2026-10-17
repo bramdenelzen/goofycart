@@ -1,0 +1,23 @@
+# One race room per UDP port without Docker. Put GK_MASTER_URL, GK_SERVER_KEY,
+# GK_REGION and GK_PUBLIC_HOST in /etc/gobbykart/server.env, then start as
+# many as you like by port:
+#   systemctl enable --now gk-server@7777 gk-server@7778
+[Unit]
+Description=Gobby Kart race server on UDP port %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/gobbykart/server.env
+ExecStart=/opt/gobbykart/gk_server --port %i --master ${GK_MASTER_URL} --region ${GK_REGION} --name "Gobby ${GK_REGION} %i" --public-host ${GK_PUBLIC_HOST}
+DynamicUser=yes
+StateDirectory=gobbykart/server-%i
+WorkingDirectory=/var/lib/gobbykart/server-%i
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

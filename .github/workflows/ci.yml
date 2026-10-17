@@ -90,3 +90,26 @@ jobs:
         with:
           name: smoke-screenshot
           path: smoke.png
+
+  server-image:
+    name: Server image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the server image
+        run: docker build -f deploy/Dockerfile -t gobbykart .
+      - name: Master, race server and bots in containers
+        run: |
+          docker network create gk
+          docker run -d --name gkmaster --network gk -e GK_SERVER_KEY=ci gobbykart gk_master --data /var/lib/gobbykart/accounts.json
+          sleep 1
+          docker run -d --name gkrace --network gk -e GK_SERVER_KEY=ci gobbykart \
+            gk_server --laps 1 --lobby 2 --master http://gkmaster:7780 --region eu --public-host gkrace
+          sleep 2
+          docker run --rm --network gk gobbykart gk_botclient --master http://gkmaster:7780 --region eu \
+            --clients 2 --seconds 180 --until-results
+          sleep 3
+          docker exec gkmaster cat /var/lib/gobbykart/accounts.json | python3 -c "import json,sys; a=json.load(sys.stdin)['accounts']; sys.exit(0 if sum(x['races'] for x in a)==2 else 1)"
+      - name: Validate the compose files
+        run: |
+          for d in deploy/master deploy/region; do cp $d/example.env $d/.env; docker compose -f $d/compose.yml config -q; done

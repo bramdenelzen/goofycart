@@ -1,0 +1,28 @@
+# The master server (accounts, matchmaking, ratings, crash reports) behind
+# Caddy, which gets and renews its HTTPS certificate. One per deployment.
+#
+#   cp example.env .env   # then fill it in
+#   docker compose up -d --build
+#
+# DNS for GK_MASTER_DOMAIN must point at this host, with TCP 80 and 443 open.
+services:
+  master:
+    build: { context: ../.., dockerfile: deploy/Dockerfile }
+    image: gobbykart
+    restart: unless-stopped
+    command: ["gk_master", "--port", "7780", "--data", "/var/lib/gobbykart/accounts.json"]
+    environment:
+      GK_SERVER_KEY: ${GK_SERVER_KEY:?set GK_SERVER_KEY in .env}
+    volumes: [master-data:/var/lib/gobbykart]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    command: ["caddy", "reverse-proxy", "--from", "${GK_MASTER_DOMAIN:?set GK_MASTER_DOMAIN in .env}", "--to", "master:7780"]
+    ports: ["80:80", "443:443"]
+    volumes: [caddy-data:/data]
+    depends_on: [master]
+
+volumes:
+  master-data:
+  caddy-data:

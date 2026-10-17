@@ -1,0 +1,24 @@
+# Master server without Docker. Install the Linux package to /opt/gobbykart,
+# put GK_SERVER_KEY=... in /etc/gobbykart/master.env, then:
+#   systemctl enable --now gk-master
+# and put a TLS proxy (Caddy, nginx) in front of port 7780, or add
+# --cert/--key to ExecStart.
+[Unit]
+Description=Gobby Kart master server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/gobbykart/master.env
+ExecStart=/opt/gobbykart/gk_master --bind 127.0.0.1 --port 7780 --data /var/lib/gobbykart/accounts.json
+DynamicUser=yes
+StateDirectory=gobbykart
+WorkingDirectory=/var/lib/gobbykart
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

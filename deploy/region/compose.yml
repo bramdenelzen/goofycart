@@ -1,0 +1,36 @@
+# Game servers for one region: each container is one 12-seat race room on its
+# own UDP port, registered with the master. Add more by copying a service
+# with the next port.
+#
+#   cp example.env .env   # then fill it in
+#   docker compose up -d --build
+#
+# Open the UDP ports in the firewall. GK_PUBLIC_HOST is the name or address
+# players connect to (the master would otherwise see the Docker address).
+x-server: &server
+  build: { context: ../.., dockerfile: deploy/Dockerfile }
+  image: gobbykart
+  restart: unless-stopped
+  environment:
+    GK_SERVER_KEY: ${GK_SERVER_KEY:?set GK_SERVER_KEY in .env}
+  stop_grace_period: 5s
+
+services:
+  race-1:
+    <<: *server
+    command: ["gk_server", "--port", "7777", "--master", "${GK_MASTER_URL:?set GK_MASTER_URL in .env}",
+              "--region", "${GK_REGION:?set GK_REGION in .env}", "--name", "Gobby ${GK_REGION} 1",
+              "--public-host", "${GK_PUBLIC_HOST:?set GK_PUBLIC_HOST in .env}"]
+    ports: ["7777:7777/udp"]
+    volumes: [race-1:/var/lib/gobbykart]
+
+  race-2:
+    <<: *server
+    command: ["gk_server", "--port", "7778", "--master", "${GK_MASTER_URL}", "--region", "${GK_REGION}",
+              "--name", "Gobby ${GK_REGION} 2", "--public-host", "${GK_PUBLIC_HOST}"]
+    ports: ["7778:7778/udp"]
+    volumes: [race-2:/var/lib/gobbykart]
+
+volumes:
+  race-1:
+  race-2:

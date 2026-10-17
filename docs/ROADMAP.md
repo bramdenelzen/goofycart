@@ -15,7 +15,7 @@ day one because it is the one decision that is expensive to retrofit.
 | 6. CPU drivers (done) | Racing lines, pure-pursuit steering, drifting, item use, difficulty and rubber-banding | Bots finish races competitively |
 | 7a. Tracks and menus (done) | Data-driven tracks (spline + features), 8 themed tracks in 2 cups, title / cup / course menus, offline Grand Prix with standings, VS race, Time Trials, server cup rotation | Every track finishes a 12-CPU race; menus reach every mode |
 | 7b. Content and backend (done) | Audio, Time Trial ghosts, options menu, 16 drivers and 23 parts, master server with accounts, matchmaking and ratings over HTTPS | Bots sign up, matchmake and race through the master in CI |
-| 8. Ship | Packaging, macOS notarisation, region servers, crash reporting, playtests | |
+| 8. Ship | Portable packages (zip, tarball, DMG with MoltenVK) built by a Release workflow, macOS signing and notarisation when the secrets are set, crash reports sent to the master, Docker and systemd deployment for the master and region servers, soak playtest | `v*` tag publishes packages for all three platforms; a containerised master + race server + bots race in CI |
 
 ## Physics parity
 

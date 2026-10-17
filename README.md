@@ -52,6 +52,10 @@ those with `tools/compile_shaders.py`.
 
 ## Running
 
+Release packages (from the Release workflow, or `cpack --config
+build/release/CPackConfig.cmake`) are one portable folder: unzip and run
+`gk_client`. On macOS the DMG holds `Gobby Kart.app` with MoltenVK inside.
+
 ```sh
 ./build/release/src/client/gk_client
 ./build/release/src/server/gk_server
@@ -82,7 +86,8 @@ nobody is connected (`--bots` keeps it racing).
 For public play there is also `gk_master`, an HTTPS service for accounts,
 matchmaking and ratings: game servers register with it and ONLINE on the
 title menu signs in and finds a race through it. See
-[docs/ONLINE.md](docs/ONLINE.md).
+[docs/ONLINE.md](docs/ONLINE.md), and [docs/DEPLOY.md](docs/DEPLOY.md) for
+running the master and region servers with Docker or systemd.
 
 Server flags: `--port`, `--laps`, `--races` (per Grand Prix), `--lobby`
 (seconds), `--cc`, `--cpu easy|normal|hard`, `--bots`, `--cup N` (start

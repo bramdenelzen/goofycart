@@ -30,6 +30,9 @@ public:
     void send(ClientId client, uint8_t channel, std::vector<uint8_t> data, bool reliable) override;
     void flush();
     int client_count() const { return int(peers_.size()); }
+    // Bytes sent and received since listen() (UDP payload, ENet headers included).
+    uint64_t bytes_sent() const;
+    uint64_t bytes_received() const;
 
 private:
     _ENetHost* host_ = nullptr;

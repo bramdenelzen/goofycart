@@ -86,6 +86,9 @@ void NetServer::send(ClientId client, uint8_t channel, std::vector<uint8_t> data
     enet_peer_send(it->second, channel, make_packet(data, reliable));
 }
 
+uint64_t NetServer::bytes_sent() const { return host_ ? host_->totalSentData : 0; }
+uint64_t NetServer::bytes_received() const { return host_ ? host_->totalReceivedData : 0; }
+
 void NetServer::flush() {
     if (host_) enet_host_flush(host_);
 }
