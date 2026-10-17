@@ -30,6 +30,8 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--fast") == 0) fast = true;
         else if (std::strcmp(argv[i], "--port") == 0) port = uint16_t(std::atoi(next()));
         else if (std::strcmp(argv[i], "--laps") == 0) cfg.laps = std::atoi(next());
+        else if (std::strcmp(argv[i], "--races") == 0) cfg.races_per_gp = std::atoi(next());
+        else if (std::strcmp(argv[i], "--lobby") == 0) cfg.lobby_ticks = std::atoi(next()) * gk::kTickRate;
         else if (std::strcmp(argv[i], "--bots") == 0) cfg.idle_without_humans = false; // race even when empty
         else if (std::strcmp(argv[i], "--cc") == 0) {
             const int cc = std::atoi(next());
@@ -57,7 +59,8 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
         gk::net::Room room(tables, parts, cfg, net);
-        gk::log_info("gk_server ready at {} Hz, {} seats, {} laps", gk::kTickRate, cfg.seats, cfg.laps);
+        gk::log_info("gk_server ready at {} Hz, {} seats, {} laps, {} races per Grand Prix", gk::kTickRate, cfg.seats,
+                     cfg.laps, cfg.races_per_gp);
 
         using clock = std::chrono::steady_clock;
         auto next = clock::now();

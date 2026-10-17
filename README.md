@@ -5,7 +5,8 @@ with Vulkan. Low-res, low-poly art; 12 racers per race with CPU drivers filling
 empty seats; a dedicated server with server-authoritative racing over UDP.
 
 Status: early development. See [docs/ROADMAP.md](docs/ROADMAP.md) for phases.
-Right now you can race 3 laps of a greybox test track against 11 simple
+Right now you pick a driver, body, tires and glider (with MK8-style stat
+bars) and race 3 laps of a greybox test track against 11 simple
 line-following karts: drifting with blue, orange and purple mini-turbos,
 hops, tricks off ramps, a glider section over a chasm, dash panels, rocket
 starts, off-road, sand, ice and mud, and Lakitu-style respawns. The same race
@@ -63,11 +64,19 @@ online, start a server and point clients at it:
 ./build/release/src/server/gk_botclient --clients 3     # optional: 3 headless players
 ```
 
-The server has 12 seats. Players take over bot karts from the back of the
-grid; anyone who joins after the countdown spectates until the next race, and
-a bot takes over a kart whose player leaves. The room sleeps while nobody is
-connected (`--bots` keeps it racing). Server flags: `--port`, `--laps`, `--cc`,
-`--bots`.
+A room runs lobby, race and results in a loop, over a Grand Prix of 4 races
+with MK8 points (15, 12, 10, 9 ... 1). In the lobby everyone picks a kart and
+presses ready; the race starts 2 seconds after everyone is ready, or when the
+20-second timer runs out. There are always 12 karts: players take over bot
+karts from the back of the grid, anyone who joins after the countdown
+spectates until the next race, and a bot takes over a kart whose player
+leaves. Karts that cross the line drive on by themselves; the race ends when
+everyone has finished, 4 seconds after the last player finishes, or 30
+seconds after the first player finishes. The room waits in the lobby while
+nobody is connected (`--bots` keeps it racing).
+
+Server flags: `--port`, `--laps`, `--races` (per Grand Prix), `--lobby`
+(seconds), `--cc`, `--bots`.
 
 Running the client needs a Vulkan 1.3 driver: your GPU driver on Windows and
 Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
@@ -77,7 +86,7 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 | `--fullres` | Render at full window resolution instead of the low-res upscaled look (F2 toggles) |
 | `--validation` | Enable Vulkan validation layers (or `GK_VALIDATION=1`) |
 | `--frames N --screenshot out.png` | Run N frames, save the last one, quit |
-| `--autodrive` | Your kart drives itself |
+| `--autodrive` | Your kart drives itself (skips kart select; online it readies up by itself) |
 | `--cc 50\|100\|150\|200` | Engine class (default 150) |
 | `--build D,B,T,G` | Driver, body, tires and glider indices from `data/parts.json` |
 | `--karts N` | Racers on the grid, 1 to 12 |
@@ -87,9 +96,13 @@ Linux, or MoltenVK / KosmicKrisp on macOS (install the LunarG Vulkan SDK).
 
 ## Controls
 
-Keyboard: arrows or WASD steer, X or Space accelerate, Z brake, Shift
+Kart select and lobby: Up/Down pick a part, Left/Right change it, Enter (or
+A) to race or ready up, Esc to quit.
+
+Racing: arrows or WASD steer, X or Space accelerate, Z brake, Shift
 hop/drift (press it at a ramp lip to trick), Up/Down pitch the glider, E use
-item, C look back, R restart, F1 help, F2 low-res toggle, Esc quit.
+item, C look back, R restart, F1 help, F2 low-res toggle, Esc back to kart
+select (online: quit). After the finish, Enter or A continues.
 
 Gamepads (Xbox, PlayStation, Switch Pro and generic) work out of the box:
 left stick steer and pitch, A/Cross accelerate, B/Circle brake, R hop/drift,

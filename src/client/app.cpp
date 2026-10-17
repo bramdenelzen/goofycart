@@ -49,11 +49,11 @@ int App::run(const AppOptions& options) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) input_.handle_event(e);
         const ClientActions& act = input_.actions();
-        if (act.quit_requested || act.pause_pressed) running = false;
+        if (act.quit_requested) running = false;
         if (act.toggle_resolution_pressed) renderer_.set_full_resolution(!renderer_.full_resolution());
         if (act.toggle_help_pressed) show_help_ = !show_help_;
-        if (act.restart_pressed && !online_) start_race();
         if (net_) net_->service([this](std::span<const uint8_t> d) { online_->on_message(d); });
+        handle_menu_actions(act, running);
 
         const uint64_t now = SDL_GetPerformanceCounter();
         const double elapsed = double(now - last) / freq;
@@ -106,13 +106,17 @@ bool App::init() {
             net_->send(ch, std::move(d), rel);
         });
         online_->join(options_.name, options_.build);
-    } else {
-        start_race();
     }
     // Only the greybox track exists so far, online and offline.
-    const sim::Track track = sim::make_greybox_track();
-    track_mesh_ = renderer_.upload_mesh(render::make_track_mesh(track));
-    scenery_mesh_ = renderer_.upload_mesh(render::make_scenery_mesh(track));
+    menu_track_ = std::make_unique<sim::Track>(sim::make_greybox_track());
+    track_mesh_ = renderer_.upload_mesh(render::make_track_mesh(*menu_track_));
+    scenery_mesh_ = renderer_.upload_mesh(render::make_scenery_mesh(*menu_track_));
+    select_.build = options_.build;
+    // Demos skip the kart select screen.
+    if (!online_ && options_.autodrive) {
+        start_race();
+        screen_ = Screen::Race;
+    }
     glider_mesh_ = renderer_.upload_mesh(render::make_glider_mesh(render::rgba(250, 250, 250)));
     spark_mesh_ = renderer_.upload_mesh(render::make_spark_mesh());
     flame_mesh_ = renderer_.upload_mesh(render::make_flame_mesh());
@@ -153,7 +157,8 @@ void App::update() {
             cam_init_ = false;
             message_ = {};
         }
-        player_ = std::max(online_->seat(), 0);
+        // Spectators follow the leader.
+        player_ = online_->seat() >= 0 ? online_->seat() : (w && !w->karts().empty() ? w->standings()[0] : 0);
         if (w) prev_ = w->karts();
         sim::KartInput in = input_.sample();
         if (w && online_->seat() >= 0 && options_.autodrive) {
@@ -165,6 +170,7 @@ void App::update() {
         if (message_.time_left > 0.0f) message_.time_left -= kDt;
         return;
     }
+    if (!world_ || screen_ != Screen::Race) return;
     prev_ = world_->karts();
     const auto& karts = world_->karts();
     std::vector<sim::KartInput> inputs(karts.size());
@@ -262,6 +268,10 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
 }
 
 void App::render(float alpha, float dt) {
+    if (screen_ == Screen::Select) {
+        render_menu(dt);
+        return;
+    }
     const sim::World* w = world();
     if (w && size_t(player_) < w->karts().size()) update_camera(dt);
     render::Camera cam;
@@ -276,10 +286,130 @@ void App::render(float alpha, float dt) {
     if (w) {
         const auto& karts = w->karts();
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
-        draw_hud(renderer_, *w, player_, message_, show_help_);
+        const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
+        draw_hud(renderer_, *w, player_, kart_names(), message_, show_help_ && !server_results, !server_results);
+        if (server_results) draw_online_results();
+        if (!online_ && karts[size_t(player_)].finished) {
+            const char* hint = "ENTER / A: CONTINUE";
+            const VkExtent2D ext = renderer_.internal_extent();
+            renderer_.ui_text((float(ext.width) - render::Renderer::ui_text_width(hint, 1.5f)) * 0.5f,
+                              float(ext.height) - 22.0f, hint, render::rgba(255, 255, 255), 1.5f);
+        }
     }
     if (online_) draw_net_status();
     renderer_.end_frame();
+}
+
+std::vector<std::string> App::kart_names() const {
+    std::vector<std::string> names;
+    const sim::World* w = world();
+    if (!w) return names;
+    for (size_t i = 0; i < w->karts().size(); ++i) {
+        if (online_ && i < online_->setup().seats.size()) names.push_back(online_->setup().seats[i].name);
+        else if (int(i) == player_) names.push_back("YOU");
+        else names.push_back(parts_.drivers[i % parts_.drivers.size()].name);
+    }
+    return names;
+}
+
+void App::handle_menu_actions(const ClientActions& act, bool& running) {
+    if (online_) {
+        // The server's phase decides the screen: lobby -> select, otherwise race.
+        const bool lobby = online_->has_lobby() ? online_->phase() == net::RoomPhase::Lobby : !online_->world();
+        const Screen want = lobby ? Screen::Select : Screen::Race;
+        if (want != screen_) {
+            screen_ = want;
+            select_.ready = false;
+        }
+        if (screen_ == Screen::Race) {
+            if (act.pause_pressed) running = false;
+            return;
+        }
+        if (options_.autodrive && !select_.ready && online_->has_lobby()) {
+            select_.ready = true; // demo mode readies up by itself
+            online_->set_build(select_.build, true);
+        }
+        switch (update_select(select_, act, parts_)) {
+        case SelectAction::Changed: online_->set_build(select_.build, select_.ready); break;
+        case SelectAction::Accept:
+            select_.ready = !select_.ready;
+            online_->set_build(select_.build, select_.ready);
+            break;
+        case SelectAction::Back:
+            if (select_.ready) {
+                select_.ready = false;
+                online_->set_build(select_.build, false);
+            } else {
+                running = false;
+            }
+            break;
+        default: break;
+        }
+        return;
+    }
+    if (screen_ == Screen::Select) {
+        switch (update_select(select_, act, parts_)) {
+        case SelectAction::Accept:
+            options_.build = select_.build;
+            start_race();
+            screen_ = Screen::Race;
+            break;
+        case SelectAction::Back: running = false; break;
+        default: break;
+        }
+        return;
+    }
+    // Local race: Esc or Back returns to kart select, R restarts, and after
+    // the finish Enter / A continues.
+    const bool finished = world_ && world_->karts()[size_t(player_)].finished;
+    if (act.back || (finished && act.accept)) {
+        screen_ = Screen::Select;
+        cam_init_ = false;
+    } else if (act.restart_pressed) {
+        start_race();
+    }
+}
+
+void App::render_menu(float dt) {
+    // The chosen kart on the start line, with the camera circling it.
+    menu_angle_ += dt * 0.4f;
+    sim::KartState k;
+    sim::kart_spawn(k, *menu_track_, 0);
+    const vec3 fwd = k.forward();
+    const vec3 orbit = glm::angleAxis(menu_angle_, kUp) * (fwd * 4.2f);
+    render::Camera cam;
+    cam.position = k.pos + orbit + kUp * 1.6f;
+    // Look past the kart so it sits right of centre, clear of the menu panel.
+    cam.target = k.pos + kUp * 0.5f - glm::normalize(glm::cross(kUp, orbit)) * 1.3f;
+    cam.fov_y_deg = 55.0f;
+    render::SceneLighting light;
+    light.fog_density = 0.0035f;
+    if (!renderer_.begin_frame(cam, light)) return;
+    renderer_.draw(track_mesh_, mat4(1.0f));
+    renderer_.draw(scenery_mesh_, mat4(1.0f));
+    const int mesh = online_ ? std::max(online_->seat(), 0) : std::clamp(options_.karts, 1, 12) - 1;
+    renderer_.draw(kart_meshes_[size_t(mesh % 12)], glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot));
+    draw_select(renderer_, select_, parts_, online_ && online_->has_lobby() ? &online_->lobby() : nullptr);
+    if (online_) draw_net_status();
+    renderer_.end_frame();
+}
+
+void App::draw_online_results() {
+    const net::ResultsMsg& res = *online_->results();
+    const bool gp_over = res.race_number >= res.races_per_gp;
+    std::vector<ResultRow> rows;
+    for (const auto& e : res.entries)
+        rows.push_back({e.name, int(e.finish_ticks), e.points, e.total, int(e.seat) == online_->seat()});
+    // After the last race, rank by Grand Prix total.
+    if (gp_over)
+        std::stable_sort(rows.begin(), rows.end(), [](const ResultRow& a, const ResultRow& b) { return a.total > b.total; });
+    char title[64];
+    if (gp_over) std::snprintf(title, sizeof title, "GRAND PRIX RESULTS");
+    else std::snprintf(title, sizeof title, "RACE %d OF %d", res.race_number, res.races_per_gp);
+    std::string footer;
+    if (online_->has_lobby() && online_->lobby().seconds_left > 0)
+        footer = "NEXT RACE LOBBY IN " + std::to_string(online_->lobby().seconds_left);
+    draw_results(renderer_, title, rows, footer);
 }
 
 void App::draw_net_status() {
@@ -287,9 +417,10 @@ void App::draw_net_status() {
     const float H = float(ext.height);
     std::string line;
     if (!net_->connected()) line = "DISCONNECTED FROM SERVER";
-    else if (!online_->joined() || !online_->world()) line = "CONNECTING...";
-    else if (!online_->has_clock()) line = "WAITING FOR THE SERVER...";
-    else if (online_->seat() < 0) line = "SPECTATING - YOU JOIN THE NEXT RACE";
+    else if (!online_->joined()) line = "CONNECTING...";
+    else if (screen_ == Screen::Race && (!online_->world() || !online_->has_clock())) line = "WAITING FOR THE SERVER...";
+    else if (screen_ == Screen::Race && online_->seat() < 0 && online_->phase() == net::RoomPhase::Racing)
+        line = "SPECTATING - YOU JOIN THE NEXT RACE";
     if (!line.empty()) {
         const float wdt = render::Renderer::ui_text_width(line.c_str(), 2.0f);
         renderer_.ui_text((float(ext.width) - wdt) * 0.5f, H * 0.35f, line.c_str(), render::rgba(255, 255, 255), 2.0f);

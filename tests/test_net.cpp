@@ -5,6 +5,7 @@
 #include "gk/net/client_game.h"
 #include "gk/net/room.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <cmath>
@@ -83,10 +84,22 @@ private:
     std::map<std::tuple<bool, ClientId, uint8_t>, int> last_reliable_;
 };
 
+// Short lobby and results phases so tests spend their time racing.
+RoomConfig quick_config(int laps = 1) {
+    RoomConfig cfg;
+    cfg.laps = laps;
+    cfg.lobby_ticks = 120;
+    cfg.all_ready_ticks = 30;
+    cfg.results_ticks = 120;
+    return cfg;
+}
+
 struct TestClient {
     ClientId id;
     std::unique_ptr<ClientGame> game;
     double accum = 0.0;
+    bool auto_ready = true;
+    bool sent_ready = false;
     double sum_correction = 0.0;
     int corrections = 0;
 };
@@ -101,8 +114,14 @@ struct Harness {
     int now_ms = 0;
     double server_accum = 0.0;
 
-    Harness(int one_way_ms, float loss, RoomConfig cfg = {}, int jitter_ms = 0)
+    Harness(int one_way_ms, float loss, RoomConfig cfg = quick_config(), int jitter_ms = 0)
         : net(one_way_ms, loss, jitter_ms), room(tables, test::parts(), cfg, net) {}
+
+    bool run_until(const std::function<bool()>& done, int limit_ms) {
+        const int end = now_ms + limit_ms;
+        while (!done() && now_ms < end) run_ms(50);
+        return done();
+    }
 
     ClientGame& connect(ClientId id, const std::string& name) {
         TestClient c;
@@ -145,6 +164,13 @@ struct Harness {
                 room.tick();
             }
             for (auto& [id, c] : clients) {
+                // Players press ready as soon as the lobby opens.
+                const bool in_lobby = c.game->has_lobby() && c.game->phase() == RoomPhase::Lobby;
+                if (in_lobby && c.auto_ready && !c.sent_ready) {
+                    c.game->set_build({1, 0, 0, 0}, true);
+                    c.sent_ready = true;
+                }
+                if (!in_lobby) c.sent_ready = false;
                 c.accum += c.game->time_scale();
                 while (c.accum >= kTickMs) {
                     c.accum -= kTickMs;
@@ -250,15 +276,13 @@ TEST_CASE("messages round-trip and reject garbage") {
 }
 
 TEST_CASE("four clients race at 150 ms round trip with 2% loss") {
-    RoomConfig cfg;
-    cfg.laps = 1;
-    Harness h(75, 0.02f, cfg, 10);
+    Harness h(75, 0.02f, quick_config(), 10);
     h.connect(1, "A");
     h.connect(2, "B");
     h.connect(3, "C");
     h.connect(4, "D");
+    REQUIRE(h.run_until([&] { return h.room.racing(); }, 5000));
     h.run_ms(500);
-    REQUIRE(h.room.racing());
     CHECK(h.room.human_count() == 4);
     for (auto& [id, c] : h.clients) {
         CHECK(c.game->seat() >= 0);
@@ -294,16 +318,15 @@ TEST_CASE("four clients race at 150 ms round trip with 2% loss") {
 }
 
 TEST_CASE("a bot takes over when a player leaves, and late joiners spectate") {
-    RoomConfig cfg;
-    cfg.laps = 1;
-    Harness h(40, 0.0f, cfg);
+    Harness h(40, 0.0f);
     ClientGame& a = h.connect(1, "A");
     h.connect(2, "B");
+    REQUIRE(h.run_until([&] { return h.room.racing(); }, 5000));
     h.run_ms(300);
-    REQUIRE(h.room.racing());
     const int seat_b = h.clients.at(2).game->seat();
     REQUIRE(seat_b >= 0);
     CHECK(a.setup().seats[size_t(seat_b)].human);
+    CHECK(a.setup().seats[size_t(seat_b)].name == "B");
 
     h.run_ms(6000); // past the countdown, racing
     const int sample_before = h.room.world()->karts()[size_t(seat_b)].sample;
@@ -320,21 +343,84 @@ TEST_CASE("a bot takes over when a player leaves, and late joiners spectate") {
     CHECK(c.seat() == -1);
     CHECK(c.world() != nullptr);
     CHECK(c.snapshots_applied() > 5);
+    CHECK(c.phase() == RoomPhase::Racing);
     const uint32_t first_race = h.room.race_id();
-    while (h.room.race_id() == first_race && h.now_ms < 300'000) h.run_ms(500);
+    REQUIRE(h.run_until([&] { return h.room.race_id() != first_race; }, 300'000));
     h.run_ms(500);
     CHECK(h.room.race_id() == first_race + 1);
     CHECK(c.seat() >= 0);
     CHECK(h.room.human_count() == 2);
 }
 
-TEST_CASE("an empty room stops racing") {
+TEST_CASE("the lobby waits for players to be ready") {
+    RoomConfig cfg = quick_config();
+    cfg.lobby_ticks = 600;
+    Harness h(20, 0.0f, cfg);
+    h.run_ms(1000);
+    CHECK(h.room.phase() == RoomPhase::Lobby); // nobody here: no timer
+    ClientGame& a = h.connect(1, "A");
+    h.clients.at(1).auto_ready = false;
+    h.run_ms(1000);
+    REQUIRE(a.has_lobby());
+    CHECK(a.phase() == RoomPhase::Lobby);
+    REQUIRE(a.lobby().players.size() == 1);
+    CHECK(a.lobby().players[0].you);
+    CHECK_FALSE(a.lobby().players[0].ready);
+    CHECK(a.lobby().seconds_left > 5);
+
+    a.set_build({2, 3, 1, 1}, true);
+    h.run_ms(1000);
+    CHECK(h.room.racing());
+    CHECK(a.setup().seats[size_t(a.seat())].build.body == 3);
+}
+
+TEST_CASE("a Grand Prix awards MK8 points over its races") {
+    RoomConfig cfg = quick_config();
+    cfg.races_per_gp = 2;
+    Harness h(20, 0.0f, cfg);
+    ClientGame& a = h.connect(1, "A");
+    REQUIRE(h.run_until([&] { return h.room.phase() == RoomPhase::Results; }, 200'000));
+    h.run_ms(200);
+    const ResultsMsg* r1 = a.results();
+    REQUIRE(r1 != nullptr);
+    CHECK(r1->race_number == 1);
+    REQUIRE(r1->entries.size() == 12);
+    int sum = 0;
+    for (size_t i = 0; i < r1->entries.size(); ++i) {
+        CHECK(r1->entries[i].points == kRacePoints[i]);
+        CHECK(r1->entries[i].total == r1->entries[i].points);
+        sum += r1->entries[i].points;
+    }
+    CHECK(sum == 82);
+    int my_total = 0;
+    for (const auto& e : r1->entries)
+        if (e.human) my_total = e.total;
+    CHECK(my_total > 0);
+    CHECK(r1->entries[0].finish_ticks > 0);
+
+    REQUIRE(h.run_until([&] { return h.room.racing(); }, 20'000));
+    REQUIRE(h.run_until([&] { return h.room.phase() == RoomPhase::Results; }, 200'000));
+    h.run_ms(200);
+    const ResultsMsg* r2 = a.results();
+    REQUIRE(r2 != nullptr);
+    CHECK(r2->race_number == 2);
+    int total_sum = 0;
+    for (const auto& e : r2->entries) total_sum += e.total;
+    CHECK(total_sum == 2 * 82);
+
+    // After the last race the Grand Prix starts over.
+    REQUIRE(h.run_until([&] { return h.room.phase() == RoomPhase::Lobby; }, 20'000));
+    h.run_ms(200);
+    CHECK(a.lobby().race_number == 1);
+    CHECK(a.lobby().players[0].points == 0);
+}
+
+TEST_CASE("an empty room goes back to the lobby") {
     Harness h(10, 0.0f);
     h.connect(1, "A");
-    h.run_ms(200);
-    CHECK(h.room.racing());
+    REQUIRE(h.run_until([&] { return h.room.racing(); }, 5000));
     h.disconnect(1);
     h.run_ms(100);
     CHECK_FALSE(h.room.racing());
+    CHECK(h.room.phase() == RoomPhase::Lobby);
 }
-

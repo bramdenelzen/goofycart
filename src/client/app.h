@@ -1,6 +1,7 @@
 #pragma once
 #include "hud.h"
 #include "input.h"
+#include "menu.h"
 #include "render/renderer.h"
 
 #include "gk/net/client_game.h"
@@ -43,6 +44,10 @@ private:
     void handle_events(const std::vector<sim::KartEvent>& events);
     const sim::World* world() const { return online_ ? online_->world() : world_.get(); }
     void draw_net_status();
+    void handle_menu_actions(const ClientActions& act, bool& running);
+    void render_menu(float dt);
+    void draw_online_results();
+    std::vector<std::string> kart_names() const;
     void update_camera(float dt);
     void render(float alpha, float dt);
     void draw_kart(int index, const sim::KartState& s, float alpha);
@@ -60,6 +65,12 @@ private:
     uint32_t online_race_ = 0;
     std::vector<sim::KartState> prev_;
     int player_ = 0;
+
+    enum class Screen { Select, Race };
+    Screen screen_ = Screen::Select;
+    SelectState select_;
+    std::unique_ptr<sim::Track> menu_track_;
+    float menu_angle_ = 0.0f;
 
     render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, glider_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0;
     std::vector<render::MeshId> kart_meshes_;

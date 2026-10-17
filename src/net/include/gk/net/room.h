@@ -2,6 +2,7 @@
 #include "gk/net/protocol.h"
 #include "gk/sim/world.h"
 
+#include <array>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -26,15 +27,22 @@ struct RoomConfig {
     int laps = 3;
     int countdown = 180;
     int seats = kMaxSeats;
-    int results_ticks = 60 * 8;        // results screen before the next race
-    int finish_grace_ticks = 60 * 15;  // after the last human finishes, bots get this long
-    bool idle_without_humans = true;   // stop racing when nobody is connected
+    int races_per_gp = 4;
+    int lobby_ticks = 60 * 20;         // kart selection before each race
+    int all_ready_ticks = 60 * 2;      // once every player is ready
+    int results_ticks = 60 * 10;       // results screen after a race
+    int finish_timeout_ticks = 60 * 30;// after the first player finishes, the rest get this long
+    int after_humans_ticks = 60 * 4;   // once every player has finished
+    int max_race_ticks = 60 * 60 * 10;
+    bool idle_without_humans = true;   // stay in the lobby when nobody is connected
 };
 
-// One race room on the dedicated server: owns the authoritative World, the
-// 12 seats (humans and line-following bots), input buffers, snapshots and
-// race flow. The server is the authority for positions, laps and places;
-// clients only send inputs.
+// One race room on the dedicated server. It owns the authoritative World and
+// runs the loop lobby -> countdown and race -> results -> lobby, over a
+// Grand Prix of several races with MK8 points. There are always 12 karts:
+// players take seats from the back of the grid and bots fill the rest; a bot
+// takes over the kart of a player who leaves. Clients only send inputs and
+// their kart choice.
 class Room {
 public:
     Room(sim::PhysicsTables tables, sim::PartsCatalog parts, RoomConfig config, MessageSink& sink);
@@ -44,18 +52,23 @@ public:
     void on_message(ClientId id, std::span<const uint8_t> data);
     void tick();
 
+    RoomPhase phase() const { return phase_; }
     const sim::World* world() const { return world_.get(); }
     uint32_t race_id() const { return race_id_; }
+    int race_number() const { return race_number_; }
     int human_count() const;
     int late_inputs() const { return late_inputs_; }
-    bool racing() const { return world_ != nullptr; }
+    bool racing() const { return phase_ == RoomPhase::Racing; }
+    const ResultsMsg& last_results() const { return results_; }
 
 private:
     struct Client {
         std::string name = "Player";
         sim::Build build{};
         bool hello = false;
+        bool ready = false;
         int seat = -1;
+        int points = 0;                            // Grand Prix total
         std::map<uint32_t, sim::KartInput> inputs; // by world tick
         sim::KartInput last_input{};
         uint32_t used_tick = 0;
@@ -70,13 +83,19 @@ private:
         sim::KartInput last_input{};
     };
 
+    void enter_lobby();
     void start_race();
-    void end_race();
+    void finish_race();
     void assign_seat(ClientId id, Client& c);
+    void send_lobby();
+    int lobby_ticks_left() const;
+    void send_lobby_to(ClientId to);
     void broadcast_setup();
     RaceSetup make_setup() const;
     sim::KartParams params_for(const sim::Build& b) const;
+    sim::Build clamp_build(sim::Build b) const;
     void send_snapshots();
+    void step_race();
 
     sim::PhysicsTables tables_;
     sim::PartsCatalog parts_;
@@ -86,12 +105,20 @@ private:
 
     std::map<ClientId, Client> clients_;
     std::vector<Seat> seats_;
+    std::array<int, kMaxSeats> bot_points_{};
     std::unique_ptr<sim::World> world_;
     std::vector<sim::KartInput> step_inputs_;
+    ResultsMsg results_;
+
+    RoomPhase phase_ = RoomPhase::Lobby;
+    int phase_ticks_ = 0;        // ticks left in the lobby or results phase
+    int ready_ticks_ = -1;       // short countdown once every player is ready
+    bool lobby_timer_running_ = false;
+    int race_number_ = 1;
+    int first_finish_for_ = -1;  // ticks since the first player finished
+    int humans_done_for_ = -1;   // ticks since every player finished
     uint32_t race_id_ = 0;
     uint32_t server_tick_ = 0;
-    int ended_for_ = -1;        // ticks since the race ended (results screen)
-    int humans_done_for_ = -1;  // ticks since every human finished
     int late_inputs_ = 0;
 };
 

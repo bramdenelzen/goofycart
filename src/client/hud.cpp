@@ -8,6 +8,8 @@
 namespace gk {
 using render::rgba;
 
+static constexpr int kRacePoints[12] = {15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
+
 std::string format_race_time(int ticks) {
     const int ms_total = int(std::lround(double(ticks) * 1000.0 / kTickRate));
     char buf[32];
@@ -40,7 +42,42 @@ void centered(render::Renderer& r, float cx, float y, const char* text, uint32_t
 }
 } // namespace
 
-void draw_hud(render::Renderer& r, const sim::World& w, int player, const HudMessage& msg, bool show_help) {
+void draw_results(render::Renderer& r, const std::string& title, const std::vector<ResultRow>& rows,
+                  const std::string& footer) {
+    const VkExtent2D ext = r.internal_extent();
+    const float W = float(ext.width), H = float(ext.height);
+    const bool totals = !rows.empty() && rows[0].total >= 0;
+    const float tw = totals ? 250.0f : 214.0f;
+    const float x = W * 0.5f - tw * 0.5f;
+    float y = H * 0.12f;
+    centered(r, W * 0.5f, y, title.c_str(), rgba(255, 230, 60), 3.0f);
+    y += 30.0f;
+    r.ui_rect(x - 6, y - 4, tw + 12, float(rows.size()) * 12.0f + 8, rgba(0, 0, 0, 150));
+    char buf[128];
+    for (size_t i = 0; i < rows.size(); ++i) {
+        const ResultRow& row = rows[i];
+        const std::string time = row.finish_ticks > 0 ? format_race_time(row.finish_ticks) : std::string("--:--.---");
+        const std::string name = row.name.substr(0, 12);
+        // The font is proportional, so each column gets its own x.
+        const uint32_t c = row.highlight ? rgba(255, 230, 60) : rgba(255, 255, 255);
+        if (row.highlight) r.ui_rect(x - 4, y - 2, tw + 8, 11, rgba(255, 200, 40, 70));
+        std::snprintf(buf, sizeof buf, "%zu%s", i + 1, ordinal_suffix(int(i) + 1));
+        r.ui_text(x + 22 - render::Renderer::ui_text_width(buf), y, buf, c, 1.0f);
+        r.ui_text(x + 30, y, name.c_str(), c, 1.0f);
+        r.ui_text(x + 110, y, time.c_str(), c, 1.0f);
+        std::snprintf(buf, sizeof buf, "+%d", row.points);
+        r.ui_text(x + 172, y, buf, c, 1.0f);
+        if (totals) {
+            std::snprintf(buf, sizeof buf, "%d", row.total);
+            r.ui_text(x + tw - render::Renderer::ui_text_width(buf), y, buf, c, 1.0f);
+        }
+        y += 12.0f;
+    }
+    if (!footer.empty()) centered(r, W * 0.5f, y + 10.0f, footer.c_str(), rgba(200, 230, 255), 1.0f);
+}
+
+void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::vector<std::string>& names,
+              const HudMessage& msg, bool show_help, bool finish_table) {
     const VkExtent2D ext = r.internal_extent();
     const float W = float(ext.width), H = float(ext.height);
     const sim::KartState& k = w.karts()[size_t(player)];
@@ -105,28 +142,26 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const HudMes
 
     if (msg.time_left > 0.0f) centered(r, W * 0.5f, H * 0.42f, msg.text.c_str(), msg.color, 2.0f);
 
-    // Results once the player has finished
-    if (k.finished) {
-        centered(r, W * 0.5f, H * 0.12f, "FINISH!", rgba(255, 230, 60), 4.0f);
+    // Live finishing order once the player has crossed the line
+    if (k.finished && finish_table) {
+        std::vector<ResultRow> rows;
         const auto order = w.standings();
-        const float x = W * 0.5f - 90.0f;
-        float y = H * 0.12f + 36.0f;
-        static const int kPoints[12] = {15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
-        r.ui_rect(x - 6, y - 4, 192, float(order.size()) * 11.0f + 8, rgba(0, 0, 0, 140));
         for (size_t i = 0; i < order.size(); ++i) {
             const sim::KartState& o = w.karts()[size_t(order[i])];
-            const std::string time = o.finished ? format_race_time(o.finish_tick) : std::string("--:--.---");
-            std::snprintf(buf, sizeof buf, "%2zu%s  %s  %-9s  +%d", i + 1, ordinal_suffix(int(i) + 1),
-                          order[i] == player ? "YOU" : "CPU", time.c_str(), i < 12 ? kPoints[i] : 0);
-            r.ui_text(x, y, buf, order[i] == player ? rgba(255, 230, 60) : rgba(255, 255, 255), 1.0f);
-            y += 11.0f;
+            ResultRow row;
+            row.name = size_t(order[i]) < names.size() ? names[size_t(order[i])] : "CPU";
+            row.finish_ticks = o.finished ? o.finish_tick : 0;
+            row.points = i < 12 ? kRacePoints[i] : 0;
+            row.highlight = order[i] == player;
+            rows.push_back(row);
         }
+        draw_results(r, "FINISH!", rows);
     }
 
     if (show_help) {
         const char* lines[] = {
             "Arrows/WASD steer   X/Space gas   Z brake   Shift hop/drift/trick",
-            "C look back   F2 low-res toggle   F1 hide help   R restart   Esc quit",
+            "C look back   F2 low-res toggle   F1 hide help   R restart   Esc back",
             "Gamepad: stick steer, A gas, B brake, R drift, stick up/down pitch glider",
         };
         float y = H - 46.0f;

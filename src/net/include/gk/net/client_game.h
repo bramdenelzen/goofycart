@@ -33,6 +33,8 @@ public:
     ClientGame(sim::PhysicsTables tables, SendFn send);
 
     void join(const std::string& name, const sim::Build& build);
+    // Kart choice and ready flag for the lobby (also allowed between races).
+    void set_build(const sim::Build& build, bool ready);
     void on_message(std::span<const uint8_t> data);
 
     // One fixed step with the local player's input. Returns false while there
@@ -52,6 +54,11 @@ public:
         return true;
     }
     int seat() const { return seat_; }     // -1 while spectating
+    RoomPhase phase() const { return lobby_.phase; }
+    const LobbyMsg& lobby() const { return lobby_; }
+    bool has_lobby() const { return has_lobby_; }
+    // Results of the race that just ended, if they belong to the current race.
+    const ResultsMsg* results() const { return world_ && results_.race_id == setup_.race_id ? &results_ : nullptr; }
     bool joined() const { return welcomed_; }
     bool data_mismatch() const { return data_mismatch_; }
     bool has_clock() const { return clock_started_; }
@@ -91,6 +98,9 @@ private:
     bool data_mismatch_ = false;
     int seat_ = -1;
     RaceSetup setup_;
+    LobbyMsg lobby_;
+    bool has_lobby_ = false;
+    ResultsMsg results_;
     std::unique_ptr<sim::World> world_;
 
     bool clock_started_ = false;

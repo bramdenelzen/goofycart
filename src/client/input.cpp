@@ -33,12 +33,34 @@ void InputMapper::handle_event(const SDL_Event& e) {
         }
         break;
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-        if (e.gbutton.button == SDL_GAMEPAD_BUTTON_START) actions_.pause_pressed = true;
-        if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK) actions_.restart_pressed = true;
+        switch (e.gbutton.button) {
+        case SDL_GAMEPAD_BUTTON_START: actions_.pause_pressed = true; break;
+        case SDL_GAMEPAD_BUTTON_BACK: actions_.restart_pressed = true; break;
+        case SDL_GAMEPAD_BUTTON_SOUTH: actions_.accept = true; break;
+        case SDL_GAMEPAD_BUTTON_EAST: actions_.back = true; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_UP: actions_.menu_up = true; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN: actions_.menu_down = true; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT: actions_.menu_left = true; break;
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: actions_.menu_right = true; break;
+        default: break;
+        }
         break;
     case SDL_EVENT_KEY_DOWN:
+        // Menu keys accept key repeat; the rest do not.
+        switch (e.key.key) {
+        case SDLK_UP: case SDLK_W: actions_.menu_up = true; break;
+        case SDLK_DOWN: case SDLK_S: actions_.menu_down = true; break;
+        case SDLK_LEFT: case SDLK_A: actions_.menu_left = true; break;
+        case SDLK_RIGHT: case SDLK_D: actions_.menu_right = true; break;
+        default: break;
+        }
         if (e.key.repeat) break;
-        if (e.key.key == SDLK_ESCAPE) actions_.pause_pressed = true;
+        if (e.key.key == SDLK_RETURN || e.key.key == SDLK_SPACE || e.key.key == SDLK_X) actions_.accept = true;
+        if (e.key.key == SDLK_BACKSPACE) actions_.back = true;
+        if (e.key.key == SDLK_ESCAPE) {
+            actions_.pause_pressed = true;
+            actions_.back = true;
+        }
         if (e.key.key == SDLK_F2) actions_.toggle_resolution_pressed = true;
         if (e.key.key == SDLK_F1) actions_.toggle_help_pressed = true;
         if (e.key.key == SDLK_R) actions_.restart_pressed = true;
@@ -59,6 +81,22 @@ void InputMapper::begin_frame() {
     actions_.look_back = keys[SDL_SCANCODE_C];
     for (auto* p : pads_)
         if (SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_WEST)) actions_.look_back = true;
+
+    // Left stick as a d-pad in menus: one step per push.
+    int dir = 0;
+    for (auto* p : pads_) {
+        const float x = axis(p, SDL_GAMEPAD_AXIS_LEFTX), y = axis(p, SDL_GAMEPAD_AXIS_LEFTY);
+        if (std::abs(x) > 0.6f && std::abs(x) > std::abs(y)) dir = x < 0 ? 3 : 4;
+        else if (std::abs(y) > 0.6f) dir = y < 0 ? 1 : 2;
+        if (dir) break;
+    }
+    if (dir != stick_dir_) {
+        actions_.menu_up |= dir == 1;
+        actions_.menu_down |= dir == 2;
+        actions_.menu_left |= dir == 3;
+        actions_.menu_right |= dir == 4;
+        stick_dir_ = dir;
+    }
 }
 
 sim::KartInput InputMapper::sample() const {

@@ -408,6 +408,100 @@ bool decode(std::span<const uint8_t> d, EventsMsg& m) {
     return r.ok();
 }
 
+std::vector<uint8_t> encode(const LobbyMsg& m) {
+    Writer w;
+    w.u8(uint8_t(MsgType::Lobby));
+    w.u8(uint8_t(m.phase));
+    w.u16(m.seconds_left);
+    w.u8(m.race_number);
+    w.u8(m.races_per_gp);
+    w.u8(uint8_t(std::min<size_t>(m.players.size(), 32)));
+    for (size_t i = 0; i < m.players.size() && i < 32; ++i) {
+        const LobbyPlayer& p = m.players[i];
+        w.str(p.name);
+        write_build(w, p.build);
+        w.u8(uint8_t(uint8_t(p.ready) | uint8_t(p.you) << 1));
+        w.u16(p.points);
+    }
+    return w.take();
+}
+
+bool decode(std::span<const uint8_t> d, LobbyMsg& m) {
+    Reader r(d);
+    if (!expect(r, MsgType::Lobby)) return false;
+    m.phase = RoomPhase(std::min<int>(r.u8(), int(RoomPhase::Results)));
+    m.seconds_left = r.u16();
+    m.race_number = r.u8();
+    m.races_per_gp = r.u8();
+    const uint8_t n = r.u8();
+    if (n > 32) return false;
+    m.players.resize(n);
+    for (auto& p : m.players) {
+        p.name = r.str();
+        p.build = read_build(r);
+        const uint8_t f = r.u8();
+        p.ready = f & 1;
+        p.you = f & 2;
+        p.points = r.u16();
+    }
+    return r.ok();
+}
+
+std::vector<uint8_t> encode(const SetBuildMsg& m) {
+    Writer w;
+    w.u8(uint8_t(MsgType::SetBuild));
+    write_build(w, m.build);
+    w.u8(uint8_t(m.ready));
+    return w.take();
+}
+
+bool decode(std::span<const uint8_t> d, SetBuildMsg& m) {
+    Reader r(d);
+    if (!expect(r, MsgType::SetBuild)) return false;
+    m.build = read_build(r);
+    m.ready = r.u8() != 0;
+    return r.ok();
+}
+
+std::vector<uint8_t> encode(const ResultsMsg& m) {
+    Writer w;
+    w.u8(uint8_t(MsgType::Results));
+    w.u32(m.race_id);
+    w.u8(m.race_number);
+    w.u8(m.races_per_gp);
+    w.u8(uint8_t(std::min<size_t>(m.entries.size(), kMaxSeats)));
+    for (size_t i = 0; i < m.entries.size() && i < size_t(kMaxSeats); ++i) {
+        const ResultEntry& e = m.entries[i];
+        w.u8(e.seat);
+        w.u8(uint8_t(e.human));
+        w.str(e.name);
+        w.u32(e.finish_ticks);
+        w.u8(e.points);
+        w.u16(e.total);
+    }
+    return w.take();
+}
+
+bool decode(std::span<const uint8_t> d, ResultsMsg& m) {
+    Reader r(d);
+    if (!expect(r, MsgType::Results)) return false;
+    m.race_id = r.u32();
+    m.race_number = r.u8();
+    m.races_per_gp = r.u8();
+    const uint8_t n = r.u8();
+    if (n > kMaxSeats) return false;
+    m.entries.resize(n);
+    for (auto& e : m.entries) {
+        e.seat = r.u8();
+        e.human = r.u8() != 0;
+        e.name = r.str();
+        e.finish_ticks = r.u32();
+        e.points = r.u8();
+        e.total = r.u16();
+    }
+    return r.ok();
+}
+
 uint32_t crc32(std::span<const uint8_t> data, uint32_t crc) {
     static const auto table = [] {
         std::array<uint32_t, 256> t{};

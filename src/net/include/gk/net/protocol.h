@@ -18,7 +18,7 @@
 //   kChannelChat     reliable, low priority: chat and emotes
 namespace gk::net {
 
-inline constexpr uint16_t kProtocolVersion = 1;
+inline constexpr uint16_t kProtocolVersion = 2;
 inline constexpr uint16_t kDefaultPort = 7777;
 inline constexpr uint8_t kChannelState = 0;
 inline constexpr uint8_t kChannelEvents = 1;
@@ -36,7 +36,15 @@ enum class MsgType : uint8_t {
     Snapshot,     // S->C unreliable
     Events,       // S->C reliable
     Chat,         // both ways, reliable low priority
+    Lobby,        // S->C reliable: room phase, timer and players
+    SetBuild,     // C->S reliable: kart parts and ready flag in the lobby
+    Results,      // S->C reliable: final order and Grand Prix points
 };
+
+// Points per place in a 12-racer race, as in MK8 Deluxe.
+inline constexpr int kRacePoints[12] = {15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
+
+enum class RoomPhase : uint8_t { Lobby, Racing, Results };
 
 class Writer {
 public:
@@ -118,6 +126,43 @@ struct Welcome {
     uint32_t server_tick = 0;
 };
 
+struct LobbyPlayer {
+    std::string name;
+    sim::Build build;
+    bool ready = false;
+    uint16_t points = 0;   // Grand Prix total so far
+    bool you = false;      // set per recipient
+};
+
+struct LobbyMsg {
+    RoomPhase phase = RoomPhase::Lobby;
+    uint16_t seconds_left = 0;     // until the race starts (lobby) or the lobby opens (results)
+    uint8_t race_number = 1;       // within the Grand Prix
+    uint8_t races_per_gp = 4;
+    std::vector<LobbyPlayer> players;
+};
+
+struct SetBuildMsg {
+    sim::Build build;
+    bool ready = false;
+};
+
+struct ResultEntry {
+    uint8_t seat = 0;
+    bool human = false;
+    std::string name;
+    uint32_t finish_ticks = 0;     // race time; 0 when the race ended before this kart finished
+    uint8_t points = 0;            // gained this race
+    uint16_t total = 0;            // Grand Prix total after this race
+};
+
+struct ResultsMsg {
+    uint32_t race_id = 0;
+    uint8_t race_number = 1;
+    uint8_t races_per_gp = 4;
+    std::vector<ResultEntry> entries; // in finishing order
+};
+
 struct InputMsg {
     uint32_t newest_tick = 0;               // world tick the first input is for
     std::vector<sim::KartInput> inputs;     // newest first
@@ -152,6 +197,9 @@ std::vector<uint8_t> encode(const RaceSetup& m);
 std::vector<uint8_t> encode(const InputMsg& m);
 std::vector<uint8_t> encode(const SnapshotMsg& m);
 std::vector<uint8_t> encode(const EventsMsg& m);
+std::vector<uint8_t> encode(const LobbyMsg& m);
+std::vector<uint8_t> encode(const SetBuildMsg& m);
+std::vector<uint8_t> encode(const ResultsMsg& m);
 
 bool decode(std::span<const uint8_t> data, Hello& m);
 bool decode(std::span<const uint8_t> data, Welcome& m);
@@ -159,6 +207,9 @@ bool decode(std::span<const uint8_t> data, RaceSetup& m);
 bool decode(std::span<const uint8_t> data, InputMsg& m);
 bool decode(std::span<const uint8_t> data, SnapshotMsg& m);
 bool decode(std::span<const uint8_t> data, EventsMsg& m);
+bool decode(std::span<const uint8_t> data, LobbyMsg& m);
+bool decode(std::span<const uint8_t> data, SetBuildMsg& m);
+bool decode(std::span<const uint8_t> data, ResultsMsg& m);
 
 void write_input(Writer& w, const sim::KartInput& in);
 sim::KartInput read_input(Reader& r);

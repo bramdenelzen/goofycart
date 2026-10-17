@@ -26,6 +26,13 @@ void ClientGame::join(const std::string& name, const sim::Build& build) {
     send_(kChannelEvents, encode(h), true);
 }
 
+void ClientGame::set_build(const sim::Build& build, bool ready) {
+    SetBuildMsg m;
+    m.build = build;
+    m.ready = ready;
+    send_(kChannelEvents, encode(m), true);
+}
+
 vec3 ClientGame::visual_offset(int kart) const {
     return kart >= 0 && size_t(kart) < visual_offset_.size() ? visual_offset_[size_t(kart)] : vec3(0.0f);
 }
@@ -49,6 +56,19 @@ void ClientGame::on_message(std::span<const uint8_t> data) {
     case MsgType::Snapshot: {
         SnapshotMsg m;
         if (decode(data, m)) apply_snapshot(m);
+        break;
+    }
+    case MsgType::Lobby: {
+        LobbyMsg m;
+        if (decode(data, m)) {
+            lobby_ = std::move(m);
+            has_lobby_ = true;
+        }
+        break;
+    }
+    case MsgType::Results: {
+        ResultsMsg m;
+        if (decode(data, m)) results_ = std::move(m);
         break;
     }
     case MsgType::Events: {
@@ -108,8 +128,9 @@ void ClientGame::simulate_to(uint32_t target, bool forward) {
         const uint32_t t = uint32_t(world_->tick_count()) + 1;
         const auto& karts = world_->karts();
         for (size_t i = 0; i < karts.size(); ++i) {
-            if (int(i) == seat_) step_inputs_[i] = input_at(t);
-            else if (!setup_.seats[i].human) step_inputs_[i] = bot_input(karts[i], world_->track(), int(i));
+            // Mirrors the server: bots, and everyone past the finish line, use the bot driver.
+            if (!setup_.seats[i].human || karts[i].finished) step_inputs_[i] = bot_input(karts[i], world_->track(), int(i));
+            else if (int(i) == seat_) step_inputs_[i] = input_at(t);
             else step_inputs_[i] = remote_inputs_[i];
         }
         world_->tick(step_inputs_);

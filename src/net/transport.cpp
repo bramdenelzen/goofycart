@@ -144,7 +144,7 @@ void NetClient::enqueue(std::vector<Delayed>& q, uint8_t channel, std::vector<ui
     if (reliable) {
         // Reliable data stays ordered within its channel, like ENet's.
         auto& last = reliable_due_[{&q, channel}];
-        due = std::max(due, last);
+        due = (std::max)(due, last); // parenthesised: windows.h defines max
         last = due;
     }
     q.push_back({due, channel, std::move(data), reliable});

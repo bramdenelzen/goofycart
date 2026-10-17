@@ -32,6 +32,7 @@ add_executable(gk_client
   app.cpp
   input.cpp
   hud.cpp
+  menu.cpp
   render/mesh.cpp
   render/track_mesh.cpp
   render/renderer.cpp

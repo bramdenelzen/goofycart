@@ -56,6 +56,7 @@ int main(int argc, char** argv) {
         std::unique_ptr<net::ClientGame> game;
         double accum = 0.0;
         int steps = 0;
+        bool sent_ready = false;
     };
     std::vector<Bot> bots(static_cast<size_t>(count));
     bool ok = true;
@@ -83,6 +84,13 @@ int main(int argc, char** argv) {
         last = now;
         for (Bot& b : bots) {
             b.link->service([&](std::span<const uint8_t> d) { b.game->on_message(d); });
+            // Ready up as soon as each lobby opens.
+            const bool in_lobby = b.game->has_lobby() && b.game->phase() == net::RoomPhase::Lobby;
+            if (in_lobby && !b.sent_ready) {
+                b.game->set_build({int(&b - bots.data()) % 4, int(&b - bots.data()) % 4, 0, 0}, true);
+                b.sent_ready = true;
+            }
+            if (!in_lobby) b.sent_ready = false;
             b.accum += dt * b.game->time_scale();
             while (b.accum >= kTickSeconds) {
                 b.accum -= kTickSeconds;

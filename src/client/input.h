@@ -15,6 +15,9 @@ struct ClientActions {
     bool toggle_help_pressed = false;
     bool restart_pressed = false;
     bool quit_requested = false;
+    // Menu navigation (edges, with key repeat for held directions)
+    bool menu_up = false, menu_down = false, menu_left = false, menu_right = false;
+    bool accept = false, back = false;
 };
 
 // Merges keyboard and every connected gamepad into one KartInput. SDL3's
@@ -37,6 +40,7 @@ public:
 private:
     std::vector<SDL_Gamepad*> pads_;
     ClientActions actions_;
+    int stick_dir_ = 0;      // last left-stick menu direction, for edge detection
 };
 
 } // namespace gk

@@ -43,6 +43,8 @@ gk_fetch(enet https://github.com/lsalzman/enet.git v1.3.18)
 FetchContent_MakeAvailable(glm nlohmann_json enet)
 if(WIN32)
   target_link_libraries(enet PUBLIC ws2_32 winmm)
+  # enet.h pulls in <windows.h>; keep its min/max macros out of our code.
+  target_compile_definitions(enet INTERFACE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 target_include_directories(enet SYSTEM INTERFACE ${enet_SOURCE_DIR}/include)
 FetchContent_GetProperties(JoltPhysics)
