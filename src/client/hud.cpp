@@ -2,13 +2,100 @@
 
 #include "gk/core/fixed_step.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace gk {
 using render::rgba;
 
 static constexpr int kRacePoints[12] = {15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1};
+
+uint32_t kart_color(int slot) {
+    static constexpr uint32_t kColors[12] = {
+        rgba(220, 50, 40),  rgba(40, 110, 230), rgba(60, 190, 70),  rgba(250, 200, 30),
+        rgba(160, 70, 210), rgba(250, 130, 30), rgba(30, 200, 200), rgba(240, 100, 170),
+        rgba(240, 240, 240), rgba(70, 70, 80),  rgba(150, 100, 60), rgba(120, 200, 255),
+    };
+    return kColors[size_t(((slot % 12) + 12) % 12)];
+}
+
+void draw_minimap(render::Renderer& r, const sim::World& w, int player) {
+    const sim::Track& t = w.track();
+    const int n = int(t.center.size());
+    if (n < 4) return;
+    const VkExtent2D ext = r.internal_extent();
+    const float H = float(ext.height);
+    // Fit the track into a box on the left, below the lap and time, seen
+    // from above (+x right, +z down) and kept in proportion.
+    vec2 lo(1e9f), hi(-1e9f);
+    float y_lo = 1e9f, y_hi = -1e9f;
+    for (const auto& c : t.center) {
+        lo = glm::min(lo, vec2(c.pos.x, c.pos.z)), hi = glm::max(hi, vec2(c.pos.x, c.pos.z));
+        y_lo = std::min(y_lo, c.pos.y), y_hi = std::max(y_hi, c.pos.y);
+    }
+    const float box = std::min(H * 0.34f, 120.0f), x0 = 8.0f, y0 = 50.0f;
+    const vec2 span = glm::max(hi - lo, vec2(1.0f));
+    const float scale = box / std::max(span.x, span.y);
+    const vec2 origin = vec2(x0, y0) + (vec2(box) - span * scale) * 0.5f;
+    auto to_map = [&](vec3 p) { return origin + (vec2(p.x, p.z) - lo) * scale; };
+
+    // The road, lowest parts first so bridges are drawn over what they cross:
+    // a dark outline pass, then the road shaded lighter with height.
+    std::vector<int> order(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) order[size_t(i)] = i;
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        return t.center[size_t(a)].pos.y + t.center[size_t(t.wrap(a + 1))].pos.y <
+               t.center[size_t(b)].pos.y + t.center[size_t(t.wrap(b + 1))].pos.y;
+    });
+    const float yspan = std::max(y_hi - y_lo, 1.0f);
+    for (int pass = 0; pass < 2; ++pass)
+        for (int i : order) {
+            const sim::CenterSample &a = t.center[size_t(i)], &b = t.center[size_t(t.wrap(i + 1))];
+            if (!a.has_floor || !b.has_floor) continue;
+            const float half = std::max(1.2f, a.half_width * scale) + (pass == 0 ? 1.0f : 0.0f);
+            const vec2 pa = to_map(a.pos), pb = to_map(b.pos);
+            vec2 d = pb - pa;
+            const float len = glm::length(d);
+            if (len < 1e-4f) continue;
+            d /= len;
+            const vec2 across(-d.y * half, d.x * half), ext_d = d * (pass == 0 ? 1.0f : 0.5f);
+            const uint8_t v = uint8_t(150.0f + 80.0f * (0.5f * (a.pos.y + b.pos.y) - y_lo) / yspan);
+            const uint32_t color = pass == 0 ? rgba(10, 10, 20, 170) : rgba(v, v, uint8_t(std::min(255, v + 15)), 230);
+            r.ui_quad(pa - ext_d - across, pb + ext_d - across, pb + ext_d + across, pa - ext_d + across, color);
+        }
+    // Start line.
+    {
+        const sim::CenterSample& s = t.center[0];
+        const vec2 p = to_map(s.pos);
+        const vec2 rt = glm::normalize(vec2(s.right.x, s.right.z)) * std::max(2.0f, s.half_width * scale + 1.0f);
+        const vec2 fw = glm::normalize(vec2(s.tangent.x, s.tangent.z)) * 0.8f;
+        r.ui_quad(p - rt - fw, p - rt + fw, p + rt + fw, p + rt - fw, rgba(255, 255, 255));
+    }
+    // Karts: everyone else, then the player on top with an outline, pointing
+    // the way they face.
+    const auto& karts = w.karts();
+    for (int pass = 0; pass < 2; ++pass)
+        for (size_t i = 0; i < karts.size(); ++i) {
+            const bool me = int(i) == player;
+            if (me != (pass == 1)) continue;
+            const vec2 p = to_map(karts[i].pos);
+            const float s = me ? 3.0f : 2.0f;
+            if (me) {
+                vec3 f = karts[i].forward();
+                vec2 dir(f.x, f.z);
+                dir = glm::length(dir) > 1e-3f ? glm::normalize(dir) : vec2(0, 1);
+                const vec2 side(-dir.y, dir.x);
+                const vec2 tip = p + dir * 7.0f, l = p - dir * 3.0f + side * 4.0f, rr = p - dir * 3.0f - side * 4.0f;
+                r.ui_quad(tip + dir, l - dir * 0.5f + side, p - dir, rr - dir * 0.5f - side, rgba(0, 0, 0, 220));
+                r.ui_quad(tip, l, p - dir * 1.5f, rr, rgba(255, 255, 255));
+            } else {
+                r.ui_rect(p.x - s - 1, p.y - s - 1, 2 * s + 2, 2 * s + 2, rgba(0, 0, 0, 200));
+                r.ui_rect(p.x - s, p.y - s, 2 * s, 2 * s, kart_color(int(i)));
+            }
+        }
+}
 
 std::string format_race_time(int ticks) {
     const int ms_total = int(std::lround(double(ticks) * 1000.0 / kTickRate));
@@ -169,6 +256,8 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
             r.ui_rect(W * sp[0] - rad * 0.7f, H * sp[1] - rad, rad * 1.4f, rad * 2.0f, rgba(15, 10, 25, a));
         }
     }
+
+    draw_minimap(r, w, player);
 
     // Speed and coins, bottom left
     const float kmh = std::abs(glm::length(k.velocity())) * 3.6f;

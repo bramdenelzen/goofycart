@@ -32,6 +32,12 @@ void draw_hud(render::Renderer& r, const sim::World& world, int player, const st
 void draw_results(render::Renderer& r, const std::string& title, const std::vector<ResultRow>& rows,
                   const std::string& footer = {});
 
+// The body colour of the kart in each grid slot, also its minimap dot.
+uint32_t kart_color(int slot);
+
+// A map of the track from above in a corner, with every kart on it.
+void draw_minimap(render::Renderer& r, const sim::World& world, int player);
+
 std::string format_race_time(int ticks);
 const char* ordinal_suffix(int place);
 

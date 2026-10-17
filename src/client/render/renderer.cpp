@@ -465,6 +465,12 @@ void Renderer::ui_rect(float x, float y, float w, float h, uint32_t color) {
     ui_vertices_.insert(ui_vertices_.end(), {a, b, c, a, c, d});
 }
 
+void Renderer::ui_quad(vec2 a, vec2 b, vec2 c, vec2 d, uint32_t color) {
+    if (!frame_active_) return;
+    const UiVertex va{a, color}, vb{b, color}, vc{c, color}, vd{d, color};
+    ui_vertices_.insert(ui_vertices_.end(), {va, vb, vc, va, vc, vd});
+}
+
 void Renderer::ui_text(float x, float y, const char* text, uint32_t color, float scale, bool shadow) {
     if (!frame_active_ || !text) return;
     const float off = std::max(1.0f, std::floor(scale * 0.3f));

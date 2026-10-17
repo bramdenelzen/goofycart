@@ -61,6 +61,7 @@ public:
 
     // 2D overlay in internal-resolution pixels, drawn after the 3D scene.
     void ui_rect(float x, float y, float w, float h, uint32_t color);
+    void ui_quad(vec2 a, vec2 b, vec2 c, vec2 d, uint32_t color);
     // Text in the stb_easy_font face (about 6 x 7 px per glyph at scale 1).
     void ui_text(float x, float y, const char* text, uint32_t color, float scale = 1.0f, bool shadow = true);
     static float ui_text_width(const char* text, float scale = 1.0f);

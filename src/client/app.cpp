@@ -20,12 +20,6 @@
 namespace gk {
 namespace {
 
-constexpr uint32_t kKartColors[12] = {
-    render::rgba(220, 50, 40),  render::rgba(40, 110, 230), render::rgba(60, 190, 70),  render::rgba(250, 200, 30),
-    render::rgba(160, 70, 210), render::rgba(250, 130, 30), render::rgba(30, 200, 200), render::rgba(240, 100, 170),
-    render::rgba(240, 240, 240), render::rgba(70, 70, 80),  render::rgba(150, 100, 60), render::rgba(120, 200, 255),
-};
-
 uint32_t tier_color(int tier) {
     switch (tier) {
     case 1: return render::rgba(80, 160, 255);
@@ -193,7 +187,7 @@ std::pair<render::MeshId, render::MeshId> App::build_mesh(const sim::Build& b, i
                          uint64_t(b.tires & 0xff) << 24 | uint64_t(b.glider & 0xff) << 32;
     auto it = build_meshes_.find(key);
     if (it == build_meshes_.end()) {
-        const render::KartLook look = render::kart_look(parts_, b, kKartColors[size_t(slot % 12)]);
+        const render::KartLook look = render::kart_look(parts_, b, kart_color(slot));
         it = build_meshes_.emplace(key, std::pair{renderer_.upload_mesh(render::make_kart_mesh(look)),
                                                   renderer_.upload_mesh(render::make_glider_mesh(look.glider))}).first;
     }
