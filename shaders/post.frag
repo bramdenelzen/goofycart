@@ -1,7 +1,8 @@
 #version 450
 // Volumetric light and fog over the finished scene: sun shafts marched
 // through the sky mask towards the sun, and a low, drifting mist in the
-// hollows below the camera, both from the depth buffer.
+// hollows below the camera, both from the depth buffer. Also the heat
+// shimmer over a lava pool, which runs without the other two.
 
 layout(set = 0, binding = 0) uniform Frame {
     mat4 view_proj;
@@ -15,8 +16,8 @@ layout(set = 0, binding = 0) uniform Frame {
 
 layout(push_constant) uniform Post {
     mat4 inv_view_proj;
-    vec4 params; // x: shafts strength, y: mist strength, z: aspect, w: unused
-    vec4 range;  // x: near plane, y: far plane
+    vec4 params; // x: shafts strength, y: mist strength, z: aspect, w: heat shimmer strength
+    vec4 range;  // x: near plane, y: far plane, z: the lava pool's height
 } post;
 
 layout(set = 1, binding = 0) uniform sampler2D scene;
@@ -33,12 +34,28 @@ float vnoise(vec2 p) {
 }
 
 void main() {
-    vec3 col = texture(scene, v_uv).rgb;
     float d = texture(depth, v_uv).r;
     // Linear distance along the view from the depth value; the sky dome sits near the far plane.
     float near = post.range.x, far = post.range.y;
     float lin = near * far / max(far - d * (far - near), 1e-3);
     bool sky = lin > far * 0.8;
+
+    // ---- heat shimmer: the air over the lava wobbles. Masked by the height
+    // of the pixel's own point, so bridges and karts above the lava stay crisp.
+    vec2 uv = v_uv;
+    if (post.params.w > 0.0 && !sky) {
+        vec4 hp = post.inv_view_proj * vec4(v_uv * 2.0 - 1.0, d, 1.0);
+        vec3 hw = hp.xyz / hp.w;
+        float above = hw.y - post.range.z;
+        float k = (1.0 - smoothstep(0.5, 5.0, above)) * (1.0 - smoothstep(70.0, 180.0, length(hw - frame.camera_pos.xyz)));
+        if (k > 0.0) {
+            float t = floor(frame.shadow.w * 12.0) / 12.0;
+            vec2 s = v_uv * vec2(post.params.z, 1.0) * 40.0;
+            vec2 n = vec2(vnoise(s + vec2(0.0, t * 3.0)), vnoise(s + vec2(7.3, -t * 2.6))) - 0.5;
+            uv += n * 0.008 * k * post.params.w;
+        }
+    }
+    vec3 col = texture(scene, uv).rgb;
     float sun = clamp(frame.shadow.z, 0.0, 1.0);
     vec3 l = normalize(frame.light_dir.xyz);
     vec3 sun_col = mix(vec3(0.7, 0.8, 1.0), vec3(1.0, 0.9, 0.7), sun);

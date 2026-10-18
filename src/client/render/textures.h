@@ -27,6 +27,7 @@ enum Tex : uint32_t {
     TexWindows,
     TexTread,
     TexCloud,
+    TexLava,    // molten lava: drawn entirely by the shader (mesh.frag), the layer is unused
     TexCount
 };
 

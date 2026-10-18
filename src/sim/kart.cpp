@@ -32,19 +32,21 @@ struct Probe {
     bool touched[int(Surface::Count)] = {};
 };
 
-Probe probe(const KartState& s, const Track& t, float max_below) {
+// `from`: how far above the kart's base the rays start (higher catches a
+// floor that has risen into the kart).
+Probe probe(const KartState& s, const Track& t, float max_below, float from = kProbeHeight) {
     Probe pr;
     const vec3 up = s.up();
     vec3 nsum(0.0f);
     float dsum = 0.0f;
     int counts[int(Surface::Count)] = {};
     for (const vec3& w : kWheels) {
-        const vec3 origin = s.pos + s.rot * w + up * kProbeHeight;
-        auto hit = t.raycast(origin, -up, kProbeHeight + max_below);
+        const vec3 origin = s.pos + s.rot * w + up * from;
+        auto hit = t.raycast(origin, -up, from + max_below);
         if (!hit || glm::dot(hit->normal, up) < kMinFloorDot) continue;
         ++pr.hits;
         nsum += hit->normal;
-        dsum += hit->distance - kProbeHeight;
+        dsum += hit->distance - from;
         pr.touched[int(hit->surface)] = true;
         counts[int(hit->surface)]++;
     }
@@ -52,7 +54,7 @@ Probe probe(const KartState& s, const Track& t, float max_below) {
         pr.normal = glm::normalize(nsum);
         pr.avg_dist = dsum / float(pr.hits);
     }
-    auto center = t.raycast(s.pos + up * kProbeHeight, -up, kProbeHeight + max_below + 0.5f);
+    auto center = t.raycast(s.pos + up * from, -up, from + max_below + 0.5f);
     if (center && glm::dot(center->normal, up) >= kMinFloorDot) {
         pr.surface = center->surface;
         pr.touched[int(center->surface)] = true;
@@ -82,7 +84,11 @@ void emit(const KartStepContext& ctx, KartEventType type, int value = 0) {
     if (ctx.events) ctx.events->push_back({type, ctx.kart_index, value});
 }
 
+// The floor's own pull on top speed. Underwater the cap itself changes
+// (the water stats) and the floor still counts, so a shallow-water floor
+// adds nothing more there.
 float terrain_multiplier(const KartState& s, const KartParams& p, const PhysicsConstants& k) {
+    if (s.underwater && s.surface == Surface::Water) return 1.0f;
     switch (s.surface) {
     case Surface::OffroadLight: return k.offroad_light;
     case Surface::OffroadMedium: return k.offroad_medium;
@@ -127,6 +133,8 @@ void start_respawn(KartState& s, const KartStepContext& ctx) {
     s.glide_armed = false;
     s.trick_done = false;
     s.trick_window = 0;
+    s.underwater = false;
+    s.water_frames = 0;
     emit(ctx, KartEventType::Respawn);
 }
 
@@ -231,6 +239,22 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
         vec3 nose(s.forward().x, 0.0f, s.forward().z);
         if (glm::length(nose) > 1e-3f) dir = glm::normalize(glm::mix(dir, glm::normalize(nose), std::min(1.0f, 4.5f * kDt)));
         s.air_vel = dir * hs + kUp * vy;
+    } else if (s.underwater) {
+        // Underwater: half the gravity and a capped fall, so hops rise as high
+        // but come down slowly; the stick tips the nose like the glider's,
+        // diving trades height for speed and pulling back floats longer.
+        const float pitch = std::clamp(in.pitch, -1.0f, 1.0f);
+        s.air_vel.y -= k.gravity * k.water_gravity_scale * (1.0f - k.water_pitch_gain * pitch) * kDt;
+        s.air_vel.y = std::max(s.air_vel.y, -k.water_terminal_fall);
+        const float trade = 1.0f - k.water_pitch_gain * k.glide_pitch_speed * pitch * kDt;
+        s.air_vel.x *= trade, s.air_vel.z *= trade;
+        float rate = in.steer * p.turn_rate_water * 0.35f;
+        if (s.drift == DriftState::Drifting) rate = float(s.drift_dir) * p.turn_rate_water * s.drift_turn * k.drift_turn_water_scale * 0.8f;
+        const quat q = glm::angleAxis(-rate * kDt, kUp);
+        s.rot = glm::normalize(q * s.rot);
+        const vec3 h = q * vec3(s.air_vel.x, 0.0f, s.air_vel.z);
+        s.air_vel = vec3(h.x, s.air_vel.y, h.z);
+        if (s.drift == DriftState::Drifting && p.is_bike && in.drift) s.mt_charge += k.charge_slow * p.mt_charge;
     } else {
         s.air_vel.y -= k.gravity * kDt;
         float rate = in.steer * p.turn_rate * 0.35f;
@@ -246,7 +270,9 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
     s.pos += s.air_vel * kDt;
 
     if (s.air_frames > 2 && s.air_vel.y <= 1.0f) {
-        const Probe pr = probe(s, ctx.track, kLandTolerance + std::max(0.0f, -s.air_vel.y) * kDt);
+        // Underwater a hop floats for a long time, long enough for a rising
+        // road to come up past the kart's wheels: look for it from higher up.
+        const Probe pr = probe(s, ctx.track, kLandTolerance + std::max(0.0f, -s.air_vel.y) * kDt, s.underwater ? 1.6f : kProbeHeight);
         if (pr.hits >= 2) land(s, pr, in, ctx);
     }
 }
@@ -291,7 +317,8 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     // Engine speed
     float terrain = terrain_multiplier(s, p, k);
     if (s.boost_frames > 0 && s.boost_ignores_offroad) terrain = std::max(terrain, 1.0f);
-    const float top = p.top_speed * ctx.top_speed_scale * terrain * (1.0f + k.coin_speed_bonus * float(std::min(s.coins, k.max_coins)));
+    const float cap = s.underwater ? p.top_speed_water : p.top_speed; // the water stats underwater
+    const float top = cap * ctx.top_speed_scale * terrain * (1.0f + k.coin_speed_bonus * float(std::min(s.coins, k.max_coins)));
     if (s.boost_frames > 0) {
         const float boosted = top * s.boost_mult;
         if (s.speed < boosted) s.speed = std::min(boosted, s.speed + k.boost_accel * kDt);
@@ -354,11 +381,12 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
 
     // Steering turns the heading directly; it is not a physics torque.
     float yaw_rate;
+    const float turn_rate = s.underwater ? p.turn_rate_water : p.turn_rate;
     if (s.drift == DriftState::Drifting) {
-        yaw_rate = float(s.drift_dir) * p.turn_rate * s.drift_turn;
+        yaw_rate = float(s.drift_dir) * turn_rate * s.drift_turn * (s.underwater ? k.drift_turn_water_scale : 1.0f);
     } else {
         const float at_speed = 1.0f - 0.25f * std::clamp(std::abs(s.speed) / p.top_speed, 0.0f, 1.0f);
-        yaw_rate = in.steer * p.turn_rate * at_speed;
+        yaw_rate = in.steer * turn_rate * at_speed;
         if (s.speed < 0.0f) yaw_rate = -yaw_rate;
     }
     yaw_rate *= std::clamp(std::abs(s.speed) / 4.0f, 0.0f, 1.0f);
@@ -489,6 +517,34 @@ void kart_on_go(KartState& s, const KartStepContext& ctx) {
     s.accel_hold_frames = 0;
 }
 
+namespace {
+// Deep water: in or out by the kart's middle, a few frames' agreement first
+// so a kart bobbing at the surface doesn't flicker between the two. No speed
+// is lost either way.
+void update_water(KartState& s, const KartStepContext& ctx) {
+    const bool inside = ctx.track.in_deep_water(s.pos + s.up() * 0.5f, s.sample);
+    if (inside == s.underwater) {
+        s.water_frames = 0;
+        return;
+    }
+    if (++s.water_frames < std::max(1, ctx.k.water_hysteresis)) return;
+    s.water_frames = 0;
+    s.underwater = inside;
+    if (inside) {
+        if (s.gliding || s.glide_armed) {
+            s.gliding = false;
+            s.glide_armed = false;
+            s.glide_bank = s.glide_pitch = 0.0f;
+            emit(ctx, KartEventType::GliderClose);
+        }
+        s.trick_window = 0;
+        emit(ctx, KartEventType::WaterEnter);
+    } else {
+        emit(ctx, KartEventType::WaterExit);
+    }
+}
+} // namespace
+
 void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     if (s.invincible_frames > 0) --s.invincible_frames;
     s.trick_anim = std::max(0.0f, s.trick_anim - 2.5f * kDt);
@@ -517,6 +573,7 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
         s.boost_ignores_offroad = false;
     }
 
+    update_water(s, ctx);
     if (s.grounded) step_ground(s, in, drift_pressed, ctx);
     else step_air(s, in, drift_pressed, ctx);
     collide_walls(s, ctx);

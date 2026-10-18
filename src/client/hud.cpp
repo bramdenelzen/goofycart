@@ -23,7 +23,7 @@ uint32_t kart_color(int slot) {
     return kColors[size_t(((slot % 12) + 12) % 12)];
 }
 
-void draw_minimap(render::Renderer& r, const sim::World& w, int player) {
+void draw_minimap(render::Renderer& r, const sim::World& w, int player, bool show_checkpoints) {
     const sim::Track& t = w.track();
     const int n = int(t.center.size());
     if (n < 4) return;
@@ -75,6 +75,17 @@ void draw_minimap(render::Renderer& r, const sim::World& w, int player) {
             if (pass == 1 && sg.state == 1) color = rgba(v, uint8_t(v * 0.55f), uint8_t(v * 0.5f), 150); // shut: reddish
             if (pass == 1 && sg.state == 2) color = rgba(v, v, v, 60);
             r.ui_quad(pa - ext_d - across, pb + ext_d - across, pb + ext_d + across, pa - ext_d + across, color);
+        }
+    // Checkpoints: a short line across the road where each region starts.
+    if (show_checkpoints)
+        for (size_t c = 1; c < t.checkpoints.size(); ++c) {
+            const int at = t.checkpoints[c];
+            if (at < 0 || size_t(at) >= t.road.size()) continue;
+            const sim::CenterSample& s = t.road[size_t(at)];
+            const vec2 p = to_map(s.pos);
+            const vec2 rt = glm::normalize(vec2(s.right.x, s.right.z) + vec2(1e-6f)) * std::max(2.5f, s.half_width * scale + 2.0f);
+            const vec2 fw = glm::normalize(vec2(s.tangent.x, s.tangent.z) + vec2(1e-6f)) * 0.5f;
+            r.ui_quad(p - rt - fw, p - rt + fw, p + rt + fw, p + rt - fw, rgba(90, 230, 255, 220));
         }
     // Start line.
     {
@@ -231,7 +242,7 @@ void draw_results(render::Renderer& r, const std::string& title, const std::vect
 }
 
 void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::vector<std::string>& names,
-              const HudMessage& msg, bool show_help, bool finish_table) {
+              const HudMessage& msg, bool show_help, bool finish_table, bool show_checkpoints) {
     const VkExtent2D ext = r.ui_extent();
     const float W = float(ext.width), H = float(ext.height);
     const sim::KartState& k = w.karts()[size_t(player)];
@@ -289,7 +300,7 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
         }
     }
 
-    draw_minimap(r, w, player);
+    draw_minimap(r, w, player, show_checkpoints);
 
     // Speed and coins, bottom left
     const float kmh = std::abs(glm::length(k.velocity())) * 3.6f;
@@ -315,21 +326,6 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
             r.ui_slant_rect(bx + float(sgm) * (bw / float(segs)), by, bw / float(segs) - 1.0f, bh, ui::kBarSlant, tc | 0xff000000u,
                             (tc & 0x00ffffffu) | 0xb0000000u);
         for (int i = 0; i < 2; ++i) r.ui_rect(bx + bw * kc.mt_thresholds[size_t(i)] / full, by, 1, bh, rgba(255, 255, 255, 200));
-    }
-    if (k.boost_frames > 0) {
-        const char* label = "BOOST";
-        switch (k.boost) {
-        case sim::BoostKind::MiniTurbo: label = "MINI-TURBO"; break;
-        case sim::BoostKind::Slipstream: label = "SLIPSTREAM!"; break;
-        case sim::BoostKind::SuperMiniTurbo: label = "SUPER MINI-TURBO"; break;
-        case sim::BoostKind::UltraMiniTurbo: label = "ULTRA MINI-TURBO"; break;
-        case sim::BoostKind::Trick: label = "TRICK BOOST"; break;
-        case sim::BoostKind::RocketStart: label = "ROCKET START"; break;
-        case sim::BoostKind::GlideRamp: label = "GLIDE RAMP"; break;
-        case sim::BoostKind::BoostPad: label = "DASH PANEL"; break;
-        default: break;
-        }
-        ui::title(r, W * 0.5f, H * 0.62f, label, 1.8f, rgba(255, 200, 80));
     }
     if (k.gliding) centered(r, W * 0.5f, H * 0.25f, "GLIDING  (stick up/down to pitch)", rgba(160, 210, 255), 1.0f);
     if (k.respawn_frames > 0) centered(r, W * 0.5f, H * 0.35f, "RESPAWNING...", rgba(255, 255, 255), 2.0f);

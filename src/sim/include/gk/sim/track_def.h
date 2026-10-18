@@ -38,6 +38,8 @@ struct TrackFeature {
     bool left = true, right = true; // verges and walls: which side; zones: which half of the road
     Surface surface = Surface::Road;
     int gate = -1;          // barriers stand, zones are on and obstacles are there while this gate holds
+    bool deep = false;      // water zones: "depth": "deep", driven under in the underwater mode
+    float level = 1e9f;     // deep water: the surface's height (m); unset = the road's height at the zone's lower end
     std::string name;       // switches: what gates call it
     float hold = 10.0f;     // switches: seconds a press lasts
 };

@@ -152,6 +152,12 @@ struct PhysicsConstants {
     float glide_launch_velocity = 7.0f;
     float glide_sink = 4.0f;
     float glide_pitch_speed = 0.18f;
+    // Underwater (deep water zones): a mode, not a surface. Provisional.
+    float water_gravity_scale = 0.5f;   // gravity while airborne underwater
+    float water_terminal_fall = 6.0f;   // m/s: falls no faster than this underwater
+    float water_pitch_gain = 0.5f;      // the stick's pull on the sink, half the glider's
+    float drift_turn_water_scale = 0.9f;// drifts turn a little wider underwater
+    int water_hysteresis = 6;           // frames in (or out of) the water before the mode flips
     int trick_window_frames = 18;
     int respawn_frames = 90;
 };

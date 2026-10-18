@@ -3,7 +3,7 @@
   "engine_class_speed": { "source": "provisional", "50cc": 0.78, "100cc": 0.89, "150cc": 1.0, "200cc": 1.33 },
   "curves": {
     "speed_ground":    { "source": "provisional", "unit": "m/s top speed at 150cc", "points": [[0, 19.5], [20, 27.0]] },
-    "speed_water":     { "source": "provisional", "unit": "m/s", "points": [[0, 18.5], [20, 25.5]] },
+    "speed_water":     { "source": "datamined Float_SpdMaxFwd = Drive_SpdMaxFwd: the water table equals the ground one, parts' water points make the spread", "unit": "m/s", "points": [[0, 19.5], [20, 27.0]] },
     "speed_air":       { "source": "provisional", "unit": "m/s glide speed", "points": [[0, 20.0], [20, 27.0]] },
     "acceleration":    { "source": "datamined Drive_AccLmtFwd; scale to m/s^2 provisional", "points": [[0, 0.035], [1, 0.035], [10, 0.08], [20, 0.13]], "scale": 105.0 },
     "weight":          { "source": "datamined KartBound_MassL/MassH midpoint", "points": [[0, 8.0], [1, 8.0], [10, 22.5], [20, 60.0]] },
@@ -61,6 +61,12 @@
     "glide_launch_velocity": 7.0,
     "glide_sink": 4.0,
     "glide_pitch_speed": 0.18,
+    "_water": "underwater (deep water zones), all provisional: gravity scale and fall cap while airborne, the stick's pull on the sink (half the glider's), drift turn scale, frames before the mode flips",
+    "water_gravity_scale": 0.5,
+    "water_terminal_fall": 6.0,
+    "water_pitch_gain": 0.5,
+    "drift_turn_water_scale": 0.9,
+    "water_hysteresis": 6,
     "trick_window_frames": 18,
     "respawn_frames": 90,
     "stuck_respawn_frames": 300

@@ -5,6 +5,7 @@ add_executable(gk_tests
   test_race.cpp
   test_net.cpp
   test_items.cpp
+  test_water.cpp
   test_ai.cpp
   test_tracks.cpp
   test_audio.cpp

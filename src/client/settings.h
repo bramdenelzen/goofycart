@@ -20,6 +20,7 @@ struct Settings {
     bool rumble = true;
     bool crash_reports = true;          // send crash reports to the master server
     bool volumetric = false;            // sun shafts and drifting mist (a post pass; off by default)
+    bool show_checkpoints = false;      // checkpoint lines on the minimap
     std::string master_url;             // ONLINE's master server (also --master)
     std::string join_address;           // the last server joined by address
     std::array<std::array<int, 2>, kBindCount> binds = default_binds();

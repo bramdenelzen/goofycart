@@ -1,9 +1,11 @@
 #include "track_mesh.h"
 
+#include "lava.h"
 #include "textures.h"
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 #include <vector>
 
 namespace gk::render {
@@ -46,6 +48,30 @@ struct Rng {
         return float(seed >> 8) / float(1u << 24);
     }
 };
+
+static_assert(TexLava == 19 && TexWater == 7, "mesh.vert and mesh.frag test these layer numbers");
+
+// Water's vertex alpha: metres to the shore, 0 at the bank .. 1 from 6 m out
+// (mesh.vert damps the swell and mesh.frag foams near the bank by it).
+uint8_t shore_alpha(float metres) { return uint8_t(std::clamp(metres / 6.0f, 0.0f, 1.0f) * 255.0f + 0.5f); }
+// Turns the faces added since `from_index` to face up (grids are wound by
+// their point order).
+void face_up(MeshBuilder& b, size_t from_vertex, size_t from_index) {
+    auto& d = b.data();
+    if (from_vertex >= d.vertices.size() || d.vertices[from_vertex].normal.y >= 0.0f) return;
+    for (size_t i = from_vertex; i < d.vertices.size(); ++i) d.vertices[i].normal = -d.vertices[i].normal;
+    for (size_t i = from_index; i + 2 < d.indices.size(); i += 3) std::swap(d.indices[i + 1], d.indices[i + 2]);
+}
+// A flat sheet of water in rows and columns of points, with each point's
+// distance to the shore.
+void water_grid(MeshBuilder& b, const std::vector<vec3>& pts, const std::vector<float>& shore, int rows, int cols, uint32_t color) {
+    const size_t v0 = b.data().vertices.size(), i0 = b.data().indices.size();
+    b.grid(pts, rows, cols, false, color);
+    auto& v = b.data().vertices;
+    for (size_t i = 0; i < pts.size() && v0 + i < v.size(); ++i)
+        v[v0 + i].color = (v[v0 + i].color & 0x00ffffffu) | (uint32_t(shore_alpha(shore[i])) << 24);
+    face_up(b, v0, i0);
+}
 
 uint32_t hash_name(const std::string& s) {
     uint32_t h = 2166136261u;
@@ -119,7 +145,7 @@ uint32_t surface_texture(const std::string& theme, sim::Surface s) {
     case Surface::GlideRamp: return TexArrows;
     case Surface::TrickRamp: return TexStripes;
     case Surface::Wall: return TexPanel;
-    case Surface::OutOfBounds: return terrain(false);
+    case Surface::OutOfBounds: return theme == "volcano" ? TexLava : theme == "harbor" ? TexWater : terrain(false); // a lava pool, the sea
     case Surface::Oil: return TexAsphalt;
     case Surface::Count: break;
     }
@@ -168,11 +194,37 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles, int group) {
         return vec2(glm::dot(d, c.right) / tile, s / tile);
     };
 
+    // Water on the road: how far each of its vertices is from the nearest
+    // vertex it shares with anything else (the bank).
+    std::vector<float> shore(t.vertices.size(), 6.0f);
+    {
+        std::vector<uint8_t> touch(t.vertices.size(), 0);
+        for (const auto& tri : t.triangles) {
+            if (tri.surface == sim::Surface::OutOfBounds) continue;
+            const uint8_t bit = tri.surface == sim::Surface::Water ? 1 : 2;
+            touch[tri.a] |= bit, touch[tri.b] |= bit, touch[tri.c] |= bit;
+        }
+        std::vector<vec3> bank;
+        for (size_t v = 0; v < touch.size(); ++v)
+            if (touch[v] == 3) bank.push_back(t.vertices[v]);
+        for (size_t v = 0; v < touch.size(); ++v) {
+            if (touch[v] == 3) shore[v] = 0.0f;
+            if (touch[v] != 1) continue;
+            for (const vec3& p : bank) shore[v] = std::min(shore[v], glm::distance(p, t.vertices[v]));
+        }
+    }
+    float sea_y = 0.0f;
+    bool sea = false;
+
     for (size_t ti = 0; ti < t.triangles.size(); ++ti) {
         const auto& tri = t.triangles[ti];
         if (group >= 0 && tri.group != group) continue;
         const vec3 a = t.vertices[tri.a], c1 = t.vertices[tri.b], c2 = t.vertices[tri.c];
         const vec3 centroid = (a + c1 + c2) / 3.0f;
+        if (tri.surface == sim::Surface::OutOfBounds && th.scenery == ThemeStyle::Scenery::Harbor) {
+            sea = true, sea_y = a.y; // the sea, built below as a fine grid that can swell
+            continue;
+        }
         if (obstacle_of[ti] >= 0) {
             if (skip_obstacles) continue; // drawn as props
             const auto& o = t.obstacles[size_t(obstacle_of[ti])];
@@ -209,6 +261,14 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles, int group) {
         const vec2 ua = road_uv(tri.a, wall, tile, seam), ub = road_uv(tri.b, wall, tile, seam),
                    uc = road_uv(tri.c, wall, tile, seam);
         b.tri_uv(a, c1, c2, ua, ub, uc, color);
+        if (tri.surface == sim::Surface::Water) {
+            auto& vs = b.data().vertices;
+            const uint32_t ids[3] = {tri.a, tri.b, tri.c};
+            for (int k = 0; k < 3; ++k) {
+                Vertex& vx = vs[vs.size() - 3 + size_t(k)];
+                vx.color = (vx.color & 0x00ffffffu) | (uint32_t(shore_alpha(shore[ids[k]])) << 24);
+            }
+        }
         if (wall) {
             b.tri_uv(a, c2, c1, ua, uc, ub, shade(color, 0.7f)); // outside face
         } else {
@@ -216,6 +276,31 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles, int group) {
             b.texture(TexRock, 3.0f);
             b.tri(a + down, c2 + down, c1 + down, th.underside);
         }
+    }
+    if (sea) {
+        // A 4 m grid of water around the track, so it can swell, and the
+        // rest of the sea out to the horizon as four flat sheets a little
+        // lower, tucked under the grid's edge.
+        vec2 lo(1e9f), hi(-1e9f);
+        for (const auto& c : t.road) lo = glm::min(lo, vec2(c.pos.x, c.pos.z)), hi = glm::max(hi, vec2(c.pos.x, c.pos.z));
+        lo -= vec2(150.0f), hi += vec2(150.0f);
+        const float cell = 4.0f;
+        const int cols = int((hi.x - lo.x) / cell) + 1, rows = int((hi.y - lo.y) / cell) + 1;
+        std::vector<vec3> pts;
+        pts.reserve(size_t(rows * cols));
+        for (int r = 0; r < rows; ++r)
+            for (int c = 0; c < cols; ++c) pts.push_back({lo.x + float(c) * cell, sea_y, lo.y + float(r) * cell});
+        b.texture(TexWater, 4.0f);
+        water_grid(b, pts, std::vector<float>(pts.size(), 6.0f), rows, cols, th.below);
+        const float far = std::max(hi.x - lo.x, hi.y - lo.y) + 1200.0f, y = sea_y - 0.25f;
+        const vec2 mid = 0.5f * (lo + hi), in_lo = lo + vec2(cell), in_hi = vec2(lo.x + float(cols - 2) * cell, lo.y + float(rows - 2) * cell);
+        auto sheet = [&](vec2 p0, vec2 p1) { // x0,z0 .. x1,z1, facing up
+            b.quad(vec3(p0.x, y, p0.y), vec3(p0.x, y, p1.y), vec3(p1.x, y, p1.y), vec3(p1.x, y, p0.y), th.below);
+        };
+        sheet(mid - vec2(far), vec2(mid.x + far, in_lo.y));                  // south
+        sheet(vec2(mid.x - far, in_hi.y), mid + vec2(far));                  // north
+        sheet(vec2(mid.x - far, in_lo.y), vec2(in_lo.x, in_hi.y));           // west
+        sheet(vec2(in_hi.x, in_lo.y), vec2(mid.x + far, in_hi.y));           // east
     }
     // Stairs: stone steps over the smooth slope the karts drive on, each
     // tread level at the slope's height under its middle.
@@ -746,16 +831,36 @@ void market_town(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng&
         b.sweep(cable, 0.025f, rgba(50, 40, 35), 4, false);
         for (int s = 1; s < 8; ++s) out.push_back({"lantern", glm::translate(mat4(1.0f), cable[size_t(s)] - kUp * 0.35f)});
     }
-    // Water in the canal under every gap.
+    // Water in the canal under every gap: one sheet per gap, about 2.5 m
+    // between points across and a road sample (2 m) along, so it can swell.
     b.texture(TexWater, 4.0f);
-    for (int i = 0; i < n; ++i) {
-        const sim::CenterSample& c = t.center[size_t(i)];
-        if (c.has_floor) continue;
-        const sim::CenterSample& d = t.center[size_t((i + 1) % n)];
-        const float y = std::min(c.pos.y, d.pos.y) - 5.0f, w = c.half_width + 14.0f;
-        const vec3 p0 = vec3(c.pos.x, y, c.pos.z), p1 = vec3(d.pos.x, y, d.pos.z);
-        b.quad(p0 - c.right * w, p0 + c.right * w, p1 + d.right * w, p1 - d.right * w, th.water);
-        b.quad(p1 - d.right * w, p1 + d.right * w, p0 + c.right * w, p0 - c.right * w, th.water);
+    for (int i0 = 0; i0 < n;) {
+        if (t.center[size_t(i0)].has_floor) {
+            ++i0;
+            continue;
+        }
+        int i1 = i0;
+        while (i1 < n && !t.center[size_t(i1)].has_floor) ++i1;
+        const int rows = i1 - i0 + 1; // the gap's samples and the one after it
+        float y = 1e9f, w = 0.0f;
+        for (int r = 0; r < rows; ++r) {
+            const sim::CenterSample& c = t.center[size_t((i0 + r) % n)];
+            y = std::min(y, c.pos.y - 5.0f), w = std::max(w, c.half_width + 14.0f);
+        }
+        const int cols = std::max(2, int(std::ceil(2.0f * w / 2.5f)) + 1);
+        std::vector<vec3> pts;
+        std::vector<float> shore;
+        for (int r = 0; r < rows; ++r) {
+            const sim::CenterSample& c = t.center[size_t((i0 + r) % n)];
+            const vec3 right = glm::normalize(vec3(c.right.x, 0.0f, c.right.z) + vec3(1e-6f));
+            for (int k = 0; k < cols; ++k) {
+                const float x = -w + 2.0f * w * float(k) / float(cols - 1);
+                pts.push_back(vec3(c.pos.x, y, c.pos.z) + right * x);
+                shore.push_back(std::min(w - std::abs(x), 2.0f * float(std::min(r, rows - 1 - r)))); // the banks and the ends
+            }
+        }
+        water_grid(b, pts, shore, rows, cols, th.water);
+        i0 = i1;
     }
 }
 
@@ -825,6 +930,14 @@ Ground make_ground(const sim::Track& t, const ThemeStyle& th) {
     const float base = lo.y - 2.5f;
     const uint32_t seed = hash_name(t.id);
     std::vector<float> target(size_t(g.nx * g.nz), 1e9f), weight(size_t(g.nx * g.nz), 0.0f), near(size_t(g.nx * g.nz), 1e9f);
+    // On a volcano the ravines go down below the lava pool, so it shows in them.
+    float ravine_floor = 1e9f;
+    if (th.scenery == ThemeStyle::Scenery::Lava)
+        for (const auto& tri : t.triangles)
+            if (tri.surface == sim::Surface::OutOfBounds) {
+                ravine_floor = t.vertices[tri.a].y - 4.0f;
+                break;
+            }
     // Every road sample pulls the ground towards just under itself, strongly
     // close by and fading out over ~45 m; the lowest nearby road wins, so a
     // bridge never buries the road beneath it.
@@ -832,7 +945,7 @@ Ground make_ground(const sim::Track& t, const ThemeStyle& th) {
         const float inner = c.half_width + 5.0f, outer = c.half_width + 46.0f;
         // A ravine under a glide, and under a road that can vanish.
         const bool can_vanish = c.branch >= 0 && t.branches[size_t(c.branch)].vanish;
-        const float y = c.has_floor && !can_vanish ? c.pos.y - 0.9f : c.pos.y - 16.0f;
+        const float y = c.has_floor && !can_vanish ? c.pos.y - 0.9f : std::min(c.pos.y - 16.0f, ravine_floor);
         const int i0 = std::max(0, int((c.pos.x - outer - g.x0) / g.cell)), i1 = std::min(g.nx - 1, int((c.pos.x + outer - g.x0) / g.cell) + 1);
         const int j0 = std::max(0, int((c.pos.z - outer - g.z0) / g.cell)), j1 = std::min(g.nz - 1, int((c.pos.z + outer - g.z0) / g.cell) + 1);
         for (int j = j0; j <= j1; ++j)
@@ -1250,6 +1363,61 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
     return b.take();
 }
 
+LavaSpots find_lava(const sim::Track& t) {
+    LavaSpots out;
+    if (t.theme != "volcano") return out;
+    // The pool is the out-of-bounds floor.
+    for (const auto& tri : t.triangles)
+        if (tri.surface == sim::Surface::OutOfBounds) {
+            out.pool = true, out.pool_y = t.vertices[tri.a].y;
+            break;
+        }
+    // Where the ground dips below the pool, near the road: the lava you can see.
+    const ThemeStyle& th = theme_style(t.theme);
+    if (out.pool && t.ground) {
+        const Ground g = make_ground(t, th);
+        std::unordered_set<int64_t> seen;
+        for (const sim::CenterSample& c : t.road) {
+            const float reach = c.half_width + 60.0f;
+            const int x0 = int(std::floor((c.pos.x - reach) / kLavaCell)), x1 = int(std::floor((c.pos.x + reach) / kLavaCell));
+            const int z0 = int(std::floor((c.pos.z - reach) / kLavaCell)), z1 = int(std::floor((c.pos.z + reach) / kLavaCell));
+            for (int z = z0; z <= z1; ++z)
+                for (int x = x0; x <= x1; ++x) {
+                    const int64_t key = LavaSpots::key(x, z);
+                    if (!seen.insert(key).second) continue;
+                    const float cx = (float(x) + 0.5f) * kLavaCell, cz = (float(z) + 0.5f) * kLavaCell;
+                    if (g.height(cx, cz) < out.pool_y - 0.3f) out.pool_cells.insert(key);
+                }
+        }
+        // Lights along the pool's edge, ~20 m apart.
+        for (const int64_t key : out.pool_cells) {
+            const int x = int(key >> 32), z = int(int32_t(key & 0xffffffff));
+            const bool edge = !out.pool_cells.count(LavaSpots::key(x + 1, z)) || !out.pool_cells.count(LavaSpots::key(x - 1, z)) ||
+                              !out.pool_cells.count(LavaSpots::key(x, z + 1)) || !out.pool_cells.count(LavaSpots::key(x, z - 1));
+            if (!edge) continue;
+            const vec3 p((float(x) + 0.5f) * kLavaCell, out.pool_y + 1.5f, (float(z) + 0.5f) * kLavaCell);
+            bool near = false;
+            for (const auto& l : out.lights) near = near || glm::distance(l.pos, p) < 18.0f;
+            if (!near) out.lights.push_back({p, -1});
+        }
+    }
+    // Lava zones on the road: their middle line, and a light every ~20 m.
+    for (size_t zi = 0; zi < t.zones.size(); ++zi) {
+        const auto& z = t.zones[zi];
+        if (z.surface != sim::Surface::OutOfBounds) continue;
+        for (int i = z.first; i < z.first + z.count; ++i) {
+            const sim::CenterSample& c = t.road[size_t(i)];
+            if (!c.has_floor) continue;
+            const float w = c.half_width + 0.6f;
+            const float lo = std::max(z.lo, -w), hi = std::min(z.hi, w);
+            const vec3 mid = c.pos + c.right * (0.5f * (lo + hi)) + c.up * 0.05f;
+            out.zone_lines.push_back({mid, c.right, c.tangent, 0.5f * (hi - lo), int(zi)});
+            if ((i - z.first) % 10 == 0) out.lights.push_back({mid + c.up * 1.2f, int(zi)});
+        }
+    }
+    return out;
+}
+
 MeshData make_spark_mesh() {
     MeshBuilder b;
     b.icosphere({0, 0, 0}, 0.12f, rgba(255, 255, 255));
@@ -1289,7 +1457,58 @@ MeshData make_zone_mesh(const sim::Track& t, const sim::Track::Zone& z) {
     const bool lava = z.surface == sim::Surface::OutOfBounds;
     const bool volcano = t.theme == "volcano";
     const uint32_t color = lava ? (volcano ? rgba(255, 120, 30) : rgba(40, 110, 200)) : surface_color(theme_style(t.theme), z.surface);
-    b.texture(lava ? (volcano ? TexRock : TexWater) : surface_texture(t.theme, z.surface), z.surface == sim::Surface::BoostPad ? 4.0f : 2.0f);
+    const uint32_t tex = lava ? (volcano ? TexLava : TexWater) : surface_texture(t.theme, z.surface);
+    b.texture(tex, z.surface == sim::Surface::BoostPad ? 4.0f : 2.0f);
+    if (tex == TexWater) {
+        // Water swells: points every ~1.5 m across, each knowing how far it
+        // is from the zone's edge, a little above the road.
+        auto edge = [&](const sim::CenterSample& e, float side) {
+            const float w = e.half_width + 0.6f;
+            return side < 0.0f ? std::max(z.lo, -w) : std::min(z.hi, w);
+        };
+        // Deep water: the sheet is the surface, level, over the stretch where
+        // the road has gone under it.
+        auto covered = [&](int k) {
+            const sim::CenterSample& e = t.road[size_t(k)];
+            return z.deep ? e.pos.y < z.level - 0.25f : e.has_floor;
+        };
+        const sim::CenterSample& c0 = t.road[size_t(z.first)];
+        const int cols = std::max(2, int(std::ceil((edge(c0, 1) - edge(c0, -1)) / 1.5f)) + 1);
+        int i = z.first;
+        while (i + 1 < z.first + z.count) {
+            if (!covered(i)) {
+                ++i;
+                continue;
+            }
+            int j = i;
+            while (j + 1 < z.first + z.count && covered(j + 1)) ++j;
+            const int rows = j - i + 1;
+            if (rows < 2) {
+                i = j + 1;
+                continue;
+            }
+            std::vector<vec3> pts;
+            std::vector<float> shore;
+            for (int r = 0; r < rows; ++r) {
+                const sim::CenterSample& e = t.road[size_t(i + r)];
+                const float lo = edge(e, -1), hi = edge(e, 1);
+                const float ends = 2.0f * float(std::min(r, rows - 1 - r));
+                for (int k = 0; k < cols; ++k) {
+                    const float lat = lo + (hi - lo) * float(k) / float(cols - 1);
+                    if (z.deep) {
+                        const vec3 flat = glm::normalize(vec3(e.right.x, 0.0f, e.right.z) + vec3(1e-6f));
+                        pts.push_back(vec3(e.pos.x, z.level, e.pos.z) + flat * lat);
+                    } else {
+                        pts.push_back(e.pos + e.right * lat + e.up * 0.12f);
+                    }
+                    shore.push_back(std::min({lat - lo, hi - lat, ends}));
+                }
+            }
+            water_grid(b, pts, shore, rows, cols, color);
+            i = j + 1;
+        }
+        return b.take();
+    }
     for (int i = z.first; i + 1 < z.first + z.count; ++i) {
         const sim::CenterSample &c = t.road[size_t(i)], &d = t.road[size_t(i + 1)];
         if (!c.has_floor || !d.has_floor) continue;

@@ -90,6 +90,16 @@ struct ItemTuning {
     float explosion_radius = 6.5f;
     float horn_radius = 9.0f;
     int coins_lost_on_hit = 3;
+    // Hidden limits on the strongest items, in frames. Same idea as MK8
+    // Deluxe's measured rules (one spiked shell in play, a few lightning bolts,
+    // none in the first 30 s or the 30 s after one is used); our own numbers.
+    int spiked_limit = 1;          // in slots and in flight together
+    int spiked_start_gate = 1800;  // none before this race tick
+    int spiked_cooldown = 1800;    // none for this long after one is thrown
+    int spiked_life = 1800;        // a shell in flight gives up after this
+    int lightning_limit = 2;       // held, across all karts
+    int lightning_start_gate = 1800;
+    int lightning_cooldown = 1800; // after one strikes
 };
 
 // Pseudo-random numbers stored in the world state so that prediction and
@@ -108,6 +118,10 @@ struct Rng {
 
 // The roulette: odds by place, as a share of the pack (MK8 Deluxe weighs by
 // distance to the leader; place bands are the provisional stand-in).
-Item roll_item(Rng& rng, int place, int karts);
+// `blocked` is a mask of items (bit = 1 << Item) taken out of the odds; the
+// draw is always a single one, and if nothing is left the kart gets a
+// Mushroom (a Coin in 1st).
+Item roll_item(Rng& rng, int place, int karts, uint32_t blocked = 0);
+inline constexpr uint32_t item_bit(Item item) { return 1u << unsigned(item); }
 
 } // namespace gk::sim

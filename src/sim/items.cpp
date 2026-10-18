@@ -102,17 +102,38 @@ bool solid(EntityType t) {
 
 } // namespace
 
-Item roll_item(Rng& rng, int place, int karts) {
+Item roll_item(Rng& rng, int place, int karts, uint32_t blocked) {
     int band = 0;
     if (place > 1 && karts > 1) band = std::clamp(1 + (place - 2) * (kBands - 1) / std::max(1, karts - 1), 1, kBands - 1);
+    // Blocked items leave the table; the rest keep their weights. One draw,
+    // always, so prediction and the server stay in step.
+    auto weight = [&](const Odds& o) { return blocked & item_bit(o.item) ? 0 : o.w[band]; };
     int total = 0;
-    for (const Odds& o : kOdds) total += o.w[band];
+    for (const Odds& o : kOdds) total += weight(o);
+    if (total == 0) return band == 0 ? Item::Coin : Item::Mushroom;
     int r = rng.range(total);
     for (const Odds& o : kOdds) {
-        if (r < o.w[band]) return o.item;
-        r -= o.w[band];
+        if (r < weight(o)) return o.item;
+        r -= weight(o);
     }
     return Item::Banana;
+}
+
+uint32_t World::blocked_items(int kart) const {
+    const auto& t = item_tuning_;
+    int spiked = 0, lightning = 0;
+    for (const KartState& k : karts_) {
+        spiked += int(k.item == Item::SpikedShell) + int(k.item_next == Item::SpikedShell);
+        lightning += int(k.item == Item::Lightning) + int(k.item_next == Item::Lightning);
+    }
+    for (const ItemEntity& e : entities_) spiked += int(e.type == EntityType::SpikedShell);
+    uint32_t blocked = 0;
+    if (spiked >= t.spiked_limit || race_ticks_ < t.spiked_start_gate || spiked_cooldown_ > 0) blocked |= item_bit(Item::SpikedShell);
+    const KartState& me = karts_[size_t(kart)];
+    const bool holds_lightning = me.item == Item::Lightning || me.item_next == Item::Lightning;
+    if (lightning >= t.lightning_limit || holds_lightning || race_ticks_ < t.lightning_start_gate || lightning_cooldown_ > 0)
+        blocked |= item_bit(Item::Lightning);
+    return blocked;
 }
 
 void World::give_item(int kart, Item item) {
@@ -194,7 +215,10 @@ void World::use_item(int i, const KartInput& in, bool pressed, bool released) {
     case Item::TripleBanana: throw_item(i, Item::Banana, backwards, forwards); break;
     case Item::TripleGreen: throw_item(i, Item::GreenShell, backwards, forwards); break;
     case Item::TripleRed: throw_item(i, Item::RedShell, backwards, forwards); break;
-    case Item::SpikedShell: throw_item(i, Item::SpikedShell, false, true); break;
+    case Item::SpikedShell:
+        throw_item(i, Item::SpikedShell, false, true);
+        spiked_cooldown_ = t.spiked_cooldown;
+        break;
     case Item::Mushroom:
     case Item::TripleMushroom:
         kart_give_boost(k, BoostKind::Mushroom, c.mushroom_frames, c.mushroom_mult, true);
@@ -217,6 +241,7 @@ void World::use_item(int i, const KartInput& in, bool pressed, bool released) {
         break;
     }
     case Item::Lightning: {
+        lightning_cooldown_ = t.lightning_cooldown;
         const int n = int(karts_.size());
         for (int j = 0; j < n; ++j) {
             if (j == i || karts_[size_t(j)].untouchable() || karts_[size_t(j)].finished) continue;
@@ -359,7 +384,7 @@ void World::throw_item(int i, Item item, bool backwards, bool forwards) {
         e.pos = k.pos + kUp * 3.0f;
         e.vel = fwd * t.spiked_speed;
         e.target = int8_t(kart_in_place(1));
-        e.life = 60 * 40;
+        e.life = int16_t(t.spiked_life);
         break;
     case Item::Bomb:
         e.type = EntityType::Bomb;
@@ -458,6 +483,8 @@ void World::spawn_explosion(vec3 pos, int owner) {
 void World::items_after_step() {
     const auto& t = item_tuning_;
     const int n = int(karts_.size());
+    if (spiked_cooldown_ > 0) --spiked_cooldown_;
+    if (lightning_cooldown_ > 0) --lightning_cooldown_;
     for (int i = 0; i < n; ++i) {
         KartState& k = karts_[size_t(i)];
         const KartParams& p = params_[size_t(i)];
@@ -482,7 +509,7 @@ void World::items_after_step() {
 
         // Roulette
         if (k.roulette > 0 && --k.roulette == 0) {
-            const Item got = roll_item(rng_, place_of(i), n);
+            const Item got = roll_item(rng_, place_of(i), n, blocked_items(i));
             if (k.item == Item::None) {
                 k.item = got;
                 k.item_uses = uint8_t(item_uses(got));

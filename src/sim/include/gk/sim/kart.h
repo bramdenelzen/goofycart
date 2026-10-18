@@ -27,6 +27,9 @@ enum class KartEventType : uint8_t {
     Smash,      // value = obstacle index: a crate, barrel or crystal broke
     TireKnock,  // value = obstacle index: a tire stack toppled
     TireBounce, // value = obstacle index: a loose tire launched the kart
+    GliderClose,// the glider folded away (dived into deep water)
+    WaterEnter, // went under in deep water
+    WaterExit,  // came up out of it
 };
 struct KartEvent {
     KartEventType type;
@@ -69,6 +72,8 @@ struct KartState {
     bool gliding = false;
     float glide_bank = 0.0f;       // radians, + right wing down; it is what turns the glider
     float glide_pitch = 0.0f;      // radians, + nose up
+    bool underwater = false;       // in deep water: the water stats, slow falls, pitch control
+    uint8_t water_frames = 0;      // frames the water test has disagreed with `underwater` (hysteresis)
 
     int respawn_frames = 0;        // > 0 while the kart is carried back to the track
     int stuck_frames = 0;

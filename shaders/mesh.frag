@@ -73,6 +73,48 @@ float vnoise(vec2 p) {
     return mix(mix(hash2(i), hash2(i + vec2(1, 0)), u.x), mix(hash2(i + vec2(0, 1)), hash2(i + vec2(1, 1)), u.x), u.y);
 }
 
+// An integer hash, the same as LavaBubbles on the CPU (render/lava.h), so the
+// app knows when and where a bubble pops.
+uint lava_hash(ivec2 c, uint salt) {
+    uint h = uint(c.x) * 374761393u + uint(c.y) * 668265263u + salt * 2246822519u;
+    h = (h ^ (h >> 13u)) * 1274126177u;
+    return h ^ (h >> 16u);
+}
+float lava_rnd(ivec2 c, uint salt) { return float(lava_hash(c, salt) & 0xffffu) / 65535.0; }
+float fbm3(vec2 p) { return 0.5 * vnoise(p) + 0.3 * vnoise(p * 2.03 + 5.1) + 0.2 * vnoise(p * 4.01 + 11.7); }
+
+// Molten lava: a crust broken by glowing seams, boiling with bubbles. Time is
+// snapped to eighths of a second and the heat is cut into four flat bands so
+// it stays chunky like the rest of the game.
+vec3 lava_color(vec3 world, float time) {
+    float ts = floor(time * 8.0) / 8.0;
+    vec2 p = world.xz * 0.08;
+    // Warped once by a slowly scrolling fbm: the crust drifts and folds.
+    vec2 warp = vec2(fbm3(p * 0.7 + vec2(ts * 0.05, 0.0)), fbm3(p * 0.7 + vec2(3.2, -ts * 0.04))) - 0.5;
+    float f = fbm3(p + warp * 1.6 + vec2(0.0, ts * 0.02));
+    // Seams: ridged fbm from the same octaves, pulsing.
+    float r = 1.0 - abs(fbm3(p * 1.7 + warp * 2.0 + 9.0) * 2.0 - 1.0);
+    r *= r;
+    float pulse = 0.75 + 0.25 * sin(ts * 1.5 + f * 6.0);
+    float heat = f * 0.75 + smoothstep(0.72, 0.92, r) * 0.55 * pulse;
+    // Bubbles: one per 4 m cell (in some cells), a dome that swells over its
+    // own period of 2-5 s with a bright rim, then pops.
+    ivec2 cell = ivec2(floor(world.xz / 4.0));
+    if (lava_rnd(cell, 1u) < 0.45) {
+        float period = 2.0 + 3.0 * lava_rnd(cell, 2u);
+        float ph = fract(ts / period + lava_rnd(cell, 3u));
+        vec2 centre = (vec2(cell) + 0.5 + (vec2(lava_rnd(cell, 4u), lava_rnd(cell, 5u)) - 0.5) * 0.3) * 4.0;
+        float rad = 1.3 * ph;
+        float d = length(world.xz - centre);
+        float dome = 1.0 - smoothstep(rad - 0.25, rad, d);
+        float rim = dome * smoothstep(rad - 0.5, rad - 0.1, d);
+        heat += dome * 0.18 + rim * 0.45 * ph;
+    }
+    vec3 crust = vec3(60.0, 24.0, 20.0) / 255.0, ember = vec3(0.62, 0.14, 0.05), orange = vec3(1.0, 0.36, 0.08),
+         hot = vec3(1.0, 0.86, 0.5);
+    return heat < 0.56 ? crust : heat < 0.64 ? ember : heat < 0.77 ? orange : hot;
+}
+
 // The haze colour along a view direction: warmer towards the sun.
 vec3 haze(vec3 dir, vec3 l, float sun) {
     float toward = pow(max(dot(dir, l), 0.0), 6.0);
@@ -177,17 +219,36 @@ void main() {
         float time = frame.shadow.w;
         vec2 uv = v_uv;
         if (v_layer == 12u) uv.y -= time * 1.6; // dash panels: the chevrons race forward, the way you are sent
-        if (v_layer == 7u) { // water: two layers of ripples drifting past each other
-            vec3 a = texture(textures, vec3(uv + vec2(time * 0.05, time * 0.03), 7.0)).rgb;
-            vec3 b = texture(textures, vec3(uv * 1.7 - vec2(time * 0.04, -time * 0.06), 7.0)).rgb;
-            albedo = v_color.rgb * (a + b);
+        if (v_layer == 19u) { // lava: emissive, lights itself and shines through the haze
+            albedo = lava_color(v_world, time) / 1.7;
+            emission = 1.0;
+            alpha = 1.0;
+        } else if (v_layer == 7u) {
+            // Water: two layers of ripples drifting past each other, swirled
+            // by slow noise and cut into three levels. v_uv carries the swell's
+            // crest height and the distance to the shore (mesh.vert).
+            float ts = floor(time * 8.0) / 8.0;
+            vec2 wuv = v_world.xz / 3.0;
+            vec2 swirl = vec2(vnoise(v_world.xz * 0.15 + ts * 0.1), vnoise(v_world.xz * 0.15 + vec2(5.2, 1.3) - ts * 0.1)) - 0.5;
+            wuv += swirl * 0.7;
+            float a = texture(textures, vec3(wuv + vec2(ts * 0.05, ts * 0.03), 7.0)).r;
+            float b = texture(textures, vec3(wuv * 1.7 - vec2(ts * 0.04, -ts * 0.06), 7.0)).r;
+            float s = a + b;
+            albedo = v_color.rgb * (s < 0.95 ? 0.86 : s < 1.07 ? 1.0 : 1.18);
+            float crest = v_uv.x, shore = v_uv.y;
+            float mask = vnoise(v_world.xz * 0.9 + vec2(ts * 0.6, -ts * 0.4));
+            // Foam on the crests and along the bank, ragged by the mask.
+            float foam = step(0.86, crest + (mask - 0.5) * 0.15) + step(shore + (mask - 0.5) * 0.08, 0.12);
+            albedo = mix(albedo, mix(albedo, vec3(0.75, 0.85, 0.9), 0.35), 1.0 - step(0.25, shore)); // lighter in the shallows
+            albedo = mix(albedo, vec3(0.92, 0.96, 1.0), clamp(foam, 0.0, 1.0) * 0.85);
+            alpha = 1.0; // the vertex alpha is the shore distance; water draws opaque
         } else {
             albedo = v_color.rgb * texture(textures, vec3(uv, float(v_layer))).rgb * 2.0;
         }
         if (v_layer == 12u) emission = 0.35 + 0.25 * sin(time * 6.0 + v_world.x * 0.3 + v_world.z * 0.3); // and glow
         // Break up big flat areas: patches of wear and colour over tens of metres,
         // and mowing stripes on grass.
-        if (v_layer != 0u) {
+        if (v_layer != 0u && v_layer != 19u) {
             float macro = vnoise(v_world.xz * 0.035) * 0.6 + vnoise(v_world.xz * 0.12 + 17.0) * 0.4;
             albedo *= 0.86 + 0.28 * macro;
         }

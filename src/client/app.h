@@ -9,6 +9,7 @@
 #include "frontend.h"
 #include "menu.h"
 #include "render/renderer.h"
+#include "render/track_mesh.h"
 
 #include "gk/net/client_game.h"
 #include "gk/sim/ghost.h"
@@ -20,6 +21,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace gk {
@@ -34,6 +36,7 @@ struct AppOptions {
     bool autodrive = false;       // the player kart drives itself (demos, screenshots)
     bool pixel_look = false;      // --pixel: the low-res look regardless of settings (screenshots)
     bool volumetric = false;      // --volumetric: sun shafts and mist on regardless of settings (screenshots)
+    bool checkpoints = false;     // --checkpoints: checkpoint lines on the minimap regardless of settings (screenshots)
     int spawn_obstacle = -1;
     int spawn_sample = -1; // screenshots: start the player on this road sample (side roads too)
     int start_lap = 0;     // screenshots: everyone starts on this lap, for the track's lap gates
@@ -228,6 +231,14 @@ private:
     std::map<std::string, std::pair<render::MeshId, render::MeshId>> track_meshes_;
     std::map<std::string, std::vector<render::PointLight>> track_lights_; // lamps, neon, lanterns, lava per track
     const std::vector<render::PointLight>* lights_ = nullptr;
+    // Lava on volcano tracks: where it shows, the lights along it (the tail
+    // of light_.lights from lava_light_base_), and each bubble cell's last
+    // phase near the camera, to splash where one pops.
+    std::map<std::string, render::LavaSpots> lava_spots_;
+    const render::LavaSpots* lava_ = nullptr;
+    size_t lava_light_base_ = 0;
+    std::unordered_map<int64_t, float> lava_phase_;
+    void update_lava(const sim::World* w, vec3 camera);
     render::SceneLighting light_;
 
     render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0, shadow_mesh_ = 0, fireball_mesh_ = 0;
@@ -248,6 +259,8 @@ private:
     render::MeshId box_mesh_ = 0, banana_mesh_ = 0, green_mesh_ = 0, red_mesh_ = 0, spiked_mesh_ = 0, bomb_mesh_ = 0,
                    ball_mesh_ = 0, boomerang_mesh_ = 0, bullet_mesh_ = 0, chomper_mesh_ = 0;
     float flash_ = 0.0f; // white screen flash (lightning)
+    float wet_lens_ = 0.0f; // drops on the lens after coming up out of deep water, 1 .. 0
+    void draw_water_overlay(const sim::World& w, vec3 camera);
     // What a kart looks like: procedural pieces, each replaced by a model
     // from the asset pack when it has one.
     struct KartVisual {

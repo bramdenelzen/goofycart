@@ -41,6 +41,8 @@ struct WorldState {
     Rng rng;
     std::vector<PropState> props;
     std::vector<uint16_t> switches; // ticks each track switch stays pressed
+    int spiked_cooldown = 0;        // frames until the roulette may hand out a spiked shell again
+    int lightning_cooldown = 0;     // the same for lightning
 };
 
 // The authoritative race simulation: track, karts and race clock, stepped at
@@ -51,7 +53,8 @@ public:
 
     int add_kart(const KartParams& params);
     void set_kart_params(int kart, const KartParams& params) { params_[size_t(kart)] = params; }
-    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_, entities_, box_respawn_, rng_, props_, switches_}; }
+    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_, entities_, box_respawn_, rng_, props_, switches_, spiked_cooldown_, lightning_cooldown_};
+    }
     void restore(const WorldState& s);
     void tick(std::span<const KartInput> inputs);
 
@@ -77,6 +80,11 @@ public:
     const std::vector<PropState>& props() const { return props_; }
     // Where loose tire `i` of a knocked-over stack lies now.
     vec3 loose_tire_pos(int obstacle, int i) const;
+    // Items the roulette may not hand kart `kart` right now (item_bit mask):
+    // the hidden spiked shell and lightning limits.
+    uint32_t blocked_items(int kart) const;
+    int spiked_cooldown() const { return spiked_cooldown_; }
+    int lightning_cooldown() const { return lightning_cooldown_; }
     // Test and debug hook: put an item in a kart's hand.
     void give_item(int kart, Item item);
     // Testing: a hit or an explosion on demand.
@@ -128,6 +136,8 @@ private:
     uint64_t tick_ = 0;
     int countdown_left_;
     int race_ticks_ = 0;
+    int spiked_cooldown_ = 0;
+    int lightning_cooldown_ = 0;
 };
 
 // Simple line follower: steers towards a point ahead on the centre spline.
