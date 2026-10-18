@@ -40,6 +40,7 @@ add_executable(gk_client
   assets.cpp
   render/mesh.cpp
   render/model.cpp
+  render/font.cpp
   render/paint.cpp
   render/gobby_items.cpp
   render/gobby_props.cpp

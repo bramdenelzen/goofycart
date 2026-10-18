@@ -1,5 +1,7 @@
 #include "hud.h"
 
+#include "ui_style.h"
+
 #include "gk/core/fixed_step.h"
 
 #include <algorithm>
@@ -40,6 +42,7 @@ void draw_minimap(render::Renderer& r, const sim::World& w, int player) {
     const float scale = box / std::max(span.x, span.y);
     const vec2 origin = vec2(x0, y0) + (vec2(box) - span * scale) * 0.5f;
     auto to_map = [&](vec3 p) { return origin + (vec2(p.x, p.z) - lo) * scale; };
+    r.ui_round_rect(x0 - 4.0f, y0 - 4.0f, box + 8.0f, box + 8.0f, 12.0f, rgba(10, 14, 40, 35), rgba(10, 14, 40, 60));
 
     // The road, lowest parts first so bridges are drawn over what they cross:
     // a dark outline pass, then the road shaded lighter with height.
@@ -161,56 +164,68 @@ ItemLook item_look(sim::Item item) {
 }
 
 void item_slot(render::Renderer& r, float x, float y, float size, sim::Item item, int uses, bool spinning, uint64_t tick) {
-    r.ui_rect(x - 2, y - 2, size + 4, size + 4, rgba(255, 255, 255, 200));
-    r.ui_rect(x, y, size, size, rgba(20, 20, 30, 220));
+    const float rad = size * 0.28f;
+    r.ui_round_rect(x + 1.0f, y + 4.0f, size, size, rad, rgba(0, 0, 20, 120), rgba(0, 0, 20, 120), 6.0f);
+    r.ui_round_rect(x - 2.5f, y - 2.5f, size + 5.0f, size + 5.0f, rad + 2.5f, rgba(255, 255, 255, 235), rgba(200, 210, 235, 235));
+    r.ui_round_rect(x, y, size, size, rad, rgba(40, 52, 110, 235), rgba(14, 18, 50, 245));
     if (spinning) item = sim::Item(1 + (tick / 4) % uint64_t(sim::kItemCount));
     if (item == sim::Item::None) return;
     const ItemLook look = item_look(item);
-    r.ui_rect(x + 2, y + 2, size - 4, size - 4, (look.color & 0x00ffffffu) | 0xd0000000u);
-    const float scale = size > 40 ? 1.0f : 0.8f;
-    centered(r, x + size * 0.5f, y + size * 0.5f - 3.0f * scale, look.label, rgba(255, 255, 255), scale);
+    const uint32_t c = look.color & 0x00ffffffu;
+    r.ui_round_rect(x + 3.0f, y + 3.0f, size - 6.0f, size - 6.0f, rad - 2.0f, c | 0xf0000000u, (c | 0xf0000000u));
+    r.ui_round_rect(x + 5.0f, y + 4.0f, size - 10.0f, (size - 8.0f) * 0.4f, rad - 3.0f, rgba(255, 255, 255, 90), rgba(255, 255, 255, 0));
+    const float scale = size > 40 ? 1.05f : 0.8f;
+    centered(r, x + size * 0.5f, y + size * 0.5f - 3.5f * scale, look.label, rgba(255, 255, 255), scale);
     if (uses > 1 && !spinning) {
         char buf[8];
         std::snprintf(buf, sizeof buf, "x%d", uses);
-        r.ui_text(x + size - render::Renderer::ui_text_width(buf) - 2, y + size - 9, buf, rgba(255, 255, 255), 1.0f);
+        const float bw = render::Renderer::ui_text_width(buf, 1.1f) + 8.0f;
+        r.ui_round_rect(x + size - bw + 4.0f, y + size - 9.0f, bw, 13.0f, 6.5f, ui::kGold, ui::kGoldDeep);
+        r.ui_text_ex(x + size - bw + 8.0f, y + size - 6.0f, buf, ui::kInk, 1.1f, 0, 0.0f, false, 0.9f);
     }
 }
 } // namespace
 
 void draw_results(render::Renderer& r, const std::string& title, const std::vector<ResultRow>& rows,
                   const std::string& footer) {
-    const VkExtent2D ext = r.ui_extent();
-    const float W = float(ext.width), H = float(ext.height);
+    const float W = ui::W(r), H = ui::H(r);
     const bool totals = !rows.empty() && rows[0].total >= 0;
-    const float tw = totals ? 250.0f : 214.0f;
+    const float tw = totals ? 300.0f : 260.0f, rh = 14.0f;
     const float x = W * 0.5f - tw * 0.5f;
-    float y = H * 0.12f;
-    centered(r, W * 0.5f, y, title.c_str(), rgba(255, 230, 60), 3.0f);
-    y += 30.0f;
-    r.ui_rect(x - 6, y - 4, tw + 12, float(rows.size()) * 12.0f + 8, rgba(0, 0, 0, 150));
+    float y = H * 0.08f;
+    ui::title(r, W * 0.5f, y, title.c_str(), 3.2f);
+    y += 34.0f;
+    ui::panel(r, x - 10.0f, y - 8.0f, tw + 20.0f, float(rows.size()) * rh + 14.0f, 12.0f);
     char buf[128];
     for (size_t i = 0; i < rows.size(); ++i) {
         const ResultRow& row = rows[i];
         const std::string time = row.finish_ticks > 0 ? format_race_time(row.finish_ticks) : std::string("--:--.---");
-        const std::string name = row.name.substr(0, 12);
-        // The font is proportional, so each column gets its own x.
-        const uint32_t c = row.highlight ? rgba(255, 230, 60) : rgba(255, 255, 255);
-        if (row.highlight) r.ui_rect(x - 4, y - 2, tw + 8, 11, rgba(255, 200, 40, 70));
+        const std::string name = row.name.substr(0, 14);
+        if (row.highlight) ui::pill(r, x - 4.0f, y - 2.5f, tw + 8.0f, rh - 1.0f, true);
+        else if (i % 2) r.ui_round_rect(x - 4.0f, y - 2.5f, tw + 8.0f, rh - 1.0f, 6.0f, rgba(255, 255, 255, 14));
+        auto put = [&](float px, const char* t, uint32_t c) {
+            if (row.highlight) r.ui_text_ex(px, y, t, ui::kInk, 1.1f, 0, 0.0f, false, 0.9f);
+            else r.ui_text(px, y, t, c, 1.1f);
+        };
+        // Place badges: gold, silver, bronze.
+        const uint32_t medal = i == 0 ? ui::kGold : i == 1 ? rgba(215, 225, 240) : i == 2 ? rgba(230, 150, 90) : rgba(255, 255, 255, 60);
+        r.ui_round_rect(x, y - 1.5f, 24.0f, 11.0f, 5.5f, medal);
         std::snprintf(buf, sizeof buf, "%zu%s", i + 1, ordinal_suffix(int(i) + 1));
-        r.ui_text(x + 22 - render::Renderer::ui_text_width(buf), y, buf, c, 1.0f);
-        r.ui_text(x + 30, y, name.c_str(), c, 1.0f);
-        r.ui_text(x + 110, y, time.c_str(), c, 1.0f);
+        r.ui_text_ex(x + 12.0f - render::Renderer::ui_text_width(buf, 0.95f) * 0.5f, y + 0.5f, buf, i < 3 ? ui::kInk : ui::kText, 0.95f, 0,
+                     0.0f, false, 0.9f);
+        put(x + 32.0f, name.c_str(), ui::kText);
+        put(x + 130.0f, time.c_str(), ui::kSubtle);
         if (row.points >= 0) {
             std::snprintf(buf, sizeof buf, "+%d", row.points);
-            r.ui_text(x + 172, y, buf, c, 1.0f);
+            put(x + 200.0f, buf, ui::kGold);
         }
         if (totals) {
             std::snprintf(buf, sizeof buf, "%d", row.total);
-            r.ui_text(x + tw - render::Renderer::ui_text_width(buf), y, buf, c, 1.0f);
+            put(x + tw - render::Renderer::ui_text_width(buf, 1.1f), buf, ui::kText);
         }
-        y += 12.0f;
+        y += rh;
     }
-    if (!footer.empty()) centered(r, W * 0.5f, y + 10.0f, footer.c_str(), rgba(200, 230, 255), 1.0f);
+    if (!footer.empty()) ui::footer(r, footer.c_str());
 }
 
 void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::vector<std::string>& names,
@@ -223,16 +238,31 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
 
     // Lap and time, top left
     const int lap = std::min(k.lap, w.config().laps);
-    std::snprintf(buf, sizeof buf, "LAP %d/%d", lap, w.config().laps);
-    r.ui_text(8, 8, buf, rgba(255, 255, 255), 2.0f);
-    const int ticks = k.finished ? k.finish_tick : w.race_ticks();
-    r.ui_text(8, 28, format_race_time(ticks).c_str(), rgba(255, 240, 160), 1.5f);
+    {
+        ui::panel(r, 8, 8, 112, 38, 10);
+        r.ui_text(14, 12, "LAP", ui::kSubtle, 0.9f);
+        std::snprintf(buf, sizeof buf, "%d", lap);
+        r.ui_text_ex(16, 25, buf, ui::kGold, 2.1f, ui::kInk, 1.6f, true, 1.0f);
+        std::snprintf(buf, sizeof buf, "/%d", w.config().laps);
+        r.ui_text(18 + render::Renderer::ui_text_width(std::to_string(lap).c_str(), 2.3f), 30, buf, ui::kText, 1.3f);
+        const int ticks = k.finished ? k.finish_tick : w.race_ticks();
+        const std::string t = format_race_time(ticks);
+        r.ui_text(114 - render::Renderer::ui_text_width(t.c_str(), 1.3f), 16, t.c_str(), ui::kText, 1.3f);
+    }
 
     // Place, top right
     const int place = w.place_of(player);
     std::snprintf(buf, sizeof buf, "%d%s", place, ordinal_suffix(place));
-    const float pw = render::Renderer::ui_text_width(buf, 4.0f);
-    r.ui_text(W - pw - 10, 6, buf, place == 1 ? rgba(255, 220, 40) : rgba(255, 255, 255), 4.0f);
+    {
+        // Gold, silver and bronze for the podium; the suffix rides small.
+        const uint32_t pc = place == 1 ? ui::kGold : place == 2 ? rgba(220, 230, 245) : place == 3 ? rgba(235, 150, 85) : rgba(150, 215, 255);
+        char num[8];
+        std::snprintf(num, sizeof num, "%d", place);
+        const float nw = render::Renderer::ui_text_width(num, 6.0f), sw = render::Renderer::ui_text_width(ordinal_suffix(place), 2.6f);
+        const float px = W - nw - sw - 14.0f;
+        r.ui_text_ex(px, 8, num, pc, 6.0f, ui::kInk, 3.0f, true, 1.0f);
+        r.ui_text_ex(px + nw + 2.0f, 12, ordinal_suffix(place), pc, 2.6f, ui::kInk, 2.5f, true, 1.0f);
+    }
 
     // Item slots, top centre: the item in hand and the reserve.
     {
@@ -261,18 +291,26 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
 
     // Speed and coins, bottom left
     const float kmh = std::abs(glm::length(k.velocity())) * 3.6f;
-    std::snprintf(buf, sizeof buf, "%3.0f km/h", kmh);
-    r.ui_text(8, H - 34, buf, rgba(255, 255, 255), 1.5f);
-    std::snprintf(buf, sizeof buf, "COINS %d", k.coins);
-    r.ui_text(8, H - 18, buf, rgba(255, 210, 60), 1.5f);
+    {
+        ui::panel(r, 8, H - 46, 100, 38, 10);
+        // A coin: gold disc with a rim and a shine.
+        r.ui_round_rect(15, H - 39, 16, 16, 8, rgba(255, 236, 120), rgba(230, 160, 20));
+        r.ui_round_rect(18, H - 36, 10, 10, 5, rgba(255, 210, 60), rgba(255, 190, 40));
+        std::snprintf(buf, sizeof buf, "%d", k.coins);
+        r.ui_text_ex(36, H - 37, buf, k.coins >= 10 ? ui::kGold : ui::kText, 1.7f, ui::kInk, 1.3f, true, 1.0f);
+        std::snprintf(buf, sizeof buf, "%.0f", double(kmh));
+        r.ui_text_ex(104 - render::Renderer::ui_text_width(buf, 1.7f) - 0.0f, H - 37, buf, ui::kText, 1.7f, ui::kInk, 1.3f, true, 1.0f);
+        r.ui_text(104 - render::Renderer::ui_text_width("KM/H", 0.85f), H - 20, "KM/H", ui::kSubtle, 0.85f);
+    }
 
     // Mini-turbo charge bar, bottom centre
     if (k.drift == sim::DriftState::Drifting) {
-        const float bw = 120.0f, bh = 6.0f, bx = W * 0.5f - bw * 0.5f, by = H - 22.0f;
+        const float bw = 140.0f, bh = 8.0f, bx = W * 0.5f - bw * 0.5f, by = H - 26.0f;
         const float full = kc.mt_thresholds[2];
-        r.ui_rect(bx - 1, by - 1, bw + 2, bh + 2, rgba(0, 0, 0, 160));
+        r.ui_round_rect(bx - 2, by - 2, bw + 4, bh + 4, 6, rgba(10, 14, 40, 200));
         const float fill = std::min(1.0f, k.mt_charge / full);
-        r.ui_rect(bx, by, bw * fill, bh, tier_color(k.mt_tier(kc)));
+        const uint32_t tc = tier_color(k.mt_tier(kc));
+        if (fill > 0.02f) r.ui_round_rect(bx, by, bw * fill, bh, 4, tc | 0xff000000u, (tc & 0x00ffffffu) | 0xc0000000u);
         for (int i = 0; i < 2; ++i) r.ui_rect(bx + bw * kc.mt_thresholds[size_t(i)] / full, by, 1, bh, rgba(255, 255, 255, 200));
     }
     if (k.boost_frames > 0) {
@@ -287,7 +325,7 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
         case sim::BoostKind::BoostPad: label = "DASH PANEL"; break;
         default: break;
         }
-        centered(r, W * 0.5f, H * 0.62f, label, rgba(255, 200, 80), 1.5f);
+        ui::title(r, W * 0.5f, H * 0.62f, label, 1.8f, rgba(255, 200, 80));
     }
     if (k.gliding) centered(r, W * 0.5f, H * 0.25f, "GLIDING  (stick up/down to pitch)", rgba(160, 210, 255), 1.0f);
     if (k.respawn_frames > 0) centered(r, W * 0.5f, H * 0.35f, "RESPAWNING...", rgba(255, 255, 255), 2.0f);
@@ -297,12 +335,16 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
     if (cd > 0) {
         const int n = (cd + 59) / 60;
         std::snprintf(buf, sizeof buf, "%d", n);
-        centered(r, W * 0.5f, H * 0.3f, buf, rgba(255, 255, 255), 8.0f);
+        // Each number pops in big and settles.
+        const float t = float((cd - 1) % 60) / 60.0f;
+        const float s = 9.0f + 3.0f * t * t;
+        ui::title(r, W * 0.5f, H * 0.33f - 3.5f * (s - 9.0f), buf, s, n == 1 ? rgba(255, 120, 90) : n == 2 ? ui::kGold : rgba(130, 210, 255));
     } else if (w.race_ticks() < 60) {
-        centered(r, W * 0.5f, H * 0.3f, "GO!", rgba(80, 255, 120), 8.0f);
+        const float s = 9.0f + 2.0f * float(w.race_ticks()) / 60.0f;
+        ui::title(r, W * 0.5f, H * 0.33f - 3.5f * (s - 9.0f), "GO!", s, rgba(90, 255, 130));
     }
 
-    if (msg.time_left > 0.0f) centered(r, W * 0.5f, H * 0.42f, msg.text.c_str(), msg.color, 2.0f);
+    if (msg.time_left > 0.0f) ui::title(r, W * 0.5f, cd > 0 || w.race_ticks() < 60 ? H * 0.6f : H * 0.44f, msg.text.c_str(), 2.2f, msg.color);
 
     // Live finishing order once the player has crossed the line
     if (k.finished && finish_table) {
@@ -322,14 +364,17 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
 
     if (show_help) {
         const char* lines[] = {
-            "Arrows/WASD steer   X/Space gas   Z brake   Shift hop/drift/trick",
-            "C look back   F2 low-res toggle   F1 hide help   R restart   Esc back",
-            "Gamepad: stick steer, A gas, B brake, R drift, stick up/down pitch glider",
+            "Arrows/WASD steer   X/Space gas   Z brake   Shift hop / drift / trick",
+            "C look back   Esc pause   F1 hide help   F2 low-res look",
+            "Pad: stick steer, A gas, B brake, R drift, Start pause",
         };
-        float y = H - 46.0f;
+        float lw = 0.0f;
+        for (const char* l : lines) lw = std::max(lw, render::Renderer::ui_text_width(l, 0.9f));
+        r.ui_round_rect(W - lw - 22.0f, H - 50.0f, lw + 14.0f, 42.0f, 10.0f, rgba(10, 14, 40, 120), rgba(10, 14, 40, 150));
+        float y = H - 44.0f;
         for (const char* l : lines) {
-            r.ui_text(W - render::Renderer::ui_text_width(l) - 6, y, l, rgba(255, 255, 255, 220), 1.0f);
-            y += 10.0f;
+            r.ui_text_ex(W - lw - 15.0f, y, l, rgba(230, 236, 255, 230), 0.9f, 0, 0.0f, false, 0.4f);
+            y += 11.5f;
         }
     }
 }

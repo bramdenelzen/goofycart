@@ -21,6 +21,8 @@
 
 #include <stb_easy_font.h>
 
+#include "font.h"
+
 #include <algorithm>
 #include <cstring>
 
@@ -521,12 +523,31 @@ bool Renderer::create_shadow_pipeline() {
     return true;
 }
 
+namespace {
+SdfFont g_font; // shared: ui_text_width is static
+constexpr float kSdfPerEm = (128.0f / 8.0f) * 56.0f / 255.0f; // field units per em (font.cpp's bake)
+UiVertex flat_vertex(vec2 p, uint32_t c) {
+    UiVertex v;
+    v.pos = p;
+    v.color = c;
+    return v;
+}
+} // namespace
+
+bool Renderer::load_font(const std::string& path) {
+    if (!g_font.load(path)) return false;
+    font_texture_ = upload_texture(g_font.atlas_size(), g_font.atlas_size(), g_font.atlas_rgba().data());
+    return font_texture_ != 0;
+}
+
 bool Renderer::create_ui_pipeline() {
     VkShaderModule vs = make_shader(device_, k_ui_vert, sizeof(k_ui_vert));
     VkShaderModule fs = make_shader(device_, k_ui_frag, sizeof(k_ui_frag));
     if (!vs || !fs) return false;
     VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(vec2)};
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pl.setLayoutCount = 1;
+    pl.pSetLayouts = &texture_set_layout_; // the font atlas
     pl.pushConstantRangeCount = 1;
     pl.pPushConstantRanges = &push;
     GK_VK_CHECK(vkCreatePipelineLayout(device_, &pl, nullptr, &ui_layout_));
@@ -535,14 +556,17 @@ bool Renderer::create_ui_pipeline() {
     stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main", nullptr};
     stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main", nullptr};
     VkVertexInputBindingDescription vb{0, sizeof(UiVertex), VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription attrs[2] = {
+    VkVertexInputAttributeDescription attrs[5] = {
         {0, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(UiVertex, pos)},
-        {1, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(UiVertex, color)},
+        {1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(UiVertex, uv)},
+        {2, 0, VK_FORMAT_R8G8B8A8_UNORM, offsetof(UiVertex, color)},
+        {3, 0, VK_FORMAT_R32_UINT, offsetof(UiVertex, mode)},
+        {4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(UiVertex, params)},
     };
     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     vi.vertexBindingDescriptionCount = 1;
     vi.pVertexBindingDescriptions = &vb;
-    vi.vertexAttributeDescriptionCount = 2;
+    vi.vertexAttributeDescriptionCount = 5;
     vi.pVertexAttributeDescriptions = attrs;
     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
     ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -598,37 +622,112 @@ bool Renderer::create_ui_pipeline() {
 
 void Renderer::ui_rect(float x, float y, float w, float h, uint32_t color) {
     if (!frame_active_) return;
-    const UiVertex a{{x, y}, color}, b{{x + w, y}, color}, c{{x + w, y + h}, color}, d{{x, y + h}, color};
+    const UiVertex a = flat_vertex({x, y}, color), b = flat_vertex({x + w, y}, color), c = flat_vertex({x + w, y + h}, color),
+                   d = flat_vertex({x, y + h}, color);
     ui_vertices_.insert(ui_vertices_.end(), {a, b, c, a, c, d});
 }
 
 void Renderer::ui_quad(vec2 a, vec2 b, vec2 c, vec2 d, uint32_t color) {
     if (!frame_active_) return;
-    const UiVertex va{a, color}, vb{b, color}, vc{c, color}, vd{d, color};
+    const UiVertex va = flat_vertex(a, color), vb = flat_vertex(b, color), vc = flat_vertex(c, color), vd = flat_vertex(d, color);
     ui_vertices_.insert(ui_vertices_.end(), {va, vb, vc, va, vc, vd});
 }
 
-void Renderer::ui_text(float x, float y, const char* text, uint32_t color, float scale, bool shadow) {
-    if (!frame_active_ || !text) return;
-    const float off = std::max(1.0f, std::floor(scale * 0.3f));
-    if (shadow) ui_text(x + off, y + off, text, rgba(0, 0, 0, uint8_t((color >> 24) * 3 / 4)), scale, false);
-    struct EasyVertex {
-        float x, y, z;
-        unsigned char c[4];
+void Renderer::ui_round_rect(float x, float y, float w, float h, float radius, uint32_t top, uint32_t bottom, float feather) {
+    if (!frame_active_ || w <= 0.0f || h <= 0.0f) return;
+    // Grown by the feather so the soft edge has room.
+    const float g = feather;
+    const vec4 params(0.5f * w, 0.5f * h, std::min(radius, 0.5f * std::min(w, h)), feather);
+    const vec2 c(x + 0.5f * w, y + 0.5f * h);
+    auto v = [&](float px, float py, uint32_t col) {
+        UiVertex u;
+        u.pos = {px, py};
+        u.uv = vec2(px, py) - c;
+        u.color = col;
+        u.mode = 2;
+        u.params = params;
+        return u;
     };
-    static EasyVertex buffer[4 * 1000];
-    unsigned char col[4] = {0, 0, 0, 0};
-    const int quads = stb_easy_font_print(0.0f, 0.0f, const_cast<char*>(text), col, buffer, sizeof(buffer));
-    for (int q = 0; q < quads; ++q) {
-        const EasyVertex* v = &buffer[q * 4];
-        UiVertex out[4];
-        for (int i = 0; i < 4; ++i) out[i] = {{x + v[i].x * scale, y + v[i].y * scale}, color};
-        ui_vertices_.insert(ui_vertices_.end(), {out[0], out[1], out[2], out[0], out[2], out[3]});
+    const UiVertex a = v(x - g, y - g, top), b = v(x + w + g, y - g, top), cc = v(x + w + g, y + h + g, bottom),
+                   d = v(x - g, y + h + g, bottom);
+    ui_vertices_.insert(ui_vertices_.end(), {a, b, cc, a, cc, d});
+}
+
+void Renderer::ui_glyphs(float x, float y, const char* text, uint32_t color, float em, float edge, float soft) {
+    const float baseline = y + g_font.cap_height() * em;
+    float pen = x;
+    for (const char* p = text; *p; ++p) {
+        const SdfFont::Glyph& g = g_font.glyph(*p);
+        if (g.valid) {
+            const float x0 = pen + g.x0 * em, x1 = pen + g.x1 * em, y0 = baseline + g.y0 * em, y1 = baseline + g.y1 * em;
+            auto v = [&](float px, float py, float u, float vv) {
+                UiVertex o;
+                o.pos = {px, py};
+                o.uv = {u, vv};
+                o.color = color;
+                o.mode = 1;
+                o.params = vec4(edge, soft, 0.0f, 0.0f);
+                return o;
+            };
+            const UiVertex a = v(x0, y0, g.u0, g.v0), b = v(x1, y0, g.u1, g.v0), c = v(x1, y1, g.u1, g.v1), d = v(x0, y1, g.u0, g.v1);
+            ui_vertices_.insert(ui_vertices_.end(), {a, b, c, a, c, d});
+        }
+        pen += (g.advance + (p[1] ? g_font.kern(p[0], p[1]) : 0.0f)) * em;
     }
 }
 
+namespace {
+uint32_t with_alpha(uint32_t c, float a) { return (c & 0x00ffffffu) | (uint32_t(std::clamp(a, 0.0f, 1.0f) * 255.0f + 0.5f) << 24); }
+float em_for(float scale) { return 7.0f * scale / std::max(g_font.cap_height(), 0.1f); }
+} // namespace
+
+void Renderer::ui_text_ex(float x, float y, const char* text, uint32_t color, float scale, uint32_t outline, float outline_px,
+                          bool shadow, float weight) {
+    if (!frame_active_ || !text) return;
+    if (!g_font.loaded()) {
+        if (outline_px > 0.0f || shadow) ui_text_ex(x + 1.0f, y + 1.0f, text, outline, scale, 0, 0.0f, false, weight);
+        struct EasyVertex {
+            float x, y, z;
+            unsigned char c[4];
+        };
+        static EasyVertex buffer[4 * 1000];
+        unsigned char col[4] = {0, 0, 0, 0};
+        const int quads = stb_easy_font_print(0.0f, 0.0f, const_cast<char*>(text), col, buffer, sizeof(buffer));
+        for (int q = 0; q < quads; ++q) {
+            const EasyVertex* v = &buffer[q * 4];
+            UiVertex out[4];
+            for (int i = 0; i < 4; ++i) out[i] = flat_vertex({x + v[i].x * scale, y + v[i].y * scale}, color);
+            ui_vertices_.insert(ui_vertices_.end(), {out[0], out[1], out[2], out[0], out[2], out[3]});
+        }
+        return;
+    }
+    const float em = em_for(scale);
+    const float alpha = float(color >> 24) / 255.0f;
+    const float fill_edge = 0.5f - kSdfPerEm * (0.012f + 0.03f * weight); // the face is light: thicken it
+    if (shadow) {
+        const float off = std::max(1.0f, em * 0.07f);
+        ui_glyphs(x + off * 0.4f, y + off, text, with_alpha(0x000000u, 0.45f * alpha), em,
+                  fill_edge - kSdfPerEm * std::min(outline_px / em, 0.1f), 0.08f);
+    }
+    if (outline_px > 0.0f) {
+        const float t = std::min(outline_px / em, 0.11f);
+        ui_glyphs(x, y, text, with_alpha(outline, float(outline >> 24) / 255.0f * alpha), em, fill_edge - kSdfPerEm * t, 0.0f);
+    }
+    ui_glyphs(x, y, text, color, em, fill_edge, 0.0f);
+}
+
+void Renderer::ui_text(float x, float y, const char* text, uint32_t color, float scale, bool shadow) {
+    const float em = em_for(scale);
+    ui_text_ex(x, y, text, color, scale, rgba(10, 12, 30, 230), shadow ? std::clamp(em * 0.075f, 0.7f, 3.0f) : 0.0f, shadow,
+               scale >= 2.0f ? 0.9f : 0.6f);
+}
+
 float Renderer::ui_text_width(const char* text, float scale) {
-    return float(stb_easy_font_width(const_cast<char*>(text))) * scale;
+    if (!g_font.loaded()) return float(stb_easy_font_width(const_cast<char*>(text))) * scale;
+    const float em = em_for(scale);
+    float w = 0.0f;
+    for (const char* p = text; *p; ++p) w += (g_font.glyph(*p).advance + (p[1] ? g_font.kern(p[0], p[1]) : 0.0f)) * em;
+    return w;
 }
 
 Renderer::Buffer Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible) {
@@ -1114,6 +1213,7 @@ void Renderer::end_frame() {
         std::memcpy(f.ui.mapped, ui_vertices_.data(), count * sizeof(UiVertex));
         vmaFlushAllocation(allocator_, f.ui.alloc, 0, VK_WHOLE_SIZE);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ui_layout_, 0, 1, &textures2d_[font_texture_].set, 0, nullptr);
         const VkExtent2D ui = ui_extent();
         const vec2 inv(2.0f / float(ui.width), 2.0f / float(ui.height));
         vkCmdPushConstants(cmd, ui_layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(inv), &inv);

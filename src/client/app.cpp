@@ -1,4 +1,5 @@
 #include "app.h"
+#include "ui_style.h"
 
 #include <filesystem>
 
@@ -144,6 +145,7 @@ bool App::init() {
     ro.full_resolution = options_.full_resolution;
     ro.validation = options_.validation;
     if (!renderer_.init(window_, ro)) return false;
+    if (!renderer_.load_font(sim::data_path("fonts/Nunito.ttf"))) log_warn("UI font missing: using the pixel font");
     // The game's own painted items, then an optional model pack beside the
     // data folder (not in the repository) that may override them.
     // Low-poly: half the segments of the smooth shapes; the painted textures
@@ -194,6 +196,7 @@ bool App::init() {
         if (const int i = tracks_.find(options_.track); i >= 0) course_.track = i;
         start_race();
         screen_ = Screen::Race;
+        paused_ = options_.menu == "pause"; // screenshots of the pause menu
         if (world_ && options_.spawn_obstacle >= 0 && size_t(options_.spawn_obstacle) < world_->track().obstacles.size()) {
             const auto& o = world_->track().obstacles[size_t(options_.spawn_obstacle)];
             sim::KartState& k = world_->karts_mut()[size_t(player_)];
@@ -512,7 +515,7 @@ void App::update() {
         // Spectators follow the leader.
         player_ = online_->seat() >= 0 ? online_->seat() : (w && !w->karts().empty() ? w->standings()[0] : 0);
         if (w) prev_ = w->karts();
-        sim::KartInput in = input_.sample();
+        sim::KartInput in = paused_ ? sim::KartInput{} : input_.sample(); // online the race goes on: let go of the pedals
         if (w && online_->seat() >= 0 && options_.autodrive) {
             in = net::bot_input(*w, player_, sim::CpuLevel::Hard);
         }
@@ -522,7 +525,7 @@ void App::update() {
         if (message_.time_left > 0.0f) message_.time_left -= kDt;
         return;
     }
-    if (!world_ || screen_ != Screen::Race) return;
+    if (!world_ || screen_ != Screen::Race || paused_) return;
     prev_ = world_->karts();
     const auto& karts = world_->karts();
     std::vector<sim::KartInput> inputs(karts.size());
@@ -914,7 +917,7 @@ void App::update_audio() {
     last_roulette_ = k.roulette;
 
     audio::EngineState e;
-    e.active = !done && screen_ == Screen::Race;
+    e.active = !done && screen_ == Screen::Race && !(paused_ && !online_);
     const float top = std::max(1.0f, w->params(player_).top_speed);
     e.speed = (k.grounded ? std::abs(k.speed) : glm::length(k.air_vel)) / top;
     e.throttle = last_input_.accelerate || k.bullet_frames > 0 ? 1.0f : last_input_.brake ? 0.3f : 0.0f;
@@ -1273,7 +1276,7 @@ void App::render(float alpha, float dt) {
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
         if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
-        draw_hud(renderer_, *w, player_, kart_names(), message_, show_help_ && !server_results, !server_results);
+        draw_hud(renderer_, *w, player_, kart_names(), message_, show_help_ && !server_results && !paused_, !server_results);
         if (server_results) draw_online_results();
         if (ghost_) {
             char buf[64];
@@ -1297,6 +1300,7 @@ void App::render(float alpha, float dt) {
         renderer_.ui_rect(0, 0, float(ext.width), float(ext.height), render::rgba(255, 255, 230, uint8_t(flash_ * 200.0f)));
         flash_ = std::max(0.0f, flash_ - dt * 3.0f);
     }
+    if (paused_ && screen_ == Screen::Race) draw_pause();
     if (online_) draw_net_status();
     renderer_.end_frame();
 }
@@ -1313,6 +1317,62 @@ std::vector<std::string> App::kart_names() const {
     return names;
 }
 
+std::vector<const char*> App::pause_items() const {
+    if (!online_) return {"RESUME", "RESTART", "QUIT RACE", "QUIT GAME"};
+    return {"RESUME", host_process_ ? "END SERVER" : "LEAVE RACE", "QUIT GAME"};
+}
+
+bool App::update_pause(const ClientActions& act, bool& running) {
+    if (!paused_) {
+        if (!act.pause_pressed) return false;
+        paused_ = true;
+        pause_row_ = 0;
+        audio_.mixer().play(audio::Sfx::Pause);
+        return true;
+    }
+    const auto items = pause_items();
+    const int n = int(items.size());
+    if (act.menu_up) pause_row_ = (pause_row_ + n - 1) % n;
+    if (act.menu_down) pause_row_ = (pause_row_ + 1) % n;
+    if (act.menu_up || act.menu_down) audio_.mixer().play(audio::Sfx::MenuMove);
+    if (act.pause_pressed || act.back) {
+        paused_ = false;
+        audio_.mixer().play(audio::Sfx::MenuBack);
+        return true;
+    }
+    if (!act.accept) return true;
+    audio_.mixer().play(audio::Sfx::MenuAccept);
+    const std::string choice = items[size_t(pause_row_)];
+    paused_ = false;
+    if (choice == "RESTART") {
+        start_race();
+    } else if (choice == "QUIT RACE") {
+        screen_ = options_.track.empty() ? Screen::Course : Screen::Title;
+        options_.track.clear();
+        cam_init_ = false;
+        show_track(course_track(course_, tracks_));
+    } else if (choice == "LEAVE RACE" || choice == "END SERVER") {
+        if (options_.connect_host.empty() || host_process_) leave_online();
+        else running = false; // started with --connect: there is no menu to go back to
+    } else if (choice == "QUIT GAME") {
+        running = false;
+    }
+    return true;
+}
+
+void App::draw_pause() {
+    const float W = ui::W(renderer_), H = ui::H(renderer_);
+    renderer_.ui_rect(0, 0, W, H, render::rgba(6, 10, 30, 130));
+    const auto items = pause_items();
+    const int n = int(items.size());
+    const float bw = 190.0f, top = H * 0.3f;
+    ui::panel(renderer_, W * 0.5f - bw * 0.5f - 16.0f, top - 50.0f, bw + 32.0f, 62.0f + 27.0f * float(n), 14.0f);
+    ui::title(renderer_, W * 0.5f, top - 38.0f, "PAUSED", 3.0f);
+    if (online_) ui::text_c(renderer_, W * 0.5f, top - 12.0f, "The race carries on online", ui::kSubtle, 1.0f);
+    ui::button_list(renderer_, W * 0.5f, top + 4.0f, bw, items.data(), n, pause_row_);
+    ui::footer(renderer_, "UP/DOWN  CHOOSE      ENTER / A  OK      ESC / START  RESUME");
+}
+
 void App::handle_menu_actions(const ClientActions& act, bool& running) {
     if (online_) {
         // The server's phase decides the screen: lobby -> select, otherwise race.
@@ -1322,8 +1382,9 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
             screen_ = want;
             select_.ready = false;
         }
+        if (screen_ != Screen::Race) paused_ = false;
         if (screen_ == Screen::Race) {
-            if (act.pause_pressed) running = false;
+            update_pause(act, running);
             return;
         }
         if (options_.autodrive && !select_.ready && online_->has_lobby()) {
@@ -1457,12 +1518,8 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
         // Esc leaves the race, R restarts it, and after the finish Enter / A
         // shows the results.
         const bool finished = world_ && world_->karts()[size_t(player_)].finished;
-        if (act.back) {
-            screen_ = options_.track.empty() ? Screen::Course : Screen::Title;
-            options_.track.clear();
-            cam_init_ = false;
-            show_track(course_track(course_, tracks_));
-        } else if (finished && act.accept) {
+        if (update_pause(act, running)) return;
+        if (finished && act.accept) {
             finish_offline_race();
             screen_ = Screen::Standings;
         } else if (act.restart_pressed) {
@@ -1586,13 +1643,18 @@ void App::draw_net_status() {
     else if (screen_ == Screen::Race && online_->seat() < 0 && online_->phase() == net::RoomPhase::Racing)
         line = "SPECTATING - YOU JOIN THE NEXT RACE";
     if (!line.empty()) {
-        const float wdt = render::Renderer::ui_text_width(line.c_str(), 2.0f);
-        renderer_.ui_text((float(ext.width) - wdt) * 0.5f, H * 0.35f, line.c_str(), render::rgba(255, 255, 255), 2.0f);
+        ui::title(renderer_, float(ext.width) * 0.5f, H * 0.35f, line.c_str(), 2.0f, ui::kText);
     }
+    // Connection pill: a coloured dot for the ping, and whether we host.
     char buf[96];
-    std::snprintf(buf, sizeof(buf), "ONLINE  PING %d MS%s", net_->rtt_ms(), online_->data_mismatch() ? "  DATA MISMATCH" : "");
-    renderer_.ui_text(float(ext.width) - render::Renderer::ui_text_width(buf) - 6.0f, 46.0f, buf,
-                      render::rgba(200, 230, 255), 1.0f);
+    const int ping = net_->rtt_ms();
+    std::snprintf(buf, sizeof(buf), "%s%d ms%s", host_process_ ? "HOSTING   " : "", ping, online_->data_mismatch() ? "  DATA MISMATCH" : "");
+    const float tw = render::Renderer::ui_text_width(buf, 1.0f), pw = tw + 26.0f;
+    const float px = float(ext.width) - pw - 12.0f, py = screen_ == Screen::Race ? 64.0f : H - 88.0f;
+    renderer_.ui_round_rect(px, py, pw, 15.0f, 7.5f, render::rgba(10, 14, 40, 170));
+    renderer_.ui_round_rect(px + 6.0f, py + 4.0f, 7.0f, 7.0f, 3.5f,
+                            ping < 80 ? render::rgba(90, 230, 120) : ping < 160 ? render::rgba(255, 210, 60) : render::rgba(255, 90, 80));
+    renderer_.ui_text(px + 18.0f, py + 4.0f, buf, ui::kSubtle, 1.0f);
 }
 
 void App::shutdown() {

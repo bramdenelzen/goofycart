@@ -21,7 +21,10 @@ using TextureId = uint32_t;
 
 struct UiVertex {
     vec2 pos;       // pixels in the internal (low-res) image, origin top-left
+    vec2 uv{0.0f};
     uint32_t color; // RGBA8
+    uint32_t mode = 0; // 0 flat, 1 SDF text, 2 rounded rectangle (see ui.frag)
+    vec4 params{0.0f};
 };
 
 struct Camera {
@@ -77,9 +80,20 @@ public:
     // 2D overlay in ui_extent() pixels, drawn after the 3D scene.
     void ui_rect(float x, float y, float w, float h, uint32_t color);
     void ui_quad(vec2 a, vec2 b, vec2 c, vec2 d, uint32_t color);
-    // Text in the stb_easy_font face (about 6 x 7 px per glyph at scale 1).
+    // A rounded rectangle, shaded from `top` to `bottom`; `feather` blurs the
+    // edge (soft shadows and glows).
+    void ui_round_rect(float x, float y, float w, float h, float radius, uint32_t top, uint32_t bottom, float feather = 0.0f);
+    void ui_round_rect(float x, float y, float w, float h, float radius, uint32_t color) { ui_round_rect(x, y, w, h, radius, color, color); }
+    // Text, its cap height about 7 * scale pixels, `y` the top of the capitals.
+    // `shadow` gives it a dark outline and a soft drop shadow.
     void ui_text(float x, float y, const char* text, uint32_t color, float scale = 1.0f, bool shadow = true);
+    // Full control: outline colour and width in pixels (0 for none), drop
+    // shadow, and weight (0 regular, 1 heavy).
+    void ui_text_ex(float x, float y, const char* text, uint32_t color, float scale, uint32_t outline, float outline_px,
+                    bool shadow, float weight = 0.5f);
     static float ui_text_width(const char* text, float scale = 1.0f);
+    // The rounded UI face; without it text falls back to the built-in pixel font.
+    bool load_font(const std::string& ttf_path);
 
     // Saves the next presented frame's low-res image to a PNG file.
     void request_screenshot(std::string path) { screenshot_path_ = std::move(path); }
@@ -211,6 +225,8 @@ private:
     static constexpr uint32_t kMaxUiVertices = 120000;
     static constexpr uint32_t kMaxTextures = 1024;
     std::vector<UiVertex> ui_vertices_;
+    TextureId font_texture_ = 0;
+    void ui_glyphs(float x, float y, const char* text, uint32_t color, float em, float edge, float soft);
 
     std::array<Frame, kFramesInFlight> frames_{};
     uint32_t frame_index_ = 0;

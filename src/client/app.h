@@ -81,6 +81,12 @@ private:
     void draw_standings();
     std::vector<std::string> kart_names() const;
     void update_camera(float alpha, float dt);
+    // The pause menu: offline it stops the race, online it only covers it.
+    bool update_pause(const ClientActions& act, bool& running);
+    std::vector<const char*> pause_items() const;
+    void draw_pause();
+    bool paused_ = false;
+    int pause_row_ = 0;
     void render(float alpha, float dt);
     void draw_kart(int index, const sim::KartState& s, float alpha);
     void draw_items(const sim::World& w);
