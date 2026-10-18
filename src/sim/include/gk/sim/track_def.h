@@ -14,7 +14,7 @@ struct TrackPos {
 
 // One piece of a track layout. Which fields matter depends on the kind.
 struct TrackFeature {
-    enum class Kind { TrickRamp, GlideRamp, BoostPad, Road, Verge, ItemBoxes, NoWalls, Obstacle };
+    enum class Kind { TrickRamp, GlideRamp, BoostPad, Road, Verge, ItemBoxes, NoWalls, Obstacle, Stairs };
     Kind kind = Kind::Road;
     TrackPos at, to;        // ramps, pads and boxes use `at`; ranges use at..to
     float length = 8.0f;    // ramps, pads and obstacles (m, along the road)

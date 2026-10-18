@@ -1,0 +1,28 @@
+{
+  "id": "market_mile",
+  "name": "Market Mile",
+  "theme": "market",
+  "half_width": 6.5,
+  "verge": 3,
+  "verge_surface": "road",
+  "_comment": "Through the old town: a narrow market street lined with stalls, a wide plaza round the fountain, a flight of gentle stone steps down to the lower town, a glide over the canal and a climb back up the hill.",
+  "points": [[-12,6,-44],[0,6,0],[0,6,50],[10,6,85],[45,6,102],[85,6,96],[110,6,72],[116,6,42],[116,6,22],[116,2,-12],[116,1.5,-32],[100,1,-66],[60,0,-86],[10,0,-96],[-40,1.5,-100],[-68,3.5,-80],[-52,5.5,-56]],
+  "features": [
+    { "type": "item_boxes", "at": [0, 30] },
+    { "type": "obstacle", "at": [1, 22], "offset": 3.6, "shape": "block", "width": 2.2, "length": 3.0, "height": 1.6 },
+    { "type": "obstacle", "at": [2, 8], "offset": -3.6, "shape": "block", "width": 2.2, "length": 3.0, "height": 1.6 },
+    { "type": "trick_ramp", "at": [2, 26], "length": 9, "height": 1.2 },
+    { "type": "verge", "from": [3, 20], "to": [6, 0], "side": "both", "width": 9, "surface": "road" },
+    { "type": "obstacle", "at": [4, 22], "offset": 0, "shape": "pillar", "width": 3.4, "length": 3.4, "height": 1.3 },
+    { "type": "boost_pad", "at": [5, 10], "length": 8, "lanes": [1, 2] },
+    { "type": "item_boxes", "at": [6, 4] },
+    { "type": "stairs", "from": [8, 4], "to": [9, 0] },
+    { "type": "boost_pad", "at": [10, 6], "length": 8, "lanes": [0, 1, 2, 3] },
+    { "type": "item_boxes", "at": [10, 24] },
+    { "type": "glide_ramp", "at": [12, 4], "length": 14, "height": 2.4, "gap": 30 },
+    { "type": "road", "surface": "water", "from": [13, 8], "to": [13, 30] },
+    { "type": "trick_ramp", "at": [14, 6], "length": 9, "height": 1.3 },
+    { "type": "item_boxes", "at": [15, 10] },
+    { "type": "verge", "from": [14, 0], "to": [16, 10], "side": "both", "width": 6, "surface": "offroad_light" }
+  ]
+}

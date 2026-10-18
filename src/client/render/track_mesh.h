@@ -14,7 +14,7 @@ struct ThemeStyle {
     vec3 sky;
     float fog_density;
     float ambient;
-    enum class Scenery { Trees, Cactus, Harbor, Pines, Mesas, Lava, Clouds, City } scenery;
+    enum class Scenery { Trees, Cactus, Harbor, Pines, Mesas, Lava, Clouds, City, Market } scenery;
 };
 const ThemeStyle& theme_style(const std::string& theme);
 

@@ -81,6 +81,9 @@ const ThemeStyle& theme_style(const std::string& theme) {
         {"night", {rgba(52, 52, 70), rgba(40, 90, 70), rgba(60, 60, 80), rgba(50, 40, 60), rgba(120, 110, 90),
                    rgba(120, 180, 230), rgba(30, 60, 140), rgba(255, 60, 200), rgba(60, 220, 255), rgba(30, 30, 40),
                    rgba(20, 20, 40), {0.06f, 0.06f, 0.16f}, 0.0040f, 0.55f, S::City}},
+        {"market", {rgba(168, 156, 140), rgba(190, 178, 160), rgba(150, 120, 90), rgba(120, 90, 60), rgba(222, 196, 130),
+                    rgba(186, 228, 245), rgba(70, 140, 190), rgba(238, 226, 200), rgba(170, 70, 50), rgba(120, 105, 90),
+                    rgba(60, 120, 170), {0.62f, 0.8f, 0.97f}, 0.0028f, 0.5f, S::Market}},
     };
     for (const auto& [name, style] : kThemes)
         if (theme == name) return style;
@@ -99,6 +102,7 @@ uint32_t surface_texture(const std::string& theme, sim::Surface s) {
         if (theme == "sky") return TexCloud;
         return heavy ? TexDirt : TexGrass;
     };
+    if (theme == "market" && (s == Surface::Road || s == Surface::OffroadLight)) return TexBrick; // cobbles
     switch (s) {
     case Surface::Road: return TexAsphalt;
     case Surface::OffroadLight: return terrain(false);
@@ -162,6 +166,10 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
             b.tri(a, c1, c2, color);
             continue;
         }
+        if (!t.stairs.empty() && tri.surface != sim::Surface::Wall && tri.a < grid_end && tri.b < grid_end && tri.c < grid_end) {
+            const int sa = int(tri.a / kStride), sb = int(tri.b / kStride), sc = int(tri.c / kStride);
+            if (t.on_stairs(t.center[size_t(sa)].s) && t.on_stairs(t.center[size_t(sb)].s) && t.on_stairs(t.center[size_t(sc)].s)) continue;
+        }
         uint32_t color = surface_color(th, tri.surface);
         if (tri.surface == sim::Surface::Wall) color = checker(centroid, 2.0f) ? th.wall_a : th.wall_b;
         const float along = glm::dot(centroid - start.pos, start.tangent);
@@ -190,6 +198,44 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
             const vec3 down(0.0f, -1.2f, 0.0f);
             b.texture(TexRock, 3.0f);
             b.tri(a + down, c2 + down, c1 + down, th.underside);
+        }
+    }
+    // Stairs: stone steps over the smooth slope the karts drive on, each
+    // tread level at the slope's height under its middle.
+    for (const auto& [sa, sb] : t.stairs) {
+        const float tread = 1.2f;
+        const int steps = std::max(1, int((sb - sa) / tread));
+        auto at = [&](float s) { // interpolated centre sample at distance s
+            const float f = std::fmod(std::fmod(s / std::max(t.length, 1.0f), 1.0f) + 1.0f, 1.0f) * float(n);
+            const int i0 = int(f) % n, i1 = (i0 + 1) % n;
+            const float k = f - std::floor(f);
+            sim::CenterSample c = t.center[size_t(i0)];
+            const sim::CenterSample& d = t.center[size_t(i1)];
+            c.pos = glm::mix(c.pos, d.pos, k);
+            c.half_width = glm::mix(c.half_width, d.half_width, k);
+            return c;
+        };
+        for (int k = 0; k < steps; ++k) {
+            const float s0 = sa + float(k) * (sb - sa) / float(steps), s1 = sa + float(k + 1) * (sb - sa) / float(steps);
+            const sim::CenterSample c0 = at(s0), c1 = at(s1), cm = at(0.5f * (s0 + s1));
+            const float y = cm.pos.y + 0.03f, bottom = c1.pos.y - 0.3f;
+            const float w = cm.half_width + 1.0f;
+            auto P = [&](const sim::CenterSample& c, float side, float yy) { return vec3(c.pos.x, yy, c.pos.z) + c.right * (side * w); };
+            const vec3 a0 = P(c0, -1, y), a1 = P(c0, 1, y), b0 = P(c1, -1, y), b1 = P(c1, 1, y);
+            b.texture(TexBrick, 1.2f);
+            const uint32_t stone = (k & 1) ? rgba(214, 202, 182) : rgba(200, 188, 168);
+            auto fq = [&](vec3 p0, vec3 p1, vec3 p2, vec3 p3, vec3 want, uint32_t col) {
+                if (glm::dot(glm::cross(p1 - p0, p2 - p0), want) < 0.0f) b.quad(p0, p3, p2, p1, col);
+                else b.quad(p0, p1, p2, p3, col);
+            };
+            fq(a0, b0, b1, a1, vec3(0, 1, 0), stone); // tread
+            const vec3 r0 = P(c1, -1, bottom), r1 = P(c1, 1, bottom);
+            fq(b0, r0, r1, b1, c1.tangent, rgba(140, 128, 112));                 // riser, facing down the flight
+            fq(a0, P(c0, -1, bottom), r0, b0, -c0.right, rgba(160, 150, 135));    // sides
+            fq(b1, r1, P(c0, 1, bottom), a1, c0.right, rgba(160, 150, 135));
+            b.texture(TexWhite);
+            const vec3 up(0, 0.015f, 0);
+            fq(a0 + up, a0 + c0.tangent * 0.14f + up, a1 + c0.tangent * 0.14f + up, a1 + up, vec3(0, 1, 0), rgba(226, 218, 204)); // worn nosing
         }
     }
     return b.take();
@@ -398,7 +444,7 @@ void flags(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, const std:
 
 void hills(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng& rnd, vec3 mid, float span, float floor_y) {
     using S = ThemeStyle::Scenery;
-    if (th.scenery == S::City || th.scenery == S::Clouds) return;
+    if (th.scenery == S::City || th.scenery == S::Clouds || th.scenery == S::Market) return;
     const uint32_t tex = th.scenery == S::Pines ? TexSnow : th.scenery == S::Cactus ? TexSand : th.scenery == S::Mesas ? TexRock : th.scenery == S::Lava ? TexRock : TexGrass;
     const uint32_t col = th.scenery == S::Pines ? rgba(236, 242, 250) : th.scenery == S::Cactus ? rgba(222, 190, 128) : th.scenery == S::Mesas ? rgba(196, 130, 80) : th.scenery == S::Lava ? rgba(60, 50, 52) : th.scenery == S::Harbor ? rgba(110, 176, 90) : rgba(96, 168, 70);
     b.texture(tex, 6.0f);
@@ -459,7 +505,8 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
         // The board's front is +Z: turn it to face the road.
         const vec3 z = -outward;
         const vec3 x = glm::normalize(glm::cross(c.up, z));
-        const char* kind = int(rnd() * 3.0f) == 0 ? "billboard" : rnd() < 0.5f ? "billboard_2" : "billboard_3";
+        const char* kind = th.scenery == S::City ? (rnd() < 0.5f ? "neon_pink" : "neon_cyan")
+                           : int(rnd() * 3.0f) == 0 ? "billboard" : rnd() < 0.5f ? "billboard_2" : "billboard_3";
         out.push_back({kind, mat4(vec4(x, 0.0f), vec4(c.up, 0.0f), vec4(glm::cross(x, c.up), 0.0f), vec4(pos, 1.0f))});
     }
 }
@@ -468,7 +515,7 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
 // the theme's props, so the roadside is never empty.
 void roadside_islands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng& rnd, std::vector<PropPlacement>& out) {
     using S = ThemeStyle::Scenery;
-    if (th.scenery == S::City) return;
+    if (th.scenery == S::City || th.scenery == S::Market) return;
     constexpr int kStride = 9;
     const int n = int(t.center.size());
     auto place = [&](const char* name, vec3 pos, float yaw, float scale) {
@@ -518,6 +565,9 @@ void roadside_islands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th,
                       roll < 0.4f ? 0.8f + rnd() * 0.4f : roll < 0.9f ? 1.8f + rnd() : 0.6f);
             }
             if (rnd() < 0.2f) place(rnd() < 0.5f ? "tire_stack" : "cone", spot(0.7f), rnd() * 6.28f, 1.2f);
+            if (rnd() < 0.25f) place("hay_bale", spot(0.7f), rnd() * 6.28f, 1.0f);
+            if (rnd() < 0.2f) place("fence", spot(0.6f), rnd() * 6.28f, 1.0f);
+            if (rnd() < 0.06f) place("windmill", top, rnd() * 6.28f, 0.6f);
             break;
         case S::Harbor:
             place("tree_palm", spot(0.3f), yaw, 0.9f + rnd() * 0.3f);
@@ -533,6 +583,7 @@ void roadside_islands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th,
             place("tree_pine_snow", spot(0.35f), yaw, 0.7f + rnd() * 0.3f);
             if (rnd() < 0.5f) place("tree_pine_snow", spot(0.7f), yaw, 0.5f + rnd() * 0.2f);
             if (rnd() < 0.35f) place(rnd() < 0.5f ? "snowman" : "crystal", spot(0.75f), rnd() * 6.28f, rnd() < 0.5f ? 0.8f : 1.0f);
+            if (rnd() < 0.15f) place("igloo", spot(0.4f), rnd() * 6.28f, 0.7f);
             break;
         case S::Mesas:
             place(rnd() < 0.6f ? "rock_red" : "boulder", spot(0.4f), yaw, 1.0f + rnd() * 0.8f);
@@ -544,6 +595,93 @@ void roadside_islands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th,
             break;
         default: break;
         }
+    }
+}
+
+// The market town: houses shoulder to shoulder along both sides of the
+// road on stone plinths, stalls round the plaza, strings of lanterns across
+// the street, and a canal under the glide.
+void market_town(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng& rnd, float floor_y, std::vector<PropPlacement>& out) {
+    constexpr int kStride = 9;
+    const int n = int(t.center.size());
+    auto place = [&](const char* name, vec3 pos, vec3 facing, float scale) {
+        const vec3 z = glm::normalize(vec3(facing.x, 0.0f, facing.z)), x = glm::cross(kUp, z);
+        out.push_back({name, mat4(vec4(x * scale, 0.0f), vec4(kUp * scale, 0.0f), vec4(z * scale, 0.0f), vec4(pos, 1.0f))});
+    };
+    auto clear_of_track = [&](vec3 p, float r, int self) {
+        for (int j = 0; j < n; j += 2) {
+            const int along = std::abs(j - self);
+            if (std::min(along, n - along) < 8) continue;
+            const sim::CenterSample& o = t.center[size_t(j)];
+            if (glm::length(vec2(o.pos.x - p.x, o.pos.z - p.z)) < o.half_width + r + 2.0f && std::abs(o.pos.y - p.y) < 12.0f) return false;
+        }
+        return true;
+    };
+    const char* houses[5] = {"house_1", "house_2", "house_3", "house_4", "house_5"};
+    std::vector<std::pair<vec3, vec3>> fronts[2]; // per side: house front top points, for lantern strings
+    for (int side = 0; side < 2; ++side) {
+        const float sgn = side ? 1.0f : -1.0f;
+        float next_s = rnd() * 3.0f;
+        for (int i = 0; i < n; ++i) {
+            const sim::CenterSample& c = t.center[size_t(i)];
+            if (c.s < next_s) continue;
+            next_s = c.s + 4.4f;
+            if (!c.has_floor || t.on_stairs(c.s)) continue;
+            const vec3 wall = t.vertices[size_t(i * kStride + (side ? 6 : 0))];
+            const vec3 face = -c.right * sgn; // towards the road
+            const vec3 pos = wall + c.right * sgn * 2.2f;
+            if (!clear_of_track(pos, 3.0f, i)) continue;
+            const int kind = int(rnd() * 5.0f) % 5;
+            place(houses[kind], pos, face, 1.0f);
+            // A stone plinth down to the ground.
+            b.texture(TexBrick, 2.0f);
+            const float h = pos.y - floor_y;
+            if (h > 0.5f) {
+                const vec3 x = glm::normalize(glm::cross(kUp, face));
+                MeshBuilder pl;
+                pl.texture(TexBrick, 2.0f);
+                pl.box({0, -h * 0.5f, 0}, {2.25f, h * 0.5f, 1.7f}, th.underside);
+                b.append(pl.take(), mat4(vec4(x, 0.0f), vec4(kUp, 0.0f), vec4(glm::normalize(vec3(face.x, 0, face.z)), 0.0f), vec4(pos, 1.0f)));
+            }
+            fronts[side].push_back({pos + face * 1.5f + kUp * 5.8f, face});
+            // Stalls in front of houses where the verge is wide (the plaza).
+            const float verge = glm::length(wall - t.vertices[size_t(i * kStride + (side ? 5 : 1))]);
+            if (verge > 5.0f && rnd() < 0.7f) {
+                const char* stall = rnd() < 0.33f ? "stall_red" : rnd() < 0.5f ? "stall_blue" : "stall_green";
+                place(stall, wall - c.right * sgn * 2.0f, face, 1.0f);
+            }
+        }
+    }
+    // Lantern strings across the street, between facing houses.
+    b.texture(TexWhite);
+    for (size_t k = 0; k < fronts[0].size(); k += 3) {
+        const vec3 a = fronts[0][k].first;
+        // The nearest house front on the other side.
+        float best = 1e9f;
+        vec3 bpos{};
+        for (const auto& f : fronts[1]) {
+            const float d = glm::distance(a, f.first);
+            if (d < best) best = d, bpos = f.first;
+        }
+        if (best > 26.0f || best < 6.0f) continue;
+        std::vector<vec3> cable;
+        for (int s = 0; s <= 8; ++s) {
+            const float u = float(s) / 8.0f;
+            cable.push_back(glm::mix(a, bpos, u) - kUp * (1.2f * 4.0f * u * (1.0f - u)));
+        }
+        b.sweep(cable, 0.025f, rgba(50, 40, 35), 4, false);
+        for (int s = 1; s < 8; ++s) out.push_back({"lantern", glm::translate(mat4(1.0f), cable[size_t(s)] - kUp * 0.35f)});
+    }
+    // Water in the canal under every gap.
+    b.texture(TexWater, 4.0f);
+    for (int i = 0; i < n; ++i) {
+        const sim::CenterSample& c = t.center[size_t(i)];
+        if (c.has_floor) continue;
+        const sim::CenterSample& d = t.center[size_t((i + 1) % n)];
+        const float y = std::min(c.pos.y, d.pos.y) - 5.0f, w = c.half_width + 14.0f;
+        const vec3 p0 = vec3(c.pos.x, y, c.pos.z), p1 = vec3(d.pos.x, y, d.pos.z);
+        b.quad(p0 - c.right * w, p0 + c.right * w, p1 + d.right * w, p1 - d.right * w, th.water);
+        b.quad(p1 - d.right * w, p1 + d.right * w, p0 + c.right * w, p0 - c.right * w, th.water);
     }
 }
 
@@ -759,6 +897,7 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
                              rgba(250, 250, 255), 14, 10);
                 break;
             }
+            case S::Market: break; // market_town() lines the streets
             case S::City: {
                 base.y = floor_y;
                 const float h = (c.pos.y - floor_y) + 8.0f + rnd() * 40.0f;
@@ -825,11 +964,13 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
         if (props) {
             wall_props(t, th, left, right, rnd, *props);
             roadside_islands(b, t, th, rnd, *props);
+            if (th.scenery == ThemeStyle::Scenery::Market) market_town(b, t, th, rnd, floor_y, *props);
             // Obstacles as painted props, fitted to their collision shapes.
             for (const auto& o : t.obstacles) {
                 const bool pillar = o.sides > 4;
                 const std::string& th_name = t.theme;
-                const char* kind = th_name == "desert" || th_name == "canyon" ? "rock_red"
+                const char* kind = th_name == "market" ? (pillar ? "fountain" : "crate")
+                                   : th_name == "desert" || th_name == "canyon" ? "rock_red"
                                    : th_name == "snow"                       ? "crystal"
                                    : th_name == "volcano"                    ? "lava_rock"
                                    : pillar ? (th_name == "sky" || th_name == "night" ? "tire_stack" : "barrel")

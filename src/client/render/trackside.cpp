@@ -208,7 +208,7 @@ PaintedModel make_trackside(const sim::Track& t) {
         const int j = (i + 1) % n;
         const sim::CenterSample& c = t.center[size_t(i)];
         const sim::CenterSample& d = t.center[size_t(j)];
-        if (!c.has_floor || !d.has_floor) continue;
+        if (!c.has_floor || !d.has_floor || t.on_stairs(c.s) || t.on_stairs(d.s)) continue;
         for (int side = 0; side < 2; ++side) {
             const int edge = side ? 5 : 1, base = side ? 6 : 0;
             const vec3 e0 = V(i, edge), e1 = V(j, edge), b0 = V(i, base), b1 = V(j, base);

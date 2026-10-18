@@ -809,6 +809,12 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     vec3 pos = glm::mix(p.pos, s.pos, alpha);
     if (online_) pos += online_->visual_offset(index);
     const quat rot = glm::slerp(p.rot, s.rot, alpha);
+    // Bumping down the stairs: a hop on every step.
+    if (s.grounded && world() && world()->track().on_stairs(world()->track().center[size_t(s.sample)].s)) {
+        const float along = glm::dot(pos - world()->track().center[size_t(s.sample)].pos, world()->track().center[size_t(s.sample)].tangent) +
+                            world()->track().center[size_t(s.sample)].s;
+        pos.y += 0.09f * std::abs(std::sin(along / 1.2f * kPi));
+    }
     mat4 m = glm::translate(mat4(1.0f), pos) * glm::mat4_cast(rot);
     m = glm::rotate(m, -s.visual_drift_yaw, vec3(0, 1, 0));
     if (s.trick_anim > 0.0f) m = glm::rotate(m, (1.0f - s.trick_anim) * 2.0f * kPi, vec3(0, 0, 1));

@@ -135,6 +135,7 @@ Track build_track(const TrackDef& def) {
             obstacles.push_back({a, &f});
             if (std::abs(f.offset) < 0.5f * f.width + 1.0f) no_respawn.push_back(range(a - 8.0f, a + 8.0f)); // covers the centre
             break;
+        case TrackFeature::Kind::Stairs: t.stairs.push_back({a, s_of(f.to)}); break;
         case TrackFeature::Kind::NoWalls:
             if (f.left) no_walls_l.push_back(range(a, s_of(f.to)));
             if (f.right) no_walls_r.push_back(range(a, s_of(f.to)));
@@ -396,6 +397,7 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
             else if (type == "item_boxes") tf.kind = K::ItemBoxes;
             else if (type == "no_walls") tf.kind = K::NoWalls;
             else if (type == "obstacle") tf.kind = K::Obstacle;
+            else if (type == "stairs") tf.kind = K::Stairs; // the road between from and to drawn as steps
             else throw std::runtime_error("unknown feature type " + type);
             tf.at = parse_pos(f.contains("at") ? f["at"] : f.at("from"));
             if (f.contains("to")) tf.to = parse_pos(f["to"]);

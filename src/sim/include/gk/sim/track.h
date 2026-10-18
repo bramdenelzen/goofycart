@@ -60,6 +60,14 @@ public:
     float kill_y = -100.0f;          // falling below this triggers a respawn
     int laps = 3;
     std::vector<vec3> item_boxes;    // centres, in rows across the road
+    // Stretches of road drawn as a flight of steps, (from, to) in metres
+    // along the centre line; the kart drives a smooth slope under them.
+    std::vector<std::pair<float, float>> stairs;
+    bool on_stairs(float s) const {
+        for (const auto& [a, b] : stairs)
+            if (s >= a && s < b) return true;
+        return false;
+    }
 
     // Solid things standing on the road: prisms on the road's frame. Their
     // faces are in `triangles` (as walls), from first_tri on, so the client

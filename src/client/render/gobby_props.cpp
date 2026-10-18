@@ -526,6 +526,296 @@ PaintedModel mesa() {
     return m;
 }
 
+
+// ---- market town
+
+// A narrow town house, 4 m wide, 3 m deep, `floors` storeys of 3 m, facing
+// +Z: plaster walls, shuttered windows, a door, a striped awning over the
+// shop front and a tiled roof. The back and sides are plain.
+PaintedModel town_house(vec4 wall, vec4 shutter, vec4 awning_a, int floors, uint32_t seed) {
+    PaintedModel m;
+    m.texture = Canvas(512, col(128, 128, 128));
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r_front = span(0, 0, 2, 4), r_side = span(2, 0, 3, 2), r_roof = span(3, 0, 4, 2), r_awning = span(2, 2, 4, 3), r_trim = span(2, 3, 4, 4);
+    const float w = 2.0f, d = 1.5f, h = 3.0f * float(floors);
+    // Front face (+Z), with its own UVs; sides and back.
+    region(b, r_front);
+    b.quad_uv({-w, 0, d}, {w, 0, d}, {w, h, d}, {-w, h, d}, {0, 1}, {1, 1}, {1, 0}, {0, 0}, kWhite);
+    region(b, r_side);
+    b.quad_uv({w, 0, d}, {w, 0, -d}, {w, h, -d}, {w, h, d}, {0, 1}, {1, 1}, {1, 0}, {0, 0}, kWhite);
+    b.quad_uv({-w, 0, -d}, {-w, 0, d}, {-w, h, d}, {-w, h, -d}, {0, 1}, {1, 1}, {1, 0}, {0, 0}, kWhite);
+    b.quad_uv({w, 0, -d}, {-w, 0, -d}, {-w, h, -d}, {w, h, -d}, {0, 1}, {1, 1}, {1, 0}, {0, 0}, kWhite);
+    // Pitched roof, ridge along X, overhanging.
+    region(b, r_roof);
+    const float o = 0.25f, ridge = 1.4f;
+    b.quad_uv({-w - o, h - 0.1f, d + o}, {w + o, h - 0.1f, d + o}, {w + o, h + ridge, 0}, {-w - o, h + ridge, 0}, {0, 1}, {1, 1}, {1, 0}, {0, 0}, kWhite);
+    b.quad_uv({w + o, h - 0.1f, -d - o}, {-w - o, h - 0.1f, -d - o}, {-w - o, h + ridge, 0}, {w + o, h + ridge, 0}, {0, 1}, {1, 1}, {1, 0}, {0, 0}, kWhite);
+    region(b, r_side);
+    b.tri({w, h, d}, {w, h, -d}, {w, h + ridge - 0.1f, 0}, kWhite);
+    b.tri({-w, h, -d}, {-w, h, d}, {-w, h + ridge - 0.1f, 0}, kWhite);
+    // Awning over the shop front: a sloped striped sheet with a scalloped edge.
+    region(b, r_awning);
+    b.quad_uv({-w + 0.2f, 2.0f, d + 1.1f}, {w - 0.2f, 2.0f, d + 1.1f}, {w - 0.2f, 2.7f, d + 0.02f}, {-w + 0.2f, 2.7f, d + 0.02f}, {0, 1}, {1, 1}, {1, 0}, {0, 0}, kWhite);
+    b.quad_uv({-w + 0.2f, 2.7f, d + 0.02f}, {w - 0.2f, 2.7f, d + 0.02f}, {w - 0.2f, 2.0f, d + 1.1f}, {-w + 0.2f, 2.0f, d + 1.1f}, {0, 0}, {1, 0}, {1, 1}, {0, 1}, kWhite);
+    // A chimney.
+    region(b, r_trim);
+    b.box_painted({w * 0.5f, h + ridge * 0.6f, -0.4f}, {0.25f, 0.6f, 0.25f}, kWhite);
+
+    // Paint: plaster with a stone base and a cornice.
+    t.fill(r_front, wall);
+    t.noise(r_front, 0.15f, 7.0f, seed, wall);
+    const float base_v = 1.0f - 0.9f / h; // the bottom 0.9 m
+    t.band_v(r_front, base_v, 1.0f, col(150, 140, 125), 0.0f);
+    t.band_v(r_front, 0.0f, 0.04f, shade(wall, 0.7f), 0.0f);
+    // Ground floor: a door and a shop window.
+    const float gf = 1.0f - 3.0f / h;
+    t.rounded(r_front, {0.12f, gf + 0.35f / h * 3.0f * 0.33f, 0.32f, 1.0f}, 0.03f, col(110, 70, 40));
+    t.rounded(r_front, {0.45f, gf + 0.12f, 0.88f, base_v - 0.02f}, 0.02f, col(70, 110, 140));
+    t.rounded(r_front, {0.47f, gf + 0.14f, 0.86f, base_v - 0.04f}, 0.02f, col(150, 200, 230));
+    t.band_u({r_front.x0, r_front.y0 + (gf + 0.12f) * r_front.h(), r_front.x1, r_front.y0 + (base_v - 0.02f) * r_front.h()}, 0.66f, 0.67f, col(70, 50, 40), 0.0f);
+    // Upper floors: two shuttered windows each, a flower box under some.
+    uint32_t rs = seed;
+    auto rnd = [&rs]() { rs = rs * 1664525u + 1013904223u; return float(rs >> 8) / float(1u << 24); };
+    for (int f = 1; f < floors; ++f) {
+        const float v0 = 1.0f - (3.0f * float(f + 1) - 0.7f) / h, v1 = 1.0f - (3.0f * float(f) + 0.8f) / h;
+        for (float u : {0.28f, 0.72f}) {
+            t.rounded(r_front, {u - 0.11f, v0, u + 0.11f, v1}, 0.02f, col(60, 80, 100));
+            t.rounded(r_front, {u - 0.1f, v0 + 0.01f, u + 0.1f, v1 - 0.01f}, 0.02f, rnd() < 0.5f ? col(255, 220, 140) : col(130, 175, 210));
+            t.band_u({r_front.x0, r_front.y0 + v0 * r_front.h(), r_front.x1, r_front.y0 + v1 * r_front.h()}, u - 0.005f, u + 0.005f, col(60, 50, 40), 0.0f);
+            t.rounded(r_front, {u - 0.2f, v0, u - 0.115f, v1}, 0.01f, shutter);
+            t.rounded(r_front, {u + 0.115f, v0, u + 0.2f, v1}, 0.01f, shutter);
+            if (rnd() < 0.6f) {
+                t.rounded(r_front, {u - 0.13f, v1, u + 0.13f, v1 + 0.025f}, 0.005f, col(120, 80, 50));
+                t.spots({r_front.x0 + (u - 0.13f) * r_front.w(), r_front.y0 + (v1 - 0.025f) * r_front.h(), r_front.x0 + (u + 0.13f) * r_front.w(), r_front.y0 + v1 * r_front.h()}, 6, 0.18f,
+                        rnd() < 0.5f ? col(230, 70, 90) : col(250, 200, 60), seed + uint32_t(f), 0.3f);
+            }
+        }
+        t.band_v(r_front, 1.0f - 3.0f * float(f) / h - 0.01f, 1.0f - 3.0f * float(f) / h + 0.01f, shade(wall, 0.85f), 0.005f);
+    }
+    t.vignette(r_front, 0.15f, 0.05f);
+    t.fill(r_side, shade(wall, 0.9f));
+    t.noise(r_side, 0.15f, 6.0f, seed + 3, wall);
+    // Roof tiles: rows of rounded terracotta.
+    t.custom(r_roof, [](float u, float v) {
+        const float row = std::fmod(v * 14.0f, 1.0f), col_ = std::fmod(u * 18.0f + (int(v * 14.0f) % 2) * 0.5f, 1.0f);
+        const float shape = 0.75f + 0.25f * std::sin(col_ * 3.14159f) - 0.25f * (row > 0.85f ? 1.0f : 0.0f);
+        return vec4(vec3(0.72f, 0.33f, 0.2f) * shape, 1.0f);
+    });
+    t.custom(r_awning, [awning_a](float u, float v) {
+        const bool stripe = int(u * 10.0f) % 2 == 0;
+        const vec3 c = stripe ? vec3(awning_a) : vec3(0.97f, 0.95f, 0.9f);
+        const float scallop = std::fmod(u * 10.0f, 1.0f);
+        const float edge = 0.88f + 0.08f * std::sin(scallop * 3.14159f);
+        return vec4(c * (0.8f + 0.2f * (1.0f - v)), v < edge ? 1.0f : 0.0f);
+    });
+    t.gradient_v(r_trim, col(170, 160, 150), col(110, 100, 95));
+    m.mesh = b.take();
+    m.two_sided = true; // the awning
+    m.finish();
+    return m;
+}
+
+// A market stall, 3 m wide: a wooden counter with crates of fruit and a
+// striped canopy on four poles. Faces +Z.
+PaintedModel market_stall(vec4 canopy, uint32_t seed) {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r_wood = span(0, 0, 2, 2), r_canopy = span(2, 0, 4, 2), r_fruit = span(0, 2, 2, 4), r_pole = span(2, 2, 3, 4), r_crate = span(3, 2, 4, 4);
+    region(b, r_wood);
+    b.box_painted({0, 0.45f, 0}, {1.4f, 0.45f, 0.5f}, kWhite);
+    region(b, r_pole);
+    for (float x : {-1.35f, 1.35f})
+        for (float z : {-0.45f, 0.45f}) b.tube({x, 0, z}, {x, 2.3f + (z < 0 ? 0.3f : 0.0f), z}, 0.05f, 0.05f, kWhite, 6, true);
+    region(b, r_canopy);
+    b.quad_uv({-1.6f, 2.2f, 0.9f}, {1.6f, 2.2f, 0.9f}, {1.6f, 2.65f, -0.7f}, {-1.6f, 2.65f, -0.7f}, {0, 1}, {1, 1}, {1, 0}, {0, 0}, kWhite);
+    b.quad_uv({-1.6f, 2.65f, -0.7f}, {1.6f, 2.65f, -0.7f}, {1.6f, 2.2f, 0.9f}, {-1.6f, 2.2f, 0.9f}, {0, 0}, {1, 0}, {1, 1}, {0, 1}, kWhite);
+    // Three crates on the counter, heaped with fruit.
+    uint32_t rs = seed;
+    auto rnd = [&rs]() { rs = rs * 1664525u + 1013904223u; return float(rs >> 8) / float(1u << 24); };
+    for (int c = 0; c < 3; ++c) {
+        const float x = -0.9f + 0.9f * float(c);
+        region(b, r_crate);
+        b.box_painted({x, 1.0f, 0.05f}, {0.4f, 0.1f, 0.35f}, kWhite);
+        region(b, r_fruit);
+        const int kind = int(rnd() * 4.0f) % 4; // cell of the fruit texture
+        const UvRect f = cell(kind % 2, kind / 2, 2);
+        b.uv_region(r_fruit.x0 + f.x0 * r_fruit.w(), r_fruit.y0 + f.y0 * r_fruit.h(), r_fruit.x0 + f.x1 * r_fruit.w(), r_fruit.y0 + f.y1 * r_fruit.h());
+        for (int k = 0; k < 6; ++k)
+            b.sphere({x - 0.25f + 0.25f * float(k % 3), 1.17f + 0.04f * float(k / 3), -0.12f + 0.24f * float(k / 3)}, 0.12f, kWhite, 8, 5);
+    }
+    // Paint.
+    const vec4 wood = col(160, 110, 65);
+    t.fill(r_wood, wood);
+    for (int i = 0; i < 6; ++i) t.band_v(r_wood, float(i) / 6.0f, float(i) / 6.0f + 0.02f, shade(wood, 0.6f), 0.005f);
+    t.noise(r_wood, 0.2f, 5.0f, seed, wood);
+    t.vignette(r_wood, 0.25f, 0.08f);
+    t.custom(r_canopy, [canopy](float u, float v) {
+        const bool stripe = int(u * 8.0f) % 2 == 0;
+        const float scallop = std::fmod(u * 8.0f, 1.0f);
+        const float edge = 0.86f + 0.1f * std::sin(scallop * 3.14159f);
+        return vec4((stripe ? vec3(canopy) : vec3(0.98f, 0.96f, 0.92f)) * (0.85f + 0.15f * (1.0f - v)), v < edge ? 1.0f : 0.0f);
+    });
+    t.gradient_u(r_pole, col(140, 100, 60), col(90, 60, 35));
+    const vec4 fruit[4] = {col(220, 40, 40), col(250, 150, 30), col(250, 220, 60), col(110, 190, 60)};
+    for (int k = 0; k < 4; ++k) {
+        const UvRect f = cell(k % 2, k / 2, 2);
+        const UvRect r{r_fruit.x0 + f.x0 * r_fruit.w(), r_fruit.y0 + f.y0 * r_fruit.h(), r_fruit.x0 + f.x1 * r_fruit.w(), r_fruit.y0 + f.y1 * r_fruit.h()};
+        shade_round(t, r, fruit[k], 1.2f);
+    }
+    t.fill(r_crate, col(190, 150, 95));
+    for (int i = 0; i < 3; ++i) t.band_v(r_crate, float(i) / 3.0f, float(i) / 3.0f + 0.04f, col(120, 85, 50), 0.01f);
+    m.mesh = b.take();
+    m.two_sided = true;
+    m.finish();
+    return m;
+}
+
+PaintedModel fountain() {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r_stone = span(0, 0, 4, 2), r_water = span(0, 2, 2, 4), r_gold = span(2, 2, 4, 4);
+    region(b, r_stone);
+    b.lathe({0, 0, 0}, {0, 1, 0}, {{0.0f, 0.0f}, {2.0f, 0.0f}, {2.0f, 0.6f}, {1.8f, 0.7f}, {1.75f, 0.35f}, {0.5f, 0.35f}, {0.4f, 1.6f}, {0.9f, 1.7f}, {0.9f, 1.85f}, {0.25f, 1.9f}, {0.2f, 2.6f}, {0.0f, 2.7f}}, 20, kWhite, 1.0f, 1.0f);
+    region(b, r_water);
+    b.lathe({0, 0.5f, 0}, {0, 1, 0}, {{1.78f, 0.0f}, {0.0f, 0.02f}}, 20, kWhite, 1.0f, 1.0f);
+    b.lathe({0, 1.78f, 0}, {0, 1, 0}, {{0.85f, 0.0f}, {0.0f, 0.02f}}, 16, kWhite, 1.0f, 1.0f);
+    region(b, r_gold);
+    b.sphere({0, 2.85f, 0}, 0.22f, kWhite, 10, 6);
+    const vec4 stone = col(210, 200, 185);
+    t.gradient_v(r_stone, shade(stone, 1.1f), shade(stone, 0.75f));
+    for (int i = 0; i < 16; ++i) t.band_u(r_stone, float(i) / 16.0f, float(i) / 16.0f + 0.006f, shade(stone, 0.65f), 0.003f);
+    t.noise(r_stone, 0.2f, 8.0f, 23, stone);
+    t.gradient_v(r_water, col(120, 200, 240), col(60, 140, 200));
+    t.spots(r_water, 12, 0.04f, col(230, 250, 255, 0.7f), 29, 0.6f);
+    shade_round(t, r_gold, col(250, 200, 60), 1.3f);
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+// Lanterns and bunting are drawn in the scenery; this is one paper lantern.
+PaintedModel lantern() {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r_paper = span(0, 0, 4, 3), r_cap = span(0, 3, 4, 4);
+    region(b, r_paper);
+    b.lathe({0, -0.35f, 0}, {0, 1, 0}, {{0.0f, 0.0f}, {0.15f, 0.02f}, {0.24f, 0.17f}, {0.24f, 0.33f}, {0.15f, 0.48f}, {0.0f, 0.5f}}, 10, kWhite, 1.0f, 1.0f);
+    region(b, r_cap);
+    b.tube({0, 0.14f, 0}, {0, 0.22f, 0}, 0.08f, 0.08f, kWhite, 6, true);
+    t.gradient_v(r_paper, col(255, 200, 90), col(240, 90, 50));
+    for (int i = 1; i < 5; ++i) t.band_v(r_paper, float(i) / 5.0f - 0.01f, float(i) / 5.0f + 0.01f, col(150, 50, 30, 0.6f), 0.005f);
+    t.glow(r_paper, {0.5f, 0.5f}, 0.5f, vec4(1.0f, 0.95f, 0.7f, 0.35f), 1.0f);
+    t.fill(r_cap, col(40, 35, 35));
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+PaintedModel hay_bale() {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r_side = span(0, 0, 4, 3), r_end = span(0, 3, 4, 4);
+    region(b, r_side);
+    b.lathe({-0.7f, 0.6f, 0}, {1, 0, 0}, {{0.0f, 0.0f}, {0.55f, 0.02f}, {0.6f, 0.1f}, {0.6f, 1.3f}, {0.55f, 1.38f}, {0.0f, 1.4f}}, 12, kWhite, 1.0f, 1.0f);
+    t.fill(r_side, col(225, 190, 95));
+    t.custom(r_side, [](float u, float v) { return vec4(0.55f, 0.4f, 0.15f, (std::sin(u * 220.0f + v * 13.0f) > 0.7f) ? 0.35f : 0.0f); });
+    t.band_v(r_side, 0.3f, 0.33f, col(150, 100, 40), 0.0f);
+    t.band_v(r_side, 0.67f, 0.7f, col(150, 100, 40), 0.0f);
+    (void)r_end;
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+PaintedModel fence() {
+    // 4 m of white picket fence along X.
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r = span(0, 0, 4, 4);
+    region(b, r);
+    for (int i = 0; i <= 8; ++i) b.box_painted({-2.0f + 0.5f * float(i), 0.5f, 0}, {0.06f, 0.5f, 0.04f}, kWhite);
+    b.box_painted({0, 0.75f, 0.05f}, {2.05f, 0.05f, 0.02f}, kWhite);
+    b.box_painted({0, 0.3f, 0.05f}, {2.05f, 0.05f, 0.02f}, kWhite);
+    t.gradient_v(r, col(250, 250, 245), col(200, 200, 195));
+    t.vignette(r, 0.2f, 0.1f);
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+PaintedModel windmill() {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r_tower = span(0, 0, 2, 4), r_roof = span(2, 0, 4, 1), r_sail = span(2, 1, 4, 4);
+    region(b, r_tower);
+    b.lathe({0, 0, 0}, {0, 1, 0}, {{0.0f, 0.0f}, {2.6f, 0.0f}, {1.8f, 9.0f}, {0.0f, 9.0f}}, 10, kWhite, 1.0f, 1.0f);
+    region(b, r_roof);
+    b.lathe({0, 9.0f, 0}, {0, 1, 0}, {{0.0f, 0.0f}, {2.1f, 0.0f}, {0.0f, 2.2f}}, 10, kWhite, 1.0f, 1.0f);
+    region(b, r_sail);
+    const vec3 hub(0, 8.6f, 2.0f);
+    for (int k = 0; k < 4; ++k) {
+        const float a = kPi * 0.5f * float(k) + 0.4f;
+        const vec3 d(std::cos(a), std::sin(a), 0), s(-std::sin(a), std::cos(a), 0);
+        const vec3 p0 = hub + d * 0.6f, p1 = hub + d * 6.0f;
+        b.quad_uv(p0, p1, p1 + s * 1.2f, p0 + s * 1.2f, {0, 1}, {1, 1}, {1, 0}, {0, 0}, kWhite);
+        b.quad_uv(p0 + s * 1.2f, p1 + s * 1.2f, p1, p0, {0, 0}, {1, 0}, {1, 1}, {0, 1}, kWhite);
+    }
+    t.fill(r_tower, col(240, 232, 215));
+    t.noise(r_tower, 0.12f, 6.0f, 31, col(230, 220, 200));
+    t.rounded(r_tower, {0.2f, 0.75f, 0.32f, 1.0f}, 0.02f, col(110, 70, 40));
+    for (float v : {0.25f, 0.5f}) t.rounded(r_tower, {0.6f, v, 0.7f, v + 0.1f}, 0.02f, col(70, 100, 130));
+    t.custom(r_roof, [](float u, float v) { return vec4(vec3(0.62f, 0.25f, 0.18f) * (0.8f + 0.2f * (int(u * 20.0f) % 2)), 1.0f); });
+    t.fill(r_sail, col(245, 240, 225));
+    t.custom(r_sail, [](float u, float v) { const float g = std::min(std::fmod(u * 6.0f, 1.0f), std::fmod(v * 3.0f, 1.0f)); return vec4(0.45f, 0.3f, 0.2f, g < 0.08f ? 1.0f : 0.0f); });
+    m.mesh = b.take();
+    m.two_sided = true;
+    m.finish();
+    return m;
+}
+
+PaintedModel igloo() {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r = span(0, 0, 4, 4);
+    region(b, r);
+    b.sphere({0, 0, 0}, vec3(2.2f, 1.9f, 2.2f), kWhite, 14, 8);
+    b.capsule({0, 0.3f, 2.0f}, {0, 0.3f, 2.8f}, 0.75f, kWhite, 10, 3);
+    t.fill(r, col(240, 246, 255));
+    for (int i = 1; i < 7; ++i) t.band_v(r, float(i) / 7.0f, float(i) / 7.0f + 0.01f, col(170, 195, 225), 0.004f);
+    t.custom(r, [](float u, float v) { const int row = int(v * 7.0f); const float x = std::fmod(u * 16.0f + 0.5f * (row % 2), 1.0f); return vec4(0.66f, 0.76f, 0.88f, x < 0.05f ? 1.0f : 0.0f); });
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+PaintedModel neon_sign(vec4 glow_col, uint32_t seed) {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r = span(0, 0, 4, 3), r_post = span(0, 3, 4, 4);
+    region(b, r);
+    b.box_painted({0, 3.5f, 0}, {2.0f, 1.0f, 0.1f}, kWhite);
+    region(b, r_post);
+    b.tube({0, 0, 0}, {0, 2.5f, 0}, 0.12f, 0.12f, kWhite, 6, true);
+    t.fill(r, col(20, 18, 30));
+    t.rounded(r, {0.05f, 0.1f, 0.95f, 0.9f}, 0.08f, glow_col);
+    t.rounded(r, {0.08f, 0.16f, 0.92f, 0.84f}, 0.06f, col(20, 18, 30));
+    if (seed % 2) t.star(r, {0.5f, 0.5f}, 0.3f, glow_col);
+    else for (int k = 0; k < 3; ++k) t.ellipse(r, {0.28f + 0.22f * float(k), 0.5f}, {0.07f, 0.22f}, glow_col, 0.03f);
+    t.gradient_u(r_post, col(80, 80, 95), col(30, 30, 40));
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
 } // namespace
 
 std::map<std::string, PaintedModel> make_gobby_props() {
@@ -563,6 +853,22 @@ std::map<std::string, PaintedModel> make_gobby_props() {
     out["lava_rock"] = lava_rock();
     out["cloud"] = cloud();
     out["mesa"] = mesa();
+    out["house_1"] = town_house(col(240, 210, 150), col(70, 120, 90), col(200, 50, 50), 2, 11);
+    out["house_2"] = town_house(col(230, 160, 140), col(60, 90, 140), col(40, 110, 170), 3, 12);
+    out["house_3"] = town_house(col(200, 220, 190), col(150, 80, 50), col(240, 170, 40), 2, 13);
+    out["house_4"] = town_house(col(250, 235, 200), col(120, 60, 90), col(60, 150, 80), 3, 14);
+    out["house_5"] = town_house(col(180, 205, 230), col(160, 60, 50), col(230, 100, 150), 2, 15);
+    out["stall_red"] = market_stall(col(210, 50, 50), 21);
+    out["stall_blue"] = market_stall(col(50, 110, 190), 22);
+    out["stall_green"] = market_stall(col(60, 150, 70), 23);
+    out["fountain"] = fountain();
+    out["lantern"] = lantern();
+    out["hay_bale"] = hay_bale();
+    out["fence"] = fence();
+    out["windmill"] = windmill();
+    out["igloo"] = igloo();
+    out["neon_pink"] = neon_sign(col(255, 80, 200), 1);
+    out["neon_cyan"] = neon_sign(col(60, 230, 255), 2);
     return out;
 }
 
