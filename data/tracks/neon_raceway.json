@@ -5,22 +5,268 @@
   "half_width": 8,
   "verge": 4,
   "_comment": "City blocks: square corners, a split lane, a chicane, then a flyover across the east avenue and a jump off its end.",
-  "points": [[0,0,0],[0,0,90],[4,0,118],[30,0,124],[90,0,124],[116,0,118],[122,0,92],[122,0,40],[128,0,14],[150,0,8],[185,3,10],[200,6,40],[180,9,65],[122,10,65],[70,9,65],[52,6,35],[50,3,-15],[30,1,-50],[5,0,-45]],
+  "points": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      85
+    ],
+    [
+      4,
+      0,
+      112
+    ],
+    [
+      28,
+      0,
+      120
+    ],
+    [
+      60,
+      0,
+      120
+    ],
+    [
+      72,
+      0,
+      100
+    ],
+    [
+      95,
+      0,
+      92
+    ],
+    [
+      110,
+      0,
+      118
+    ],
+    [
+      135,
+      0,
+      124
+    ],
+    [
+      150,
+      0,
+      100
+    ],
+    [
+      148,
+      0,
+      60
+    ],
+    [
+      125,
+      0,
+      40
+    ],
+    [
+      128,
+      0,
+      14
+    ],
+    [
+      150,
+      0,
+      6
+    ],
+    [
+      185,
+      3,
+      10
+    ],
+    [
+      200,
+      6,
+      40
+    ],
+    [
+      182,
+      9,
+      66
+    ],
+    [
+      122,
+      10,
+      68
+    ],
+    [
+      72,
+      10,
+      66
+    ],
+    [
+      52,
+      7,
+      36
+    ],
+    [
+      50,
+      3,
+      -15
+    ],
+    [
+      30,
+      1,
+      -50
+    ],
+    [
+      5,
+      0,
+      -45
+    ]
+  ],
   "features": [
-    { "type": "boost_pad", "at": [0, 30], "length": 8, "lanes": [0, 1, 2, 3] },
-    { "type": "obstacle", "at": [0, 55], "offset": 0, "shape": "block", "width": 1.5, "length": 14, "height": 1.2 },
-    { "type": "obstacle", "at": [4, 10], "offset": -4.0, "shape": "block", "width": 3, "length": 3, "height": 2 },
-    { "type": "trick_ramp", "at": [6, 20], "length": 10, "height": 1.6 },
-    { "type": "obstacle", "at": [7, 10], "offset": 3.5, "shape": "pillar", "width": 2, "length": 2, "height": 3 },
-    { "type": "obstacle", "at": [8, 15], "offset": -3.5, "shape": "pillar", "width": 2, "length": 2, "height": 3 },
-    { "type": "verge", "from": 9, "to": 11, "side": "left", "width": 8, "surface": "offroad_medium" },
-    { "type": "boost_pad", "at": [12, 20], "length": 8, "lanes": [1, 2] },
-    { "type": "glide_ramp", "at": [14, 0], "length": 14, "height": 2.5, "gap": 30 },
-    { "type": "trick_ramp", "at": [16, 15], "length": 9, "height": 1.3 },
-    { "type": "item_boxes", "at": [1, 0] },
-    { "type": "item_boxes", "at": [5, 30] },
-    { "type": "item_boxes", "at": [10, 10] },
-    { "type": "item_boxes", "at": [13, 20] },
-    { "type": "item_boxes", "at": [17, 0] }
+    {
+      "type": "boost_pad",
+      "at": [
+        0,
+        30
+      ],
+      "length": 8,
+      "lanes": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        0,
+        55
+      ],
+      "offset": 0,
+      "shape": "block",
+      "width": 1.5,
+      "length": 14,
+      "height": 1.2
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        1,
+        0
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        3,
+        10
+      ],
+      "offset": -4.0,
+      "shape": "block",
+      "width": 3,
+      "length": 3,
+      "height": 2
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        4,
+        0
+      ]
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        5,
+        10
+      ],
+      "length": 10,
+      "height": 1.6
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        9,
+        10
+      ],
+      "offset": 3.5,
+      "shape": "pillar",
+      "width": 2,
+      "length": 2,
+      "height": 3
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        10,
+        10
+      ],
+      "offset": -3.5,
+      "shape": "pillar",
+      "width": 2,
+      "length": 2,
+      "height": 3
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        11,
+        0
+      ]
+    },
+    {
+      "type": "verge",
+      "from": 12,
+      "to": 14,
+      "side": "left",
+      "width": 8,
+      "surface": "offroad_medium"
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        15,
+        10
+      ],
+      "length": 8,
+      "lanes": [
+        1,
+        2
+      ]
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        16,
+        10
+      ]
+    },
+    {
+      "type": "glide_ramp",
+      "at": [
+        18,
+        0
+      ],
+      "length": 14,
+      "height": 2.5,
+      "gap": 30
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        20,
+        10
+      ]
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        21,
+        0
+      ],
+      "length": 9,
+      "height": 1.3
+    }
   ]
 }
