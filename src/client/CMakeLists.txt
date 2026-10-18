@@ -39,6 +39,10 @@ add_executable(gk_client
   assets.cpp
   render/mesh.cpp
   render/model.cpp
+  render/paint.cpp
+  render/gobby_items.cpp
+  render/gobby_props.cpp
+  render/gobby_kart.cpp
   render/textures.cpp
   render/track_mesh.cpp
   render/kart_mesh.cpp

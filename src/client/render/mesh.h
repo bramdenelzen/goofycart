@@ -38,6 +38,20 @@ public:
         layer_ = layer;
         tile_ = tile;
     }
+    // Painted textures: every primitive added from now on maps its 0..1
+    // texture coordinates into this region of the texture (smooth primitives
+    // with tiles = 1, and the *_uv primitives' own coordinates).
+    void uv_region(float x0, float y0, float x1, float y1) {
+        region_[0] = x0;
+        region_[1] = y0;
+        region_[2] = x1;
+        region_[3] = y1;
+        has_region_ = true;
+    }
+    void uv_region_off() { has_region_ = false; }
+    // A box whose six faces each map to the whole region.
+    void box_painted(vec3 center, vec3 half, uint32_t color);
+
     // A triangle or quad with its own texture coordinates (for textures with
     // a direction, or that follow a curve).
     void tri_uv(vec3 a, vec3 b, vec3 c, vec2 ua, vec2 ub, vec2 uc, uint32_t color);
@@ -87,9 +101,14 @@ public:
 
 private:
     vec2 project(vec3 p, vec3 n) const;
+    vec2 regioned(vec2 uv) const {
+        return has_region_ ? vec2(region_[0] + uv.x * (region_[2] - region_[0]), region_[1] + uv.y * (region_[3] - region_[1])) : uv;
+    }
     MeshData data_;
     uint32_t layer_ = 0;
     float tile_ = 2.0f;
+    float region_[4] = {0.0f, 0.0f, 1.0f, 1.0f};
+    bool has_region_ = false;
 };
 
 // Procedural placeholder content until the glTF pipeline lands.

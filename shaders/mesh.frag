@@ -28,6 +28,14 @@ layout(set = 1, binding = 0) uniform sampler2D albedo_tex;
 layout(location = 0) out vec4 out_color;
 
 void main() {
+    if (draw.flags.y == 1) { // unlit: the texture as is, fogged
+        vec4 t = texture(albedo_tex, v_uv) * v_color;
+        if (t.a < 0.01) discard;
+        float d = length(v_world - frame.camera_pos.xyz);
+        float f = 1.0 - exp(-d * frame.fog_color.a);
+        out_color = vec4(mix(t.rgb, frame.fog_color.rgb, clamp(f, 0.0, 1.0)), t.a);
+        return;
+    }
     vec3 n = normalize(v_normal);
     vec3 l = normalize(frame.light_dir.xyz);
     vec3 v = normalize(frame.camera_pos.xyz - v_world);

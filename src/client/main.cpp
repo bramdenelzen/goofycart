@@ -26,6 +26,8 @@ int main(int argc, char** argv) {
         else if (std::strcmp(a, "--time-trial") == 0) opt.time_trial = true;
         else if (std::strcmp(a, "--menu") == 0) opt.menu = next();
         else if (std::strcmp(a, "--preview-model") == 0) opt.preview_model = next();
+        else if (std::strcmp(a, "--export-assets") == 0) opt.export_assets = next();
+        else if (std::strcmp(a, "--no-ui") == 0) opt.hide_ui = true;
         else if (std::strcmp(a, "--master") == 0) opt.master_url = next();
         else if (std::strcmp(a, "--region") == 0) opt.region = next();
         else if (std::strcmp(a, "--crash") == 0) opt.crash = next();

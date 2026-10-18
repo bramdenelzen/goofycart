@@ -137,6 +137,19 @@ GpuModel AssetLibrary::upload(const ModelSpec& spec, const std::string& dir, ren
     return out;
 }
 
+GpuModel AssetLibrary::upload_painted(const render::PaintedModel& model, render::Renderer& renderer) {
+    GpuModel out;
+    const render::TextureId tex = renderer.upload_texture(model.texture.size(), model.texture.size(), model.texture.rgba().data());
+    out.meshes.push_back(renderer.upload_mesh(model.mesh, tex, model.two_sided, false, model.blended));
+    out.bounds_min = model.bounds_min;
+    out.bounds_max = model.bounds_max;
+    return out;
+}
+
+void AssetLibrary::add_builtin_item(const std::string& name, const render::PaintedModel& model, render::Renderer& renderer) {
+    items_[name] = upload_painted(model, renderer);
+}
+
 bool AssetLibrary::load(const std::string& dir, render::Renderer& renderer) {
     std::ifstream f(dir + "/manifest.json");
     if (!f) return false;

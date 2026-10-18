@@ -38,7 +38,9 @@ struct AppOptions {
     bool mute = false;
     bool time_trial = false;
     std::string menu;             // open on this menu (options, course) for screenshots
-    std::string preview_model;    // show this manifest item on the title screen instead of the kart      // with --track: a Time Trial instead of a VS race
+    std::string preview_model;    // show this manifest item on the title screen instead of the kart
+    std::string export_assets;    // write the built-in models as OBJ + PNG into this folder
+    bool hide_ui = false;         // menus and HUD off, for screenshots      // with --track: a Time Trial instead of a VS race
     // Online play: connect to a gk_server instead of racing locally.
     std::string connect_host;
     uint16_t connect_port = net::kDefaultPort;
@@ -155,7 +157,7 @@ private:
     std::map<std::string, std::pair<render::MeshId, render::MeshId>> track_meshes_;
     render::SceneLighting light_;
 
-    render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0;
+    render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0, shadow_mesh_ = 0;
     render::MeshId box_mesh_ = 0, banana_mesh_ = 0, green_mesh_ = 0, red_mesh_ = 0, spiked_mesh_ = 0, bomb_mesh_ = 0,
                    ball_mesh_ = 0, boomerang_mesh_ = 0, bullet_mesh_ = 0, chomper_mesh_ = 0;
     float flash_ = 0.0f; // white screen flash (lightning)
@@ -170,6 +172,7 @@ private:
         render::KartLayout layout;
     };
     AssetLibrary assets_;
+    std::map<uint32_t, GpuModel> gobby_karts_;         // the painted standard kart, by paint colour
     std::vector<KartVisual> kart_visuals_;              // per kart in the race
     std::map<uint64_t, KartVisual> build_visuals_;      // (build, colour) -> visual
     std::array<float, 12> wheel_angle_{};               // tyre spin per kart, radians

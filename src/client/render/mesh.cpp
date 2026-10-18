@@ -29,9 +29,9 @@ void MeshBuilder::tri_uv(vec3 a, vec3 b, vec3 c, vec2 ua, vec2 ub, vec2 uc, uint
     const float len = glm::length(n);
     n = len > 1e-12f ? n / len : kUp;
     const auto base = static_cast<uint32_t>(data_.vertices.size());
-    data_.vertices.push_back({a, n, color, ua, layer_});
-    data_.vertices.push_back({b, n, color, ub, layer_});
-    data_.vertices.push_back({c, n, color, uc, layer_});
+    data_.vertices.push_back({a, n, color, regioned(ua), layer_});
+    data_.vertices.push_back({b, n, color, regioned(ub), layer_});
+    data_.vertices.push_back({c, n, color, regioned(uc), layer_});
     data_.indices.insert(data_.indices.end(), {base, base + 1, base + 2});
 }
 
@@ -47,10 +47,10 @@ void MeshBuilder::quad_uv(vec3 a, vec3 b, vec3 c, vec3 d, vec2 ua, vec2 ub, vec2
     const float len = glm::length(n);
     n = len > 1e-12f ? n / len : kUp;
     const auto base = static_cast<uint32_t>(data_.vertices.size());
-    data_.vertices.push_back({a, n, color, ua, layer_});
-    data_.vertices.push_back({b, n, color, ub, layer_});
-    data_.vertices.push_back({c, n, color, uc, layer_});
-    data_.vertices.push_back({d, n, color, ud, layer_});
+    data_.vertices.push_back({a, n, color, regioned(ua), layer_});
+    data_.vertices.push_back({b, n, color, regioned(ub), layer_});
+    data_.vertices.push_back({c, n, color, regioned(uc), layer_});
+    data_.vertices.push_back({d, n, color, regioned(ud), layer_});
     data_.indices.insert(data_.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
 }
 
@@ -65,6 +65,20 @@ void MeshBuilder::box(vec3 c, vec3 h, uint32_t color) {
     quad(p[0], p[4], p[7], p[3], color); // -x
     quad(p[7], p[6], p[2], p[3], color); // +y
     quad(p[0], p[1], p[5], p[4], color); // -y
+}
+
+void MeshBuilder::box_painted(vec3 c, vec3 h, uint32_t color) {
+    const vec3 p[8] = {
+        c + vec3(-h.x, -h.y, -h.z), c + vec3(h.x, -h.y, -h.z), c + vec3(h.x, h.y, -h.z), c + vec3(-h.x, h.y, -h.z),
+        c + vec3(-h.x, -h.y, h.z),  c + vec3(h.x, -h.y, h.z),  c + vec3(h.x, h.y, h.z),  c + vec3(-h.x, h.y, h.z),
+    };
+    const vec2 t0(0, 1), t1(1, 1), t2(1, 0), t3(0, 0); // bottom-left, bottom-right, top-right, top-left
+    quad_uv(p[4], p[5], p[6], p[7], t0, t1, t2, t3, color); // +z
+    quad_uv(p[1], p[0], p[3], p[2], t0, t1, t2, t3, color); // -z
+    quad_uv(p[5], p[1], p[2], p[6], t0, t1, t2, t3, color); // +x
+    quad_uv(p[0], p[4], p[7], p[3], t0, t1, t2, t3, color); // -x
+    quad_uv(p[7], p[6], p[2], p[3], t0, t1, t2, t3, color); // +y
+    quad_uv(p[0], p[1], p[5], p[4], t0, t1, t2, t3, color); // -y
 }
 
 void MeshBuilder::cylinder_x(vec3 c, float r, float hw, int sides, uint32_t color) {
@@ -121,6 +135,7 @@ void MeshBuilder::icosphere(vec3 c, float r, uint32_t color) {
 
 void MeshBuilder::grid(const std::vector<vec3>& pts, int rows, int cols, bool wrap, uint32_t color, float u_tiles, float v_tiles) {
     if (rows < 2 || cols < 2 || int(pts.size()) < rows * cols) return;
+    if (has_region_) u_tiles = v_tiles = 1.0f; // a painted region covers the surface once
     const int stride = cols; // vertices per row
     std::vector<vec3> normals(size_t(rows * cols), vec3(0.0f));
     auto at = [&](int r, int c) { return pts[size_t(r * stride + (c % cols))]; };
@@ -154,7 +169,7 @@ void MeshBuilder::grid(const std::vector<vec3>& pts, int rows, int cols, bool wr
             const float len = glm::length(n);
             n = len > 1e-12f ? n / len : kUp;
             const vec2 uv(u_tiles * float(c) / float(out_cols - 1), v_tiles * float(r) / float(rows - 1));
-            data_.vertices.push_back({at(r, c), n, color, uv, layer_});
+            data_.vertices.push_back({at(r, c), n, color, regioned(uv), layer_});
         }
     auto vi = [&](int r, int c) { return base + uint32_t(r * out_cols + c); };
     for (int r = 0; r + 1 < rows; ++r)

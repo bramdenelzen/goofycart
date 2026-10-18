@@ -135,8 +135,25 @@ bool App::init() {
     ro.full_resolution = options_.full_resolution;
     ro.validation = options_.validation;
     if (!renderer_.init(window_, ro)) return false;
-    // An optional model pack beside the data folder (not in the repository).
+    // The game's own painted items, then an optional model pack beside the
+    // data folder (not in the repository) that may override them.
+    for (const auto& [name, model] : render::make_gobby_items()) assets_.add_builtin_item(name, model, renderer_);
+    for (const auto& tire : parts_.tires) assets_.add_builtin_tire(tire.id, render::make_gobby_tire(tire.look), renderer_);
     if (assets_.load(sim::data_path("../assets/models"), renderer_)) log_info("Model pack loaded from assets/models");
+    if (!options_.export_assets.empty()) {
+        int written = 0;
+        std::string err;
+        for (const auto& [name, model] : render::make_gobby_items())
+            if (render::export_painted_model(model, options_.export_assets + "/items", name, &err)) ++written;
+            else log_warn("{}", err);
+        for (const auto& [name, model] : render::make_gobby_props())
+            if (render::export_painted_model(model, options_.export_assets + "/props", name, &err)) ++written;
+            else log_warn("{}", err);
+        if (render::export_painted_model(render::make_gobby_kart(render::rgba(225, 45, 40)), options_.export_assets + "/karts", "standard_kart", &err)) ++written;
+        for (const auto& tire : parts_.tires)
+            if (render::export_painted_model(render::make_gobby_tire(tire.look), options_.export_assets + "/tires", tire.id, &err)) ++written;
+        log_info("Exported {} models to {}", written, options_.export_assets);
+    }
     if (const std::string sp = settings_path(); !sp.empty()) settings_.load(sp);
     if (options_.full_resolution) settings_.low_res = false;
     apply_settings();
@@ -164,6 +181,13 @@ bool App::init() {
         else if (options_.menu == "course") screen_ = Screen::Course;
         else if (options_.menu == "online") start_matchmaking();
         show_track(course_track(course_, tracks_));
+    }
+    {   // A soft round shadow under each kart.
+        render::Canvas c(128, vec4(0.0f));
+        c.glow({0.0f, 0.0f, 1.0f, 1.0f}, {0.5f, 0.5f}, 0.5f, vec4(0.0f, 0.0f, 0.03f, 0.62f), 0.55f);
+        render::MeshBuilder q;
+        q.quad_uv({-1, 0, -1}, {-1, 0, 1}, {1, 0, 1}, {1, 0, -1}, {0, 0}, {0, 1}, {1, 1}, {1, 0}, render::rgba(255, 255, 255));
+        shadow_mesh_ = renderer_.upload_mesh(q.take(), renderer_.upload_texture(128, 128, c.rgba().data()), false, true, true);
     }
     spark_mesh_ = renderer_.upload_mesh(render::make_spark_mesh());
     flame_mesh_ = renderer_.upload_mesh(render::make_flame_mesh());
@@ -196,6 +220,15 @@ const App::KartVisual& App::build_visual(const sim::Build& b, int slot) {
     };
     v.driver_model = assets_.driver(id_of(parts_.drivers, b.driver));
     v.body_model = assets_.body(id_of(parts_.bodies, b.body));
+    // The painted standard kart, one per racer colour, unless a pack replaces it.
+    bool gobby_kart = false;
+    if (!v.body_model && id_of(parts_.bodies, b.body) == "standard") {
+        auto it = gobby_karts_.find(look.paint);
+        if (it == gobby_karts_.end())
+            it = gobby_karts_.emplace(look.paint, AssetLibrary::upload_painted(render::make_gobby_kart(look.paint), renderer_)).first;
+        v.body_model = &it->second;
+        gobby_kart = true;
+    }
     v.tire_model = assets_.tire(id_of(parts_.tires, b.tires));
     v.glider_model = assets_.glider(id_of(parts_.gliders, b.glider));
     // Procedural pieces for whatever the pack doesn't cover, and the layout.
@@ -217,6 +250,11 @@ const App::KartVisual& App::build_visual(const sim::Build& b, int slot) {
             }
             if (spec->has_seat) v.layout.seat = spec->seat;
         }
+    if (gobby_kart) {
+        // Its wheels sit wider, and the rear ones are bigger.
+        const float rf = 0.24f * look.tires.size, rr = 0.27f * look.tires.size;
+        v.layout.wheels = {{vec3(-0.62f, rf, 0.66f), rf}, {vec3(0.62f, rf, 0.66f), rf}, {vec3(-0.64f, rr, -0.66f), rr}, {vec3(0.64f, rr, -0.66f), rr}};
+    }
     if (!v.glider_model) v.glider = renderer_.upload_mesh(render::make_glider_mesh(look.glider));
     return build_visuals_.emplace(key, std::move(v)).first->second;
 }
@@ -757,6 +795,8 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     }
     if (s.ghost_frames > 0) tint = vec4(index == player_ ? 0.45f : 0.12f);
     const KartVisual& visual = kart_visuals_[size_t(index % 12)];
+    if (s.grounded && s.respawn_frames == 0)
+        renderer_.draw(shadow_mesh_, glm::scale(glm::translate(base, vec3(0, 0.03f, -0.02f)), vec3(1.15f, 1.0f, 1.55f)));
     if (!visual.layout.wheels.empty() && index < 12)
         wheel_angle_[size_t(index)] += s.speed / visual.layout.wheels[0].radius * frame_dt_;
     if (s.bullet_frames > 0) draw_item_mesh(bullet_mesh_, "bullet", base);
@@ -1084,6 +1124,7 @@ void App::render_menu(float dt) {
     renderer_.draw(scenery_mesh_, mat4(1.0f));
     const int mesh = online_ ? std::max(online_->seat(), 0) : std::clamp(options_.karts, 1, 12) - 1;
     const mat4 kart_m = glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot);
+    renderer_.draw(shadow_mesh_, glm::scale(glm::translate(kart_m, vec3(0, 0.03f, -0.02f)), vec3(1.15f, 1.0f, 1.55f)));
     if (const GpuModel* preview = options_.preview_model.empty() ? nullptr : assets_.item(options_.preview_model)) {
         draw_model(*preview, kart_m);
         // The kart's axes, for checking a model's orientation: red +X, green +Y, blue +Z.
@@ -1092,6 +1133,10 @@ void App::render_menu(float dt) {
         renderer_.draw(spark_mesh_, glm::scale(glm::translate(kart_m, vec3(0, 0.1f, 1.5f)), vec3(2.0f)), vec4(0, 0, 3, 1));
     } else {
         draw_kart_visual(build_visual(select_.build, mesh), kart_m, vec4(1.0f), 0.0f);
+    }
+    if (options_.hide_ui) {
+        renderer_.end_frame();
+        return;
     }
     switch (screen_) {
     case Screen::Title: draw_title(renderer_, title_); break;

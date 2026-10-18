@@ -264,6 +264,7 @@ void Renderer::shutdown() {
     destroy_swapchain();
     vkDestroyPipeline(device_, mesh_pipeline_, nullptr);
     vkDestroyPipeline(device_, mesh_pipeline_two_sided_, nullptr);
+    vkDestroyPipeline(device_, mesh_pipeline_blend_, nullptr);
     vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
     vkDestroyPipeline(device_, ui_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, ui_layout_, nullptr);
@@ -422,10 +423,21 @@ bool Renderer::create_pipeline() {
     const VkResult r = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &mesh_pipeline_);
     rs.cullMode = VK_CULL_MODE_NONE;
     const VkResult r2 = r == VK_SUCCESS ? vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &mesh_pipeline_two_sided_) : r;
+    // See-through variant: alpha blending, depth tested but not written.
+    cba.blendEnable = VK_TRUE;
+    cba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    cba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    cba.colorBlendOp = VK_BLEND_OP_ADD;
+    cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    cba.alphaBlendOp = VK_BLEND_OP_ADD;
+    ds.depthWriteEnable = VK_FALSE;
+    const VkResult r3 = r2 == VK_SUCCESS ? vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &mesh_pipeline_blend_) : r2;
     vkDestroyShaderModule(device_, vs, nullptr);
     vkDestroyShaderModule(device_, fs, nullptr);
     GK_VK_CHECK(r);
     GK_VK_CHECK(r2);
+    GK_VK_CHECK(r3);
     return true;
 }
 
@@ -789,7 +801,7 @@ void Renderer::destroy_image(Image& img) {
     img = {};
 }
 
-MeshId Renderer::upload_mesh(const MeshData& mesh, TextureId texture, bool two_sided) {
+MeshId Renderer::upload_mesh(const MeshData& mesh, TextureId texture, bool two_sided, bool unlit, bool blended) {
     // Low-poly meshes are small, so host-visible memory is fine; a staging
     // path can come later if a track ever needs it.
     GpuMesh g;
@@ -804,6 +816,8 @@ MeshId Renderer::upload_mesh(const MeshData& mesh, TextureId texture, bool two_s
     g.index_count = static_cast<uint32_t>(mesh.indices.size());
     g.texture = texture < textures2d_.size() ? texture : 0;
     g.two_sided = two_sided;
+    g.unlit = unlit;
+    g.blended = blended;
     meshes_.push_back(g);
     return static_cast<MeshId>(meshes_.size() - 1);
 }
@@ -930,10 +944,14 @@ void Renderer::end_frame() {
     } push;
     VkPipeline bound_pipeline = mesh_pipeline_;
     TextureId bound_texture = UINT32_MAX;
+    // Opaque meshes first, then the see-through ones in the order they came.
+    for (int pass = 0; pass < 2; ++pass)
     for (const auto& d : draws_) {
         const GpuMesh& m = meshes_[d.mesh];
         if (!m.index_count) continue;
-        const VkPipeline want = m.two_sided ? mesh_pipeline_two_sided_ : mesh_pipeline_;
+        const bool see_through = m.blended || d.tint.a < 0.99f;
+        if (see_through != (pass == 1)) continue;
+        const VkPipeline want = see_through ? mesh_pipeline_blend_ : m.two_sided ? mesh_pipeline_two_sided_ : mesh_pipeline_;
         if (want != bound_pipeline) {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, want);
             bound_pipeline = want;
@@ -942,7 +960,7 @@ void Renderer::end_frame() {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 1, 1, &textures2d_[m.texture].set, 0, nullptr);
             bound_texture = m.texture;
         }
-        push.flags = glm::ivec4(m.texture ? 1 : 0, 0, 0, 0);
+        push.flags = glm::ivec4(m.texture ? 1 : 0, m.unlit ? 1 : 0, 0, 0);
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
         vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);

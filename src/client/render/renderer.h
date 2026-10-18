@@ -58,7 +58,11 @@ public:
     TextureId upload_texture(int width, int height, const uint8_t* rgba);
     // `texture` > 0 draws the mesh with that texture (its UVs, no detail
     // array); `two_sided` skips back-face culling for thin leaves and cloth.
-    MeshId upload_mesh(const MeshData& mesh, TextureId texture = 0, bool two_sided = false);
+    // `unlit` draws the texture as is (shadows, glows).
+    // `blended` draws it see-through by alpha, after the opaque meshes and
+    // without writing depth (glass, shadows); draws with a tint alpha below
+    // 1 go there too.
+    MeshId upload_mesh(const MeshData& mesh, TextureId texture = 0, bool two_sided = false, bool unlit = false, bool blended = false);
 
     // Per-frame: begin, queue draws, end. begin_frame returns false when the
     // frame must be skipped (minimised window, swapchain being rebuilt).
@@ -105,6 +109,8 @@ private:
         uint32_t index_count = 0;
         TextureId texture = 0;
         bool two_sided = false;
+        bool unlit = false;
+        bool blended = false;
     };
     struct Texture2D {
         Image image;
@@ -183,6 +189,7 @@ private:
     VkPipelineLayout pipeline_layout_ = VK_NULL_HANDLE;
     VkPipeline mesh_pipeline_ = VK_NULL_HANDLE;
     VkPipeline mesh_pipeline_two_sided_ = VK_NULL_HANDLE;
+    VkPipeline mesh_pipeline_blend_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout texture_set_layout_ = VK_NULL_HANDLE;
     VkDescriptorPool texture_pool_ = VK_NULL_HANDLE;
     std::vector<Texture2D> textures2d_;

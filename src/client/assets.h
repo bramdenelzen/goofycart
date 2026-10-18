@@ -2,6 +2,7 @@
 // Optional model packs: a folder with a manifest.json that maps parts (by
 // their ids in data/parts.json) and items to model files, which replace the
 // procedural meshes when present. The folder is not part of the repository.
+#include "render/gobby_assets.h"
 #include "render/model.h"
 #include "render/renderer.h"
 
@@ -45,6 +46,12 @@ public:
     // logged and skipped; the procedural meshes stay for those parts.
     bool load(const std::string& dir, render::Renderer& renderer);
     bool loaded() const { return loaded_; }
+    // The game's own painted models, before any pack overrides them.
+    void add_builtin_item(const std::string& name, const render::PaintedModel& model, render::Renderer& renderer);
+    void add_builtin_tire(const std::string& part_id, const render::PaintedModel& model, render::Renderer& renderer) {
+        tires_[part_id] = upload_painted(model, renderer);
+    }
+    static GpuModel upload_painted(const render::PaintedModel& model, render::Renderer& renderer);
 
     const GpuModel* driver(const std::string& part_id) const { return find(drivers_, part_id); }
     const GpuModel* body(const std::string& part_id) const { return find(bodies_, part_id); }
