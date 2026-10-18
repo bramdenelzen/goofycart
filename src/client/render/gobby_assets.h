@@ -18,6 +18,7 @@ struct PaintedModel {
     Canvas texture{512};
     bool two_sided = false;
     bool blended = false; // see-through by texture alpha
+    MeshData glass;       // drawn see-through, after `mesh` (same texture)
     vec3 bounds_min{0.0f}, bounds_max{0.0f};
     void finish();
 };
@@ -38,6 +39,12 @@ std::map<std::string, PaintedModel> make_gobby_props();
 PaintedModel make_gobby_kart(uint32_t paint_rgba8);
 // A tyre and rim for a tyre part's look: radius 0.5 on the X axis, hub +X.
 PaintedModel make_gobby_tire(const sim::PartLook& look);
+
+// Items after Albert's reference paintings (gobby_items2.cpp).
+PaintedModel make_glass_item_box();
+PaintedModel make_banana_peel();
+PaintedModel make_tnt_bundle();
+PaintedModel make_turtle_shell(vec4 color, bool spiked_and_winged);
 
 // Writes <dir>/<name>/<name>.obj, .mtl and .png.
 bool export_painted_model(const PaintedModel& model, const std::string& dir, const std::string& name, std::string* error = nullptr);

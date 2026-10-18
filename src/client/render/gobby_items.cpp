@@ -24,162 +24,6 @@ namespace {
 
 using namespace gobby;
 
-// A shell: a dome with a rim and a flat underside, in a colour, optionally
-// spiked. Height 0.55, resting on y = 0.
-PaintedModel shell(vec4 color, bool spiked) {
-    PaintedModel m;
-    MeshBuilder b;
-    Canvas& t = m.texture;
-    // Dome, region (0..2, 0..2).
-    const UvRect dome = span(0, 0, 2, 2);
-    region(b, dome);
-    b.lathe({0, 0.1f, 0}, {0, 1, 0}, {{0.34f, 0.0f}, {0.36f, 0.06f}, {0.33f, 0.2f}, {0.25f, 0.35f}, {0.12f, 0.43f}, {0.0f, 0.45f}}, 28, kWhite, 1.0f, 1.0f);
-    shade_round(t, dome, color, 1.2f);
-    // Plates: dark seams in a honeycomb-ish ring pattern, lighter centres.
-    t.spots(dome, 9, 0.11f, shade(color, 1.25f), 101, 0.5f);
-    t.band_v(dome, 0.28f, 0.33f, shade(color, 0.6f), 0.02f);
-    t.band_v(dome, 0.58f, 0.63f, shade(color, 0.6f), 0.02f);
-    for (int i = 0; i < 8; ++i) t.band_u(dome, float(i) / 8.0f + 0.045f, float(i) / 8.0f + 0.065f, shade(color, 0.6f), 0.008f);
-    t.glow(dome, {0.5f, 0.92f}, 0.4f, vec4(1.0f, 1.0f, 1.0f, 0.4f), 1.0f); // the top catches the light
-    // Rim: a white lip, region (2..4, 0..1).
-    const UvRect rim = span(2, 0, 4, 1);
-    region(b, rim);
-    b.torus({0, 0.1f, 0}, {0, 1, 0}, 0.34f, 0.05f, kWhite, 28, 10);
-    t.gradient_v(rim, col(250, 248, 235), col(205, 198, 180));
-    // Underside: cream belly plates, region (2..4, 1..2).
-    const UvRect belly = span(2, 1, 4, 2);
-    region(b, belly);
-    b.lathe({0, 0.1f, 0}, {0, -1, 0}, {{0.0f, 0.1f}, {0.2f, 0.1f}, {0.32f, 0.06f}, {0.34f, 0.0f}}, 28, kWhite, 1.0f, 1.0f);
-    t.fill(belly, col(236, 220, 170));
-    t.band_v(belly, 0.3f, 0.34f, col(190, 170, 120), 0.02f);
-    t.band_v(belly, 0.62f, 0.66f, col(190, 170, 120), 0.02f);
-    if (spiked) {
-        const UvRect spike = span(0, 2, 2, 3);
-        region(b, spike);
-        for (int i = 0; i < 7; ++i) {
-            vec3 dir;
-            float at;
-            if (i == 6) {
-                dir = vec3(0, 1, 0);
-                at = 0.0f;
-            } else {
-                const float a = 2.0f * kPi * float(i) / 6.0f;
-                dir = glm::normalize(vec3(std::cos(a), 0.7f, std::sin(a)));
-                at = 1.0f;
-            }
-            const vec3 base = vec3(0, 0.1f, 0) + vec3(dir.x * 0.22f * at, 0.22f + 0.1f * (1.0f - at), dir.z * 0.22f * at);
-            b.tube(base - dir * 0.02f, base + dir * 0.18f, 0.06f, 0.008f, kWhite, 12, true);
-        }
-        t.gradient_v(spike, col(255, 255, 250), col(170, 170, 160));
-    }
-    m.mesh = b.take();
-    m.finish();
-    return m;
-}
-
-PaintedModel banana() {
-    PaintedModel m;
-    MeshBuilder b;
-    Canvas& t = m.texture;
-    // The fruit: a bent tube, standing on its end as a peel would.
-    const UvRect body = span(0, 0, 2, 4);
-    region(b, body);
-    std::vector<vec3> path;
-    std::vector<float> radii;
-    const int n = 12;
-    for (int i = 0; i <= n; ++i) {
-        const float s = float(i) / float(n);
-        const float a = (s - 0.5f) * 1.7f;
-        path.push_back({std::sin(a) * 0.3f, 0.03f + s * 0.62f, -(1.0f - std::cos(a)) * 0.22f});
-        radii.push_back(0.025f + 0.095f * std::sin(s * kPi) * (s < 0.5f ? 1.0f : 1.0f));
-    }
-    b.sweep(path, radii, kWhite, 14, true);
-    t.gradient_u(body, col(252, 224, 60), col(228, 180, 30));
-    t.band_v(body, 0.0f, 0.07f, col(110, 70, 30), 0.03f);
-    t.band_v(body, 0.93f, 1.0f, col(110, 70, 30), 0.03f);
-    for (int i = 0; i < 4; ++i) t.band_u(body, float(i) / 4.0f + 0.1f, float(i) / 4.0f + 0.13f, col(200, 150, 20, 0.7f), 0.012f);
-    t.glow(body, {0.3f, 0.5f}, 0.3f, vec4(1.0f, 1.0f, 0.85f, 0.35f), 1.0f);
-    t.spots(body, 6, 0.03f, col(120, 80, 30, 0.6f), 7, 0.5f);
-    // Three peel flaps hanging from the top, cream inside.
-    const UvRect flap = span(2, 0, 4, 2);
-    region(b, flap);
-    for (int i = 0; i < 3; ++i) {
-        const float a = 2.0f * kPi * float(i) / 3.0f + 0.4f;
-        const vec3 dir(std::cos(a), 0.0f, std::sin(a));
-        const vec3 top = path.back();
-        std::vector<vec3> fp;
-        std::vector<vec2> fs;
-        for (int k = 0; k <= 6; ++k) {
-            const float s = float(k) / 6.0f;
-            fp.push_back(top + dir * (s * 0.26f) + vec3(0, -s * s * 0.32f + s * 0.05f, 0));
-            fs.push_back({0.075f * (1.0f - 0.6f * s * s), 0.012f});
-        }
-        ribbon(b, fp, fs, kWhite, 10);
-    }
-    t.gradient_v(flap, col(250, 236, 180), col(236, 196, 70));
-    t.band_v(flap, 0.9f, 1.0f, col(120, 80, 30), 0.05f);
-    m.mesh = b.take();
-    m.finish();
-    return m;
-}
-
-PaintedModel bomb() {
-    PaintedModel m;
-    MeshBuilder b;
-    Canvas& t = m.texture;
-    const float r = 0.3f;
-    const vec3 c(0, 0.4f, 0);
-    const UvRect body = span(0, 0, 2, 2);
-    region(b, body);
-    b.sphere(c, r, kWhite, 32, 20);
-    shade_round(t, body, col(40, 42, 56), 1.4f);
-    t.glow(body, {0.2f, 0.3f}, 0.14f, vec4(0.7f, 0.75f, 1.0f, 0.45f), 0.8f);
-    // Face on the front (u = 0.25).
-    t.eye(body, {0.19f, 0.42f}, {0.045f, 0.075f}, col(30, 30, 40), 0.25f);
-    t.eye(body, {0.31f, 0.42f}, {0.045f, 0.075f}, col(30, 30, 40), 0.25f);
-    t.mouth(body, {0.25f, 0.58f}, 0.08f, -0.02f, 0.012f, col(10, 10, 15, 0.8f));
-    // Wind-up key on the back and a fuse on top.
-    const UvRect metal = span(2, 0, 3, 1);
-    region(b, metal);
-    b.tube(c + vec3(0, 0, -r + 0.02f), c + vec3(0, 0, -r - 0.1f), 0.03f, 0.03f, kWhite, 10, true);
-    b.rounded_box(c + vec3(0, 0, -r - 0.12f), {0.1f, 0.025f, 0.02f}, 0.012f, kWhite, 10, 6);
-    b.tube(c + vec3(0, r - 0.02f, 0), c + vec3(0, r + 0.1f, 0), 0.05f, 0.045f, kWhite, 12, true);
-    t.gradient_v(metal, col(225, 228, 235), col(130, 134, 150));
-    const UvRect fuse = span(3, 0, 4, 1);
-    region(b, fuse);
-    b.sweep({c + vec3(0, r + 0.1f, 0), c + vec3(0.03f, r + 0.19f, 0.02f), c + vec3(0.09f, r + 0.24f, 0.05f)}, 0.014f, kWhite, 8);
-    t.fill(fuse, col(240, 220, 170));
-    b.sphere(c + vec3(0.09f, r + 0.25f, 0.05f), 0.035f, kWhite, 10, 8);
-    // Feet.
-    const UvRect feet = span(2, 1, 4, 2);
-    region(b, feet);
-    for (float x : {-0.14f, 0.14f}) b.sphere({x, 0.06f, 0.05f}, vec3(0.1f, 0.06f, 0.13f), kWhite, 14, 8);
-    shade_round(t, feet, col(240, 170, 40), 1.0f);
-    m.mesh = b.take();
-    m.finish();
-    return m;
-}
-
-PaintedModel item_box() {
-    PaintedModel m;
-    MeshBuilder b;
-    Canvas& t = m.texture;
-    const UvRect face = span(0, 0, 4, 4);
-    region(b, face);
-    b.box_painted({0, 0, 0}, vec3(0.5f), kWhite);
-    // Glassy rainbow face, see-through, with a bold "?".
-    t.gradient_v(face, col(120, 220, 255, 0.55f), col(255, 150, 230, 0.55f));
-    t.gradient_u(face, col(255, 240, 120, 0.25f), col(140, 255, 180, 0.25f));
-    t.glow(face, {0.3f, 0.3f}, 0.35f, vec4(1.0f, 1.0f, 1.0f, 0.4f), 1.0f);
-    t.vignette(face, 0.35f, 0.08f);
-    t.question_mark(face, {0.5f, 0.5f}, 0.6f, 0.11f, col(255, 255, 255, 0.95f));
-    m.mesh = b.take();
-    m.two_sided = true;
-    m.blended = true;
-    m.finish();
-    return m;
-}
-
 PaintedModel bullet() {
     // A rocket with a grin, 2.8 m long, axis at y = 0.8, nose at +z.
     PaintedModel m;
@@ -480,12 +324,12 @@ PaintedModel fireball() {
 
 std::map<std::string, PaintedModel> make_gobby_items() {
     std::map<std::string, PaintedModel> out;
-    out["banana"] = banana();
-    out["green_shell"] = shell(col(70, 190, 70), false);
-    out["red_shell"] = shell(col(225, 55, 45), false);
-    out["spiked_shell"] = shell(col(60, 110, 230), true);
-    out["bomb"] = bomb();
-    out["item_box"] = item_box();
+    out["banana"] = make_banana_peel();
+    out["green_shell"] = make_turtle_shell(col(52, 150, 52), false);
+    out["red_shell"] = make_turtle_shell(col(178, 32, 38), false);
+    out["spiked_shell"] = make_turtle_shell(col(32, 58, 170), true);
+    out["bomb"] = make_tnt_bundle();
+    out["item_box"] = make_glass_item_box();
     out["bullet"] = bullet();
     out["chomper"] = chomper();
     out["boomerang"] = boomerang();

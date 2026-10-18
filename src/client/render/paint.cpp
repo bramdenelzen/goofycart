@@ -79,6 +79,10 @@ template <class F> void Canvas::paint(const UvRect& r, F&& f) {
         }
 }
 
+void Canvas::custom(const UvRect& r, const std::function<vec4(float, float)>& f) {
+    paint(r, [&](float u, float v) { return f(u, v); });
+}
+
 void Canvas::fill(const UvRect& r, vec4 color) {
     paint(r, [&](float, float) { return color; });
 }
@@ -167,7 +171,7 @@ void Canvas::rounded(const UvRect& r, UvRect inner, float corner, vec4 color) {
     paint(r, [&](float u, float v) {
         const float cx = std::clamp(u, inner.x0 + corner, inner.x1 - corner), cy = std::clamp(v, inner.y0 + corner, inner.y1 - corner);
         const float d = std::sqrt((u - cx) * (u - cx) + (v - cy) * (v - cy));
-        const float a = 1.0f - smooth01((d - corner + 0.01f) / 0.01f);
+        const float a = 1.0f - smooth01((d - corner) / 0.006f + 0.5f);
         return vec4(color.r, color.g, color.b, color.a * a);
     });
 }
@@ -271,17 +275,14 @@ void Canvas::windows(const UvRect& r, int cols, int rows, vec4 frame, vec4 lit, 
 }
 
 void Canvas::question_mark(const UvRect& r, vec2 c, float height, float thickness, vec4 color) {
-    // Hook: an arc over the top; stem: a short vertical; dot below.
-    const float rad = height * 0.26f;
-    arc(r, c + vec2(0.0f, -height * 0.2f), rad, -kPi, kPi * 0.35f, thickness, color);
-    paint(r, [&](float u, float v) {
-        const float stem_top = c.y - height * 0.2f + rad * std::sin(kPi * 0.35f);
-        const float x = u - c.x, y = v;
-        float a = 0.0f;
-        if (std::abs(x - rad * std::cos(kPi * 0.35f) * 0.5f) < thickness * 0.5f && y > stem_top - thickness * 0.3f && y < c.y + height * 0.22f) a = 1.0f;
-        if (std::abs(x) < thickness * 0.55f && y > c.y + height * 0.33f && y < c.y + height * 0.5f) a = 1.0f;
-        return vec4(color.r, color.g, color.b, color.a * a);
-    });
+    // A hook from the left, over the top and round to the bottom of its
+    // circle; a stem straight down from there; a dot below.
+    const float rad = height * 0.25f;
+    const vec2 hook = c + vec2(0.0f, -height * 0.2f);
+    arc(r, hook, rad, -kPi, kPi * 0.5f, thickness, color);
+    const float stem_top = hook.y + rad, stem_bottom = c.y + height * 0.2f;
+    rounded(r, {c.x - thickness * 0.5f, stem_top - thickness * 0.1f, c.x + thickness * 0.5f, stem_bottom}, thickness * 0.15f, color);
+    rounded(r, {c.x - thickness * 0.55f, c.y + height * 0.3f, c.x + thickness * 0.55f, c.y + height * 0.3f + thickness * 1.1f}, thickness * 0.3f, color);
 }
 
 void Canvas::star(const UvRect& r, vec2 c, float radius, vec4 color) {

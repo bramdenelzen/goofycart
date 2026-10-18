@@ -5,6 +5,7 @@
 #include "gk/core/math.h"
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace gk::render {
@@ -62,6 +63,9 @@ public:
     // Text-like glyph: a bold "?" or a letter drawn from strokes.
     void question_mark(const UvRect& r, vec2 uv, float height, float thickness, vec4 color);
     void star(const UvRect& r, vec2 uv, float radius, vec4 color);
+
+    // Paints any function of (u, v) in rect units; returns RGBA to blend.
+    void custom(const UvRect& r, const std::function<vec4(float, float)>& f);
 
     // Per-pixel access, uv in rect units.
     vec4 get(const UvRect& r, float u, float v) const;

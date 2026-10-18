@@ -1144,8 +1144,12 @@ void App::render_menu(float dt) {
     const vec3 orbit = glm::angleAxis(menu_angle_, kUp) * (fwd * 4.2f);
     render::Camera cam;
     cam.position = k.pos + orbit + kUp * 1.6f;
+    if (!options_.preview_model.empty()) { // close and high, to inspect a model
+        cam.position = k.pos + orbit * 0.32f + kUp * 1.3f;
+    }
     // Look past the kart so it sits right of centre, clear of the menu panel.
     cam.target = k.pos + kUp * 0.5f - glm::normalize(glm::cross(kUp, orbit)) * 1.3f;
+    if (!options_.preview_model.empty()) cam.target = k.pos + kUp * 0.25f;
     cam.fov_y_deg = 55.0f;
     if (!renderer_.begin_frame(cam, light_)) return;
     renderer_.draw(track_mesh_, mat4(1.0f));
