@@ -76,7 +76,7 @@ public:
     // The 2D overlay is laid out in a virtual space kUiHeight pixels high
     // (the width follows the aspect), scaled to the internal image: the HUD
     // keeps its size whatever the resolution.
-    static constexpr uint32_t kUiHeight = 320;
+    static constexpr uint32_t kUiHeight = 360;
     VkExtent2D ui_extent() const {
         const float h = float(std::max<uint32_t>(offscreen_extent_.height, 1));
         return {uint32_t(std::lround(float(offscreen_extent_.width) * float(kUiHeight) / h)), kUiHeight};

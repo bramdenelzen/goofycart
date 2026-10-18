@@ -193,6 +193,229 @@ MeshData make_track_mesh(const sim::Track& t) {
     return b.take();
 }
 
+// ---- trackside detail: kerbs, wall rails and posts, a start gantry,
+// grandstands, flags and rolling hills.
+
+// A quad wound so its normal points along `want`.
+void facing_quad(MeshBuilder& b, vec3 p0, vec3 p1, vec3 p2, vec3 p3, vec3 want, uint32_t color) {
+    if (glm::dot(glm::cross(p1 - p0, p2 - p0), want) < 0.0f) b.quad(p0, p3, p2, p1, color);
+    else b.quad(p0, p1, p2, p3, color);
+}
+
+// Which samples have a wall on each side, read back from the wall triangles.
+std::pair<std::vector<bool>, std::vector<bool>> walls_of(const sim::Track& t) {
+    constexpr int kStride = 9;
+    const int n = int(t.center.size());
+    std::vector<bool> left(size_t(n), false), right(size_t(n), false);
+    for (const auto& tri : t.triangles) {
+        if (tri.surface != sim::Surface::Wall) continue;
+        for (uint32_t vi : {tri.a, tri.b, tri.c}) {
+            if (vi >= uint32_t(n * kStride)) break;
+            const int col = int(vi % kStride), sample = int(vi / kStride);
+            if (col == 7) left[size_t(sample)] = true;
+            if (col == 8) right[size_t(sample)] = true;
+        }
+    }
+    return {left, right};
+}
+
+void kerbs(MeshBuilder& b, const sim::Track& t) {
+    constexpr int kStride = 9;
+    const int n = int(t.center.size());
+    const uint32_t red = rgba(220, 50, 50), white = rgba(240, 240, 240);
+    b.texture(TexWhite);
+    for (int i = 0; i < n; ++i) {
+        const int j = (i + 1) % n;
+        const sim::CenterSample& c = t.center[size_t(i)];
+        const sim::CenterSample& d = t.center[size_t(j)];
+        if (!c.has_floor || !d.has_floor) continue;
+        for (int side = 0; side < 2; ++side) {
+            // Road edge and wall base on this side, at both samples.
+            const int edge = side ? 5 : 1, base = side ? 6 : 0;
+            const vec3 e0 = t.vertices[size_t(i * kStride + edge)], e1 = t.vertices[size_t(j * kStride + edge)];
+            const vec3 b0 = t.vertices[size_t(i * kStride + base)], b1 = t.vertices[size_t(j * kStride + base)];
+            const float verge = glm::length(b0 - e0);
+            if (verge < 0.5f) continue;
+            const float w = std::min(0.7f, verge - 0.2f);
+            const vec3 out0 = glm::normalize(b0 - e0), out1 = glm::normalize(b1 - e1);
+            const uint32_t col = ((i / 2) & 1) ? red : white;
+            const vec3 lip = c.up * 0.07f;
+            facing_quad(b, e0 + lip, e1 + d.up * 0.07f, e1 + out1 * w, e0 + out0 * w, c.up, col);
+            facing_quad(b, e0, e1, e1 + d.up * 0.07f, e0 + lip, -out0, shade(col, 0.8f));
+        }
+    }
+}
+
+void wall_rails(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th) {
+    constexpr int kStride = 9;
+    const int n = int(t.center.size());
+    const auto [left, right] = walls_of(t);
+    const uint32_t rail = th.wall_a, post = shade(th.wall_b, 0.85f);
+    b.texture(TexWhite);
+    for (int side = 0; side < 2; ++side) {
+        const std::vector<bool>& has = side ? right : left;
+        const int top = side ? 8 : 7, base = side ? 6 : 0;
+        // Runs of consecutive walled samples, each swept as one tube.
+        int start = -1;
+        auto flush = [&](int from, int to) { // inclusive sample range, may wrap
+            std::vector<vec3> path;
+            for (int k = from;; k = (k + 1) % n) {
+                path.push_back(t.vertices[size_t(k * kStride + top)] + t.center[size_t(k)].up * 0.1f);
+                if (k == to) break;
+            }
+            if (path.size() >= 2) b.sweep(path, 0.17f, rail, 8, true);
+            int k = from, count = 0;
+            for (;; k = (k + 1) % n, ++count) {
+                if (count % 5 == 0) {
+                    const vec3 foot = t.vertices[size_t(k * kStride + base)], head = t.vertices[size_t(k * kStride + top)];
+                    const vec3 out = side ? t.center[size_t(k)].right : -t.center[size_t(k)].right;
+                    b.tube(foot + out * 0.1f, head + out * 0.1f + t.center[size_t(k)].up * 0.25f, 0.12f, 0.1f, post, 8, true);
+                }
+                if (k == to) break;
+            }
+        };
+        // Find a sample without a wall to start scanning from, so runs don't split at 0.
+        int origin = 0;
+        while (origin < n && has[size_t(origin)]) ++origin;
+        if (origin == n) { // walled all the way round
+            flush(0, n - 1);
+            continue;
+        }
+        for (int step = 0; step < n; ++step) {
+            const int k = (origin + step) % n;
+            if (has[size_t(k)] && start < 0) start = k;
+            if (!has[size_t(k)] && start >= 0) {
+                flush(start, (k - 1 + n) % n);
+                start = -1;
+            }
+        }
+        if (start >= 0) flush(start, (origin - 1 + n) % n);
+    }
+}
+
+mat4 frame_at(const sim::CenterSample& c, vec3 pos) {
+    return mat4(vec4(c.right, 0.0f), vec4(c.up, 0.0f), vec4(c.tangent, 0.0f), vec4(pos, 1.0f));
+}
+
+void start_gantry(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th) {
+    constexpr int kStride = 9;
+    const sim::CenterSample& c = t.center.front();
+    const vec3 l = t.vertices[0], r = t.vertices[kStride - 3];
+    const float half = 0.5f * glm::length(r - l) + 0.9f;
+    const float h = 6.5f;
+    MeshBuilder g;
+    g.texture(TexWhite);
+    const uint32_t steel = rgba(200, 204, 212);
+    for (float x : {-half, half}) {
+        g.tube({x, -0.5f, 0.0f}, {x, h, 0.0f}, 0.28f, 0.22f, steel, 12, true);
+        g.rounded_box({x, 0.2f, 0.0f}, {0.6f, 0.2f, 0.6f}, 0.08f, shade(steel, 0.8f), 12, 8);
+    }
+    g.rounded_box({0.0f, h, 0.0f}, {half + 0.2f, 0.32f, 0.5f}, 0.12f, steel, 12, 8);
+    // Banner under the beam: a checker band, seen from both directions.
+    const float by = h - 0.35f, bh = 1.4f;
+    const int cells = std::max(2, int(half * 2.0f / 1.2f));
+    const float cw = half * 2.0f / float(cells);
+    for (int i = 0; i < cells; ++i) {
+        const float x0 = -half + float(i) * cw, x1 = x0 + cw;
+        for (int row = 0; row < 2; ++row) {
+            const float y0 = by - bh + float(row) * bh * 0.5f, y1 = y0 + bh * 0.5f;
+            const uint32_t col = ((i + row) & 1) ? rgba(30, 30, 34) : rgba(245, 245, 245);
+            g.quad({x0, y0, -0.02f}, {x0, y1, -0.02f}, {x1, y1, -0.02f}, {x1, y0, -0.02f}, col);
+            g.quad({x1, y0, 0.02f}, {x1, y1, 0.02f}, {x0, y1, 0.02f}, {x0, y0, 0.02f}, col);
+        }
+    }
+    // Lights along the beam.
+    for (int i = 0; i <= 4; ++i) {
+        const float x = -half + (2.0f * half) * float(i) / 4.0f;
+        g.sphere({x, h + 0.45f, 0.0f}, 0.22f, i == 2 ? rgba(255, 90, 60) : th.wall_b, 10, 7);
+    }
+    b.append(g.take(), frame_at(c, c.pos));
+}
+
+void grandstands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng& rnd) {
+    constexpr int kStride = 9;
+    const int n = int(t.center.size());
+    // A stand on each side of the straight after the start, where there is room.
+    for (int side = -1; side <= 1; side += 2) {
+        const int at = 6 % n;
+        const sim::CenterSample& c = t.center[size_t(at)];
+        const vec3 base_v = t.vertices[size_t(at * kStride + (side > 0 ? 6 : 0))];
+        const float off = glm::length(base_v - c.pos) + 3.0f;
+        vec3 base = c.pos + c.right * float(side) * off;
+        bool clear = true;
+        for (int j = 0; j < n && clear; j += 3) {
+            if (std::abs(j - at) < 12 || std::abs(j - at) > n - 12) continue;
+            clear = glm::length(vec2(t.center[size_t(j)].pos.x - base.x, t.center[size_t(j)].pos.z - base.z)) > t.center[size_t(j)].half_width + 10.0f;
+        }
+        if (!clear) continue;
+        MeshBuilder g;
+        g.texture(TexPanel, 2.0f);
+        const float len = 14.0f;
+        const uint32_t frame = rgba(150, 150, 160);
+        // Four tiers stepping up and back, each a bench row in a crowd colour.
+        for (int tier = 0; tier < 4; ++tier) {
+            const float d = 1.0f + 1.6f * float(tier), y = 0.8f * float(tier);
+            g.rounded_box({float(side) * (d + 0.8f), y + 0.5f, 0.0f}, {0.8f, 0.5f, len * 0.5f}, 0.08f, tier % 2 ? shade(th.wall_a, 0.9f) : th.wall_b, 10, 6);
+            // Spectators: a row of little heads.
+            for (float z = -len * 0.5f + 0.6f; z < len * 0.5f; z += 0.9f) {
+                if (rnd() < 0.2f) continue;
+                const uint32_t shirt = rnd() < 0.5f ? th.wall_b : rgba(uint8_t(80 + rnd() * 170), uint8_t(80 + rnd() * 170), uint8_t(80 + rnd() * 170));
+                g.capsule({float(side) * (d + 0.8f), y + 1.0f, z}, {float(side) * (d + 0.8f), y + 1.45f, z}, 0.25f, shirt, 8, 3);
+                g.sphere({float(side) * (d + 0.8f), y + 1.75f, z}, 0.22f, rgba(uint8_t(170 + rnd() * 70), uint8_t(120 + rnd() * 60), uint8_t(80 + rnd() * 50)), 10, 7);
+            }
+        }
+        // Back wall and a roof on posts.
+        g.rounded_box({float(side) * 8.2f, 2.0f, 0.0f}, {0.2f, 2.0f, len * 0.5f + 0.5f}, 0.05f, frame, 8, 6);
+        for (float z : {-len * 0.5f, len * 0.5f}) g.tube({float(side) * 1.4f, 0.0f, z}, {float(side) * 1.4f, 5.2f, z}, 0.12f, 0.12f, frame, 8, true);
+        g.rounded_box({float(side) * 4.8f, 5.4f, 0.0f}, {3.8f, 0.15f, len * 0.5f + 0.8f}, 0.05f, th.wall_a, 8, 6);
+        b.append(g.take(), frame_at(c, base));
+    }
+}
+
+void flags(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, const std::vector<bool>& left, const std::vector<bool>& right) {
+    constexpr int kStride = 9;
+    const int n = int(t.center.size());
+    b.texture(TexWhite);
+    for (int i = 3; i < n; i += 14) {
+        const sim::CenterSample& c = t.center[size_t(i)];
+        if (!c.has_floor) continue;
+        const int side = (i / 14) % 2 ? 1 : -1;
+        const bool walled = side > 0 ? right[size_t(i)] : left[size_t(i)];
+        const vec3 base_v = t.vertices[size_t(i * kStride + (side > 0 ? 6 : 0))];
+        const vec3 foot = base_v + c.right * float(side) * (walled ? 0.9f : 0.3f);
+        const float h = 5.0f;
+        b.tube(foot - c.up * 0.5f, foot + c.up * h, 0.09f, 0.07f, rgba(220, 220, 228), 8, true);
+        b.sphere(foot + c.up * (h + 0.1f), 0.14f, rgba(250, 210, 80), 8, 6);
+        const vec3 top = foot + c.up * (h - 0.1f);
+        const uint32_t col = (i / 14) % 3 == 0 ? th.wall_b : (i / 14) % 3 == 1 ? th.wall_a : rgba(250, 210, 80);
+        const vec3 tip = top + c.tangent * 1.6f - c.up * 0.6f;
+        b.tri(top, top - c.up * 1.2f, tip, col);
+        b.tri(top, tip, top - c.up * 1.2f, col);
+    }
+}
+
+void hills(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng& rnd, vec3 mid, float span, float floor_y) {
+    using S = ThemeStyle::Scenery;
+    if (th.scenery == S::City || th.scenery == S::Clouds) return;
+    const uint32_t tex = th.scenery == S::Pines ? TexSnow : th.scenery == S::Cactus ? TexSand : th.scenery == S::Mesas ? TexRock : th.scenery == S::Lava ? TexRock : TexGrass;
+    const uint32_t col = th.scenery == S::Pines ? rgba(236, 242, 250) : th.scenery == S::Cactus ? rgba(222, 190, 128) : th.scenery == S::Mesas ? rgba(196, 130, 80) : th.scenery == S::Lava ? rgba(60, 50, 52) : th.scenery == S::Harbor ? rgba(110, 176, 90) : rgba(96, 168, 70);
+    b.texture(tex, 6.0f);
+    for (int i = 0; i < 70; ++i) {
+        const float a = rnd() * 2.0f * kPi;
+        const float d = span * 0.55f + 30.0f + rnd() * 160.0f;
+        const vec3 p(mid.x + std::cos(a) * d, floor_y, mid.z + std::sin(a) * d);
+        const float r = 18.0f + rnd() * 45.0f, h = 6.0f + rnd() * 22.0f;
+        bool clear = true;
+        for (size_t j = 0; j < t.center.size() && clear; j += 3) {
+            const sim::CenterSample& c = t.center[j];
+            clear = glm::length(vec2(c.pos.x - p.x, c.pos.z - p.z)) > c.half_width + r * 0.9f || c.pos.y > floor_y + h + 4.0f;
+        }
+        if (!clear) continue;
+        std::vector<vec2> prof{{r, -2.0f}, {r * 0.92f, h * 0.2f}, {r * 0.7f, h * 0.55f}, {r * 0.38f, h * 0.85f}, {0.0f, h}};
+        b.lathe(p, kUp, prof, 18, col, 8.0f, 2.0f);
+    }
+}
+
 MeshData make_scenery_mesh(const sim::Track& t) {
     using S = ThemeStyle::Scenery;
     const ThemeStyle& th = theme_style(t.theme);
@@ -236,11 +459,11 @@ MeshData make_scenery_mesh(const sim::Track& t) {
     }
 
     // Props beside the track, away from the road.
-    for (size_t i = 0; i < t.center.size(); i += 9) {
+    for (size_t i = 0; i < t.center.size(); i += 6) {
         const sim::CenterSample& c = t.center[i];
         for (float side : {-1.0f, 1.0f}) {
-            if (rnd() < 0.45f) continue;
-            const float dist = c.half_width + 18.0f + rnd() * 30.0f;
+            if (rnd() < 0.3f) continue;
+            const float dist = c.half_width + 14.0f + rnd() * 30.0f;
             vec3 base = c.pos + c.right * side * dist;
             // Keep clear of other parts of the track.
             bool clear = true;
@@ -310,16 +533,17 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 break;
             }
             case S::Mesas: {
+                if (rnd() < 0.5f) break; // mesas are big: fewer of them
                 base.y = floor_y;
                 const float h = (c.pos.y - floor_y) + 6.0f + rnd() * 25.0f;
-                const float r = 5.0f + rnd() * 8.0f;
-                b.texture(TexRock, 3.0f);
-                for (int k = 0; k < 3; ++k) {
-                    const float seg = h / 3.0f;
-                    b.cone(base + vec3(0, seg * float(k), 0), r * (1.0f - 0.12f * float(k)), seg * 1.05f, 11,
-                           k % 2 ? rgba(186, 104, 64) : rgba(206, 124, 78));
-                }
-                b.cone(base + vec3(0, h, 0), r * 0.64f, 0.5f, 11, rgba(216, 150, 96));
+                const float r = 6.0f + rnd() * 9.0f;
+                b.texture(TexRock, 4.0f);
+                // A flat-topped butte: a wide skirt, two ledges and a cap.
+                std::vector<vec2> prof{{r * 1.3f, 0.0f}, {r * 1.05f, h * 0.12f}, {r * 0.95f, h * 0.4f}, {r * 0.8f, h * 0.44f},
+                                       {r * 0.76f, h * 0.72f}, {r * 0.62f, h * 0.76f}, {r * 0.58f, h * 0.98f}, {r * 0.5f, h}, {0.0f, h}};
+                b.lathe(base, kUp, prof, 16, rgba(200, 120, 74), 4.0f, 2.0f);
+                b.texture(TexSand, 3.0f);
+                b.lathe(base + vec3(0, h + 0.05f, 0), kUp, {{r * 0.5f, 0.0f}, {0.0f, 0.1f}}, 16, rgba(222, 160, 104));
                 break;
             }
             case S::Lava: {
@@ -378,6 +602,15 @@ MeshData make_scenery_mesh(const sim::Track& t) {
             const vec3 p = mid + vec3(std::cos(a) * std::cos(e), std::sin(e), std::sin(a) * std::cos(e)) * d;
             b.icosphere(p, 1.2f + rnd() * 1.0f, th.scenery == S::City ? rgba(255, 255, 230) : rgba(255, 140, 60));
         }
+    }
+    hills(b, t, th, rnd, mid, span, floor_y);
+    kerbs(b, t);
+    wall_rails(b, t, th);
+    start_gantry(b, t, th);
+    grandstands(b, t, th, rnd);
+    {
+        const auto [left, right] = walls_of(t);
+        flags(b, t, th, left, right);
     }
     return b.take();
 }
