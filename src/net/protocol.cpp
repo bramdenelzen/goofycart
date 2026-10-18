@@ -157,6 +157,10 @@ void write_kart(Writer& w, const sim::KartState& s) {
     w.u8(uint8_t(std::clamp(s.accel_hold_frames, 0, 255)));
     w.q16(s.visual_drift_yaw, 1.0f);
     w.q8u(s.wall_bump, 1.0f);
+    if (s.gliding) {
+        w.i8(int8_t(std::lround(std::clamp(s.glide_bank, -1.0f, 1.0f) * 127.0f)));
+        w.i8(int8_t(std::lround(std::clamp(s.glide_pitch, -1.0f, 1.0f) * 127.0f)));
+    }
     if (flags & (1u << 9)) {
         w.u8(uint8_t(s.item));
         w.u8(uint8_t(s.item_next));
@@ -225,6 +229,10 @@ sim::KartState read_kart(Reader& r) {
     s.accel_hold_frames = r.u8();
     s.visual_drift_yaw = r.q16(1.0f);
     s.wall_bump = r.q8u(1.0f);
+    if (s.gliding) {
+        s.glide_bank = float(r.i8()) / 127.0f;
+        s.glide_pitch = float(r.i8()) / 127.0f;
+    }
     s.item_button_prev = flags & (1u << 7);
     s.trailing = flags & (1u << 8);
     if (flags & (1u << 9)) {

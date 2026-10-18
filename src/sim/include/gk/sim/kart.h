@@ -67,6 +67,8 @@ struct KartState {
     float trick_anim = 0.0f;       // 0..1 visual spin
     bool glide_armed = false;
     bool gliding = false;
+    float glide_bank = 0.0f;       // radians, + right wing down; it is what turns the glider
+    float glide_pitch = 0.0f;      // radians, + nose up
 
     int respawn_frames = 0;        // > 0 while the kart is carried back to the track
     int stuck_frames = 0;          // trying to drive but not moving: wedged, rescued after a while

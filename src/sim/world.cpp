@@ -240,6 +240,8 @@ bool World::adopt_motion(int kart, const KartState& c, std::span<const KartInput
     k.trick_anim = c.trick_anim;
     k.glide_armed = c.glide_armed;
     k.gliding = c.gliding;
+    k.glide_bank = c.glide_bank;
+    k.glide_pitch = c.glide_pitch;
     k.visual_drift_yaw = c.visual_drift_yaw;
     k.wall_bump = c.wall_bump;
     k.stuck_frames = c.stuck_frames;

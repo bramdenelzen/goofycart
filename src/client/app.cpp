@@ -987,6 +987,13 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     }
     mat4 m = glm::translate(mat4(1.0f), pos) * glm::mat4_cast(rot);
     m = glm::rotate(m, -s.visual_drift_yaw, vec3(0, 1, 0));
+    if (s.gliding) { // bank into the turn, nose up or down with the stick
+        const float bank = glm::mix(p.glide_bank, s.glide_bank, alpha), pitch = glm::mix(p.glide_pitch, s.glide_pitch, alpha);
+        m = glm::translate(m, vec3(0, 0.6f, 0));
+        m = glm::rotate(m, bank, vec3(0, 0, 1));
+        m = glm::rotate(m, -pitch, vec3(1, 0, 0));
+        m = glm::translate(m, vec3(0, -0.6f, 0));
+    }
     if (s.trick_anim > 0.0f) m = glm::rotate(m, (1.0f - s.trick_anim) * 2.0f * kPi, vec3(0, 0, 1));
     if (s.drift == sim::DriftState::Drifting) m = glm::rotate(m, float(s.drift_dir) * 0.08f, vec3(0, 0, 1));
     if (s.wall_bump > 0.0f) m = glm::rotate(m, std::sin(float(frame_) * 1.7f) * 0.08f * s.wall_bump, vec3(0, 1, 0));

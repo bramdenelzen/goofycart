@@ -170,6 +170,8 @@ void land(KartState& s, const Probe& pr, const KartInput& in, const KartStepCont
     if (s.air_frames > 20) emit(ctx, KartEventType::Land, s.air_frames);
     s.gliding = false;
     s.glide_armed = false;
+    s.glide_bank = 0.0f;
+    s.glide_pitch = 0.0f;
     s.trick_window = 0;
     if (s.trick_done) {
         s.trick_done = false;
@@ -206,18 +208,27 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
     }
 
     if (s.gliding) {
+        // A glider, not a cursor: the stick rolls it into a bank and the bank
+        // turns it; the stick fore and aft tips the nose, trading height for
+        // speed. Both ease in, and the flight path lags the nose a little.
+        constexpr float kMaxBank = 0.65f, kMaxPitch = 0.38f;
+        s.glide_bank = approach(s.glide_bank, in.steer * kMaxBank, 3.2f * kDt);
+        s.glide_pitch = approach(s.glide_pitch, in.pitch * kMaxPitch, 1.6f * kDt);
+        const float bank = s.glide_bank / kMaxBank, pitch = s.glide_pitch / kMaxPitch; // -1..1
         vec3 h(s.air_vel.x, 0.0f, s.air_vel.z);
         float hs = glm::length(h);
         vec3 dir = hs > 0.1f ? h / hs : glm::normalize(vec3(s.forward().x, 0.0f, s.forward().z));
-        const float pitch = in.pitch; // +1 nose up, -1 nose down
+        // Diving speeds up and climbing bleeds speed; a steep bank sinks faster.
         const float target_hs = p.glide_speed * (1.0f - k.glide_pitch_speed * pitch);
-        hs = approach(hs, target_hs, 6.0f * kDt);
-        const float target_vy = -k.glide_sink * (1.0f - 0.6f * pitch);
-        const float vy = approach(s.air_vel.y, target_vy, 12.0f * kDt);
-        const float yaw = -in.steer * p.turn_rate_air * kDt;
+        hs = approach(hs, target_hs, (pitch < 0.0f ? 9.0f : 4.0f) * kDt);
+        const float target_vy = -k.glide_sink * (1.0f - 0.6f * pitch) * (1.0f + 0.15f * std::abs(bank));
+        const float vy = approach(s.air_vel.y, target_vy, 7.0f * kDt);
+        const float yaw = -bank * p.turn_rate_air * kDt;
         const quat q = glm::angleAxis(yaw, kUp);
-        dir = q * dir;
         s.rot = glm::normalize(q * s.rot);
+        // The path swings round to the nose: momentum carries it wide first.
+        vec3 nose(s.forward().x, 0.0f, s.forward().z);
+        if (glm::length(nose) > 1e-3f) dir = glm::normalize(glm::mix(dir, glm::normalize(nose), std::min(1.0f, 4.5f * kDt)));
         s.air_vel = dir * hs + kUp * vy;
     } else {
         s.air_vel.y -= k.gravity * kDt;

@@ -268,6 +268,9 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         in.drift = !k.drift_button_prev; // press: hop, then land into the drift
         in.steer = sign(turn) * std::max(steer * sign(turn), 0.4f);
     }
+    // Gliding turns by banking, which takes a moment: steer harder and
+    // ease off as the bank builds, so the glider doesn't overshoot.
+    if (k.gliding) in.steer = std::clamp(in.steer * 1.7f - k.glide_bank * 0.5f, -1.0f, 1.0f);
     // Tricks off ramps and boost pads.
     if (!k.grounded && k.drift != DriftState::Drifting && k.drift != DriftState::Hop) {
         in.drift = skill.tricks && k.trick_window > 0 && !k.trick_done && !k.drift_button_prev;
