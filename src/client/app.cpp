@@ -678,7 +678,6 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
         switch (e.type) {
         case sim::KartEventType::Boost:
             input_.rumble(0.3f, 0.6f, 150);
-            if (e.value == int(sim::BoostKind::RocketStart)) message_ = {"ROCKET START!", render::rgba(255, 200, 60), 1.5f};
             break;
         case sim::KartEventType::Trick: input_.rumble(0.2f, 0.2f, 80); break;
         case sim::KartEventType::Land: input_.rumble(0.5f, 0.2f, 120); break;
