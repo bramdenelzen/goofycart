@@ -462,7 +462,21 @@ Track build_track(const TrackDef& def) {
             const CenterSample& c = st.c[size_t(i)];
             const float hw = c.half_width;
             const float sl = st.verge_at(c.u, false).first, sr = st.verge_at(c.u, true).first;
-            const float lat[kCols] = {-(hw + sl), -hw, -hw * 0.5f, 0.0f, hw * 0.5f, hw, hw + sr};
+            float lat[kCols] = {-(hw + sl), -hw, -hw * 0.5f, 0.0f, hw * 0.5f, hw, hw + sr};
+            // On the inside of a bend tighter than the road is wide, the
+            // edges would cross over themselves: keep them inside the bend's
+            // radius (a hairpin's inner verge and wall pinch in instead).
+            {
+                const vec3 t0 = st.c[size_t(st.wrap(i - 3))].tangent, t1 = st.c[size_t(st.wrap(i + 3))].tangent;
+                const float arc = glm::distance(st.c[size_t(st.wrap(i - 3))].pos, st.c[size_t(st.wrap(i + 3))].pos);
+                const float turn = -glm::cross(t0, t1).y; // > 0 turning right
+                const float angle = std::acos(std::clamp(glm::dot(t0, t1), -1.0f, 1.0f));
+                if (arc > 0.1f && angle > 1e-3f) {
+                    const float limit = 0.92f * arc / angle; // the bend's radius, less a little
+                    for (float& l : lat)
+                        if (turn > 0.0f ? l > limit : l < -limit) l = turn > 0.0f ? limit : -limit;
+                }
+            }
             for (float l : lat) t.vertices.push_back(c.pos + c.right * l);
             t.vertices.push_back(c.pos + c.right * lat[0] + c.up * kWallHeight);
             t.vertices.push_back(c.pos + c.right * lat[kCols - 1] + c.up * kWallHeight);
@@ -495,6 +509,36 @@ Track build_track(const TrackDef& def) {
     for (Strip& st : strips) {
         emit(st);
         t.branches[size_t(st.branch)].first_vertex = st.first_vertex;
+    }
+    // Stitch each side road to the main one: along the stretches where they
+    // share an edge, the side road's inner edge is moved onto the main road's
+    // (their own splines only come within a few centimetres of each other,
+    // which shows as a crack or a step).
+    for (Strip& st : strips) {
+        const int side = t.branches[size_t(st.branch)].side;
+        const int col_m = side > 0 ? kCols - 2 : 1, col_b = side > 0 ? 1 : kCols - 2, foot_b = side > 0 ? 0 : kCols - 1;
+        const int top_b = side > 0 ? kCols : kCols + 1;
+        const std::vector<Range>& open = side > 0 ? st.open_l : st.open_r;
+        for (int k = 0; k < st.n(); ++k) {
+            if (!in_any(open, st.c[size_t(k)].u)) continue;
+            vec3& p = t.vertices[st.V(k, col_b)];
+            vec3 best = p;
+            float best_d = 0.75f; // only edges that are meant to meet
+            for (int i = 0; i < main.n(); ++i) {
+                const vec3 a = t.vertices[main.V(i, col_m)], b = t.vertices[main.V(i + 1, col_m)];
+                const vec3 ab = b - a;
+                const float f = std::clamp(glm::dot(p - a, ab) / std::max(glm::dot(ab, ab), 1e-6f), 0.0f, 1.0f);
+                const vec3 q = a + ab * f;
+                const float d = glm::distance(p, q);
+                if (d < best_d) best_d = d, best = q;
+            }
+            const bool foot_with_edge = glm::distance(t.vertices[st.V(k, foot_b)], p) < 1e-3f;
+            p = best;
+            if (foot_with_edge) {
+                t.vertices[st.V(k, foot_b)] = best;
+                t.vertices[st.V(k, top_b)] = best + st.c[size_t(k)].up * kWallHeight;
+            }
+        }
     }
 
     // ---- islands between the roads, their noses, and the gates on branches

@@ -3,6 +3,7 @@
 
 #include "gk/sim/track.h"
 
+#include <functional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -37,6 +38,9 @@ struct PropPlacement {
     bool fit = false;
 };
 MeshData make_scenery_mesh(const sim::Track& track, std::vector<PropPlacement>* props = nullptr);
+// The terrain's height at (x, z) exactly as its mesh is triangulated, for
+// tracks with `ground`; NaN where there is none.
+std::function<float(float, float)> make_terrain_sampler(const sim::Track& track);
 
 // Where a volcano track's lava shows: the pool (the out-of-bounds floor)
 // where the ground dips below it, by the shader's 4 m bubble cells, and the

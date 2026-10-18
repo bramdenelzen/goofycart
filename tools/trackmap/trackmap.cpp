@@ -6,6 +6,7 @@
 //
 // --race also runs a 12-CPU, 2-lap race on each track and prints lap times
 // and where karts fell off.
+// --crop x,z,size draws only that square, close up, triangle by triangle.
 // --balance runs top-difficulty CPU time trials at 150cc (no items, no
 // rubber band, five seeds) for the parts catalogue's max-speed build, its
 // max-mini-turbo build and a build between them, and prints best and mean
@@ -203,6 +204,60 @@ void draw(const TrackDef& def, const std::string& out_dir) {
     if (wi >= 0) std::printf("  closest overlap: samples %d / %d, %.1f m apart vertically\n", wi, wj, worst);
 }
 
+// --crop x,z,size: a close-up from above of one square of track, 40 px per
+// metre, every triangle outlined (floors by surface, wall bases as thick red
+// lines), for working out how the meshes meet at a junction.
+void crop(const TrackDef& def, const std::string& out_dir, float cx, float cz, float size) {
+    const Track t = build_track(def);
+    const float px = 40.0f;
+    const int n = int(size * px);
+    Image img(n, n);
+    auto to_px = [&](vec3 p) { return vec2((p.x - cx + size * 0.5f) * px, (p.z - cz + size * 0.5f) * px); };
+    auto line = [&](vec2 a, vec2 b, uint32_t c, float z, int thick) {
+        const int steps = int(glm::length(b - a)) + 1;
+        for (int k = 0; k <= steps; ++k) {
+            const vec2 p = glm::mix(a, b, float(k) / float(steps));
+            for (int dx = -thick; dx <= thick; ++dx)
+                for (int dy = -thick; dy <= thick; ++dy) img.put(int(p.x) + dx, int(p.y) + dy, c, z);
+        }
+    };
+    for (const auto& tri : t.triangles) {
+        if (tri.surface == Surface::OutOfBounds) continue;
+        const vec3 a = t.vertices[tri.a], b = t.vertices[tri.b], c = t.vertices[tri.c];
+        const vec2 pa = to_px(a), pb = to_px(b), pc = to_px(c);
+        if (std::max({pa.x, pb.x, pc.x}) < 0 || std::min({pa.x, pb.x, pc.x}) > float(n) || std::max({pa.y, pb.y, pc.y}) < 0 ||
+            std::min({pa.y, pb.y, pc.y}) > float(n))
+            continue;
+        const float area = (pb.x - pa.x) * (pc.y - pa.y) - (pb.y - pa.y) * (pc.x - pa.x);
+        if (tri.surface == Surface::Wall || std::abs(area) < 1.0f) {
+            // A wall from above: its foot.
+            const vec3* v[3] = {&a, &b, &c};
+            std::sort(std::begin(v), std::end(v), [](const vec3* x, const vec3* y) { return x->y < y->y; });
+            line(to_px(*v[0]), to_px(*v[1]), 0xff2020, 1e6f, 2);
+            continue;
+        }
+        const int x0 = std::max(0, int(std::min({pa.x, pb.x, pc.x}))), x1 = std::min(n - 1, int(std::max({pa.x, pb.x, pc.x})) + 1);
+        const int y0 = std::max(0, int(std::min({pa.y, pb.y, pc.y}))), y1 = std::min(n - 1, int(std::max({pa.y, pb.y, pc.y})) + 1);
+        for (int y = y0; y <= y1; ++y)
+            for (int x = x0; x <= x1; ++x) {
+                const vec2 p(float(x) + 0.5f, float(y) + 0.5f);
+                const float u = ((pb.x - p.x) * (pc.y - p.y) - (pb.y - p.y) * (pc.x - p.x)) / area;
+                const float v = ((pc.x - p.x) * (pa.y - p.y) - (pc.y - p.y) * (pa.x - p.x)) / area;
+                const float w = 1.0f - u - v;
+                if (u < 0 || v < 0 || w < 0) continue;
+                const float z = u * a.y + v * b.y + w * c.y;
+                // Overlapping floors show as a magenta checker.
+                const size_t i = size_t(y * n + x);
+                if (img.depth[i] > -1e8f && std::abs(img.depth[i] - z) < 0.12f) { img.rgb[i * 3] = 255, img.rgb[i * 3 + 1] = 0, img.rgb[i * 3 + 2] = 255; continue; }
+                img.put(x, y, surface_rgb(tri.surface), z);
+            }
+        line(pa, pb, 0x202020, 1e5f, 0), line(pb, pc, 0x202020, 1e5f, 0), line(pc, pa, 0x202020, 1e5f, 0);
+    }
+    const std::string path = out_dir + "/" + def.id + "_crop.png";
+    stbi_write_png(path.c_str(), n, n, 3, img.rgb.data(), n * 3);
+    std::printf("%s\n", path.c_str());
+}
+
 void race(const TrackDef& def) {
     PhysicsTables tables;
     PartsCatalog parts;
@@ -386,8 +441,10 @@ int main(int argc, char** argv) {
     }
     std::string only;
     bool racing = false, balancing = false;
+    float crop_x = 0, crop_z = 0, crop_size = 0;
     for (int i = 3; i < argc; ++i) {
         if (std::string(argv[i]) == "--race") racing = true;
+        else if (std::string(argv[i]) == "--crop" && i + 1 < argc) std::sscanf(argv[++i], "%f,%f,%f", &crop_x, &crop_z, &crop_size);
         else if (std::string(argv[i]) == "--balance") balancing = true;
         else only = argv[i];
     }
@@ -397,6 +454,10 @@ int main(int argc, char** argv) {
     }
     for (const TrackDef& d : cat.tracks)
         if (only.empty() || d.id == only) {
+            if (crop_size > 0.0f) {
+                crop(d, argv[2], crop_x, crop_z, crop_size);
+                continue;
+            }
             draw(d, argv[2]);
             if (racing) race(d);
         }

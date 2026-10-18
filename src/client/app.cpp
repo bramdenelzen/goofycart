@@ -8,6 +8,7 @@
 
 #include "gk/online/master_client.h"
 #include "render/lava.h"
+#include "render/seam_check.h"
 #include "render/track_mesh.h"
 #include "render/item_icons.h"
 #include "render/sky.h"
@@ -20,6 +21,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cctype>
 #include <cstdio>
 #include <fstream>
@@ -98,6 +100,7 @@ int App::run(const AppOptions& options) {
         render(scripted ? 1.0f : step.alpha(), scripted ? kDt : float(elapsed));
         ++frame_;
         if (scripted && int(frame_) >= options_.max_frames) running = false;
+        if (tour_done_) running = false;
     }
     shutdown();
     return 0;
@@ -1104,6 +1107,117 @@ void App::update_camera(float alpha, float dt) {
     cam_init_ = true;
     const float target_fov = now.boost_frames > 0 ? 82.0f : 72.0f;
     cam_fov_ += (target_fov - cam_fov_) * (1.0f - std::exp(-5.0f * dt));
+}
+
+// The seam tour: a chase view every 80 m round the main loop, and a chase
+// view and a view from above at every fork, merge, crossing, flight of
+// stairs, zone and glide gap, one screenshot each, then quit.
+void App::seam_tour_step(const sim::Track& t) {
+    if (tour_frame_ < 0) {
+        auto chase = [&](const std::string& name, int i, float back = 10.0f) {
+            const sim::CenterSample& c = t.sample(i);
+            tour_.push_back({name + "_chase", c.pos - c.tangent * back + kUp * 4.5f, c.pos + c.tangent * 8.0f + kUp * 0.8f});
+        };
+        auto above = [&](const std::string& name, int i) {
+            const sim::CenterSample& c = t.sample(i);
+            tour_.push_back({name + "_above", c.pos - c.tangent * 12.0f + kUp * 24.0f, c.pos});
+        };
+        const int n = int(t.center.size());
+        auto back_from = [&](int i, int k) { return ((i - k) % n + n) % n; };
+        for (float s = 0.0f; s < t.length; s += 80.0f) chase("loop_" + std::to_string(int(s)) + "m", int(s / t.length * float(n)) % n);
+        for (size_t b = 0; b < t.branches.size(); ++b) {
+            const auto& br = t.branches[b];
+            const std::string id = "branch" + std::to_string(b);
+            chase(id + "_fork", br.fork, 22.0f);
+            above(id + "_fork", br.fork);
+            chase(id + "_merge", br.first + std::max(0, br.count - 8));
+            above(id + "_merge", br.merge);
+        }
+        // Crossings: one road over another (or itself), seen from the lower one.
+        int last = -100;
+        for (int i = 0; i < int(t.road.size()); i += 2) {
+            for (int j = 0; j < int(t.road.size()); j += 2) {
+                const auto &a = t.road[size_t(i)], &c = t.road[size_t(j)];
+                if (std::abs(a.s - c.s) < 40.0f && a.branch == c.branch) continue;
+                const vec2 d(a.pos.x - c.pos.x, a.pos.z - c.pos.z);
+                if (glm::length(d) < 4.0f && c.pos.y - a.pos.y > 3.0f && i - last > 30) {
+                    last = i;
+                    tour_.push_back({"under" + std::to_string(i), a.pos - a.tangent * 14.0f + kUp * 2.5f, a.pos + kUp * 2.0f});
+                    above("over" + std::to_string(j), j);
+                }
+            }
+        }
+        for (size_t k = 0; k < t.stairs.size(); ++k) {
+            const int i = t.nearest_sample(t.center[size_t(int(t.stairs[k].first / t.length * float(n)) % n)].pos);
+            chase("stairs" + std::to_string(k), back_from(i, 4));
+            above("stairs" + std::to_string(k), i);
+        }
+        for (size_t z = 0; z < t.zones.size(); ++z) above("zone" + std::to_string(z), t.zones[z].first + t.zones[z].count / 2);
+        for (int i = 0; i < n; ++i)
+            if (!t.center[size_t(i)].has_floor && t.center[size_t(back_from(i, 1))].has_floor) {
+                chase("gap" + std::to_string(i), back_from(i, 6));
+                int land = i;
+                while (land < n - 1 && !t.center[size_t(land)].has_floor) ++land;
+                above("landing" + std::to_string(land), land);
+            }
+        // GK_TOUR_LOOK="x,y,z;x,y,z": extra stops looking straight down at those points (debugging a seam).
+        if (const char* look = std::getenv("GK_TOUR_LOOK")) {
+            std::string rest = look;
+            for (size_t at = 0; at < rest.size();) {
+                const size_t end = std::min(rest.find(';', at), rest.size());
+                vec3 p(0.0f);
+                if (std::sscanf(rest.substr(at, end - at).c_str(), "%f,%f,%f", &p.x, &p.y, &p.z) == 3)
+                    tour_.push_back({"look" + std::to_string(at), p + vec3(0.3f, 6.0f, -1.5f), p});
+                at = end + 1;
+            }
+        }
+        // Everything the seam check finds, worst first, each from close by.
+        std::vector<render::SeamIssue> issues = render::find_seams(t);
+        auto issue_stop = [&](const std::string& name, vec3 pos) {
+            const sim::CenterSample& c = t.sample(t.nearest_sample(pos));
+            const vec3 side = glm::dot(pos - c.pos, c.right) >= 0.0f ? c.right : -c.right;
+            tour_.push_back({name, pos - c.tangent * 6.0f - side * 2.0f + kUp * 3.0f, pos});
+        };
+        // GK_TOUR_ISSUE="x,y,z;...": stops framed like the issue shots, for before and after pictures.
+        if (const char* list = std::getenv("GK_TOUR_ISSUE")) {
+            std::string rest = list;
+            int n_at = 0;
+            for (size_t at = 0; at < rest.size(); ++n_at) {
+                const size_t end = std::min(rest.find(';', at), rest.size());
+                vec3 p(0.0f);
+                if (std::sscanf(rest.substr(at, end - at).c_str(), "%f,%f,%f", &p.x, &p.y, &p.z) == 3) issue_stop("spot" + std::to_string(n_at), p);
+                at = end + 1;
+            }
+        }
+        if (FILE* f = std::fopen((options_.seam_tour + "/" + t.id + "_seams.txt").c_str(), "w")) {
+            for (const auto& is : issues)
+                std::fprintf(f, "%s\t%.2f\tx%d\tsample %d (%.0f m%s)\tat %.1f %.1f %.1f\t%s\n", is.kind.c_str(), is.size, is.count, is.sample,
+                             t.sample(is.sample).s, t.sample(is.sample).branch >= 0 ? (", branch " + std::to_string(t.sample(is.sample).branch)).c_str() : "",
+                             is.pos.x, is.pos.y, is.pos.z, is.what.c_str());
+            std::fclose(f);
+        }
+        std::stable_sort(issues.begin(), issues.end(), [](const auto& a, const auto& b) { return a.size * float(a.count) > b.size * float(b.count); });
+        for (size_t k = 0; k < issues.size() && k < 24; ++k) {
+            issue_stop("issue_" + issues[k].kind + "_" + std::to_string(k), issues[k].pos);
+        }
+        tour_frame_ = 0;
+    }
+    const int per = 6; // frames per stop: the screenshot is read back on the last
+    const int idx = tour_frame_ / per;
+    if (idx >= int(tour_.size())) {
+        tour_done_ = true;
+        return;
+    }
+    cam_pos_ = tour_[size_t(idx)].pos;
+    cam_look_ = tour_[size_t(idx)].look;
+    cam_fov_ = 72.0f;
+    cam_init_ = true;
+    if (tour_frame_ % per == per - 2) {
+        char num[8];
+        std::snprintf(num, sizeof num, "%02d", idx);
+        renderer_.request_screenshot(options_.seam_tour + "/" + t.id + "_" + num + "_" + tour_[size_t(idx)].name + ".png");
+    }
+    ++tour_frame_;
 }
 
 void App::spring(float& x, float& v, float target, float omega, float dt) {
@@ -2225,6 +2339,7 @@ void App::render(float alpha, float dt) {
     }
     const sim::World* w = world();
     if (w && size_t(player_) < w->karts().size()) update_camera(alpha, dt);
+    if (w && !options_.seam_tour.empty()) seam_tour_step(w->track());
     render::Camera cam;
     cam.position = cam_init_ ? cam_pos_ : vec3(0, 12, -25);
     cam.target = cam_init_ ? cam_look_ : vec3(0, 0, 20);
@@ -2278,10 +2393,11 @@ void App::render(float alpha, float dt) {
         particles_.draw(renderer_);
         if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
-        if (size_t(player_) < karts.size()) draw_speed_lines(karts[size_t(player_)], w->params(player_).top_speed);
+        if (size_t(player_) < karts.size() && options_.seam_tour.empty()) draw_speed_lines(karts[size_t(player_)], w->params(player_).top_speed);
         draw_water_overlay(*w, cam.position);
-        draw_hud(renderer_, *w, player_, kart_names(), paused_ ? HudMessage{} : message_, show_help_ && !server_results && !paused_, !server_results,
-                 settings_.show_checkpoints || options_.checkpoints);
+        if (!options_.hide_ui)
+            draw_hud(renderer_, *w, player_, kart_names(), paused_ ? HudMessage{} : message_, show_help_ && !server_results && !paused_, !server_results,
+                     settings_.show_checkpoints || options_.checkpoints);
         if (server_results) draw_online_results();
         if (ghost_) {
             char buf[64];
