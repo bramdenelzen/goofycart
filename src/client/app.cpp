@@ -7,6 +7,7 @@
 #include "render/kart_mesh.h"
 
 #include "gk/online/master_client.h"
+#include "render/lava.h"
 #include "render/track_mesh.h"
 #include "render/item_icons.h"
 #include "render/sky.h"
@@ -445,10 +446,9 @@ void App::show_track(const std::string& id) {
                 g.roads.push_back({int(b), {road, renderer_.upload_mesh(side.mesh, tex, false)}});
             }
             for (const auto& bar : t.barriers) g.barriers.push_back(renderer_.upload_mesh(render::make_barrier_mesh(bar)));
-            for (const auto& z : t.zones) {
-                const bool lava = z.surface == sim::Surface::OutOfBounds && t.theme == "volcano";
-                g.zones.push_back(renderer_.upload_mesh(render::make_zone_mesh(t, z), 0, false, lava, false, lava));
-            }
+            // Lava zones draw with the lava layer (mesh.frag), lit from within.
+            for (const auto& z : t.zones) g.zones.push_back(renderer_.upload_mesh(render::make_zone_mesh(t, z)));
+            lava_spots_[t.id] = render::find_lava(t);
             for (const auto& sw : t.switches)
                 g.switches.push_back({renderer_.upload_mesh(render::make_switch_mesh(sw.radius, false)),
                                       renderer_.upload_mesh(render::make_switch_mesh(sw.radius, true), 0, false, true)});
@@ -479,6 +479,14 @@ void App::show_track(const std::string& id) {
     light_.fog_density = th.fog_density;
     light_.ambient = th.ambient;
     light_.lights = *lights_;
+    lava_ = &lava_spots_[shown_track_->id];
+    lava_phase_.clear();
+    lava_light_base_ = light_.lights.size();
+    for (const auto& l : lava_->lights) light_.lights.push_back({l.pos, 18.0f, vec3(1.0f, 0.42f, 0.1f), 1.1f});
+    renderer_.set_heat(lava_->pool, lava_->pool_y);
+    if (lava_->pool || !lava_->zone_lines.empty())
+        log_info("Track {}: lava in {} pool cells and {} zone samples, {} lights", shown_track_->id, lava_->pool_cells.size(), lava_->zone_lines.size(),
+                 lava_->lights.size());
     if (shown_track_->theme == "rainbow") { // a low, warm dusk sun
         light_.light_dir = glm::normalize(vec3(0.75f, 0.32f, 0.35f));
         light_.ambient = 0.6f;
@@ -1815,6 +1823,73 @@ void App::draw_movers(const sim::World& w, float alpha) {
     }
 }
 
+void App::update_lava(const sim::World* w, vec3 camera) {
+    if (!lava_ || (lava_->pool_cells.empty() && lava_->zone_lines.empty())) return;
+    const float clock = render::lava_clock(renderer_.shader_time());
+    const sim::Track* gates = w ? &w->track() : shown_track_.get();
+    auto zone_on = [&](int zone) {
+        return zone < 0 || (size_t(zone) < gates->zones.size() && gates->gate_holds(gates->zones[size_t(zone)].gate));
+    };
+    // The lights breathe with the seams' glow; a zone's go out with it.
+    for (size_t i = 0; i < lava_->lights.size() && lava_light_base_ + i < light_.lights.size(); ++i) {
+        const auto& l = lava_->lights[i];
+        light_.lights[lava_light_base_ + i].intensity = zone_on(l.zone) ? 1.1f * render::lava_pulse(clock, float(i) * 1.7f) : 0.0f;
+    }
+    if (paused_) return;
+    // Splashes where a bubble pops near the camera.
+    constexpr float kReach = 25.0f;
+    const int x0 = int(std::floor((camera.x - kReach) / render::kLavaCell)), x1 = int(std::floor((camera.x + kReach) / render::kLavaCell));
+    const int z0 = int(std::floor((camera.z - kReach) / render::kLavaCell)), z1 = int(std::floor((camera.z + kReach) / render::kLavaCell));
+    for (int z = z0; z <= z1; ++z)
+        for (int x = x0; x <= x1; ++x) {
+            const render::LavaBubble bub = render::lava_bubble(x, z, clock);
+            if (!bub.active) continue;
+            // Is there lava under this bubble, and how high?
+            float y = 0.0f;
+            bool lava = lava_->pool_cells.count(render::LavaSpots::key(x, z)) > 0;
+            if (lava) y = lava_->pool_y;
+            for (size_t i = 0; i < lava_->zone_lines.size() && !lava; ++i) {
+                const auto& ln = lava_->zone_lines[i];
+                const vec3 d = vec3(bub.centre.x, ln.pos.y, bub.centre.y) - ln.pos;
+                const float lat = glm::dot(d, ln.right);
+                if (std::abs(glm::dot(d, ln.tangent)) < 1.1f && std::abs(lat) < ln.half && zone_on(ln.zone)) lava = true, y = ln.pos.y + lat * ln.right.y;
+            }
+            if (!lava) continue;
+            const vec3 at(bub.centre.x, y + 0.1f, bub.centre.y);
+            if (glm::distance(at, camera) > kReach) continue;
+            const int64_t key = render::LavaSpots::key(x, z);
+            const auto prev = lava_phase_.find(key);
+            const bool popped = prev != lava_phase_.end() && bub.phase < prev->second - 0.5f;
+            lava_phase_[key] = bub.phase;
+            if (!popped) continue;
+            using Sp = render::Renderer::Sprite;
+            Particle p;
+            p.pos = at;
+            p.life = 0.3f;
+            p.size0 = 0.6f, p.size1 = 2.2f;
+            p.sprite = Sp::Burst;
+            p.additive = true;
+            p.color0 = vec4(1.0f, 0.75f, 0.3f, 1.0f), p.color1 = vec4(1.0f, 0.35f, 0.08f, 0.0f);
+            particles_.emit(p);
+            for (int k = 0; k < 3; ++k) {
+                Particle s;
+                s.pos = at;
+                const float a = particles_.rnd() * 6.2831853f;
+                s.vel = vec3(std::cos(a) * 2.0f, 4.0f + 3.0f * particles_.rnd(), std::sin(a) * 2.0f);
+                s.gravity = 14.0f;
+                s.life = 0.6f + 0.3f * particles_.rnd();
+                s.size0 = 0.35f, s.size1 = 0.15f;
+                s.sprite = Sp::Spark6;
+                s.additive = true;
+                s.angle = a;
+                s.color0 = vec4(1.0f, 0.85f, 0.4f, 1.0f), s.color1 = vec4(1.0f, 0.3f, 0.05f, 0.0f);
+                particles_.emit(s);
+            }
+        }
+    // Forget cells left far behind.
+    if (lava_phase_.size() > 2000) lava_phase_.clear();
+}
+
 void App::draw_gates(const sim::World& w) {
     const sim::Track& t = w.track();
     const auto it = gate_meshes_.find(t.id);
@@ -2086,6 +2161,7 @@ void App::render(float alpha, float dt) {
     cam.target = cam_init_ ? cam_look_ : vec3(0, 0, 20);
     cam.fov_y_deg = cam_fov_;
     if (w) show_track(w->track().id);
+    update_lava(w, cam.position);
     if (!renderer_.begin_frame(cam, light_)) return;
     if (track_mesh_) renderer_.draw(track_mesh_, mat4(1.0f));
     if (scenery_mesh_) renderer_.draw(scenery_mesh_, mat4(1.0f));

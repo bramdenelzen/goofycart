@@ -4,6 +4,8 @@
 #include "gk/sim/track.h"
 
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 namespace gk::render {
 
@@ -35,6 +37,28 @@ struct PropPlacement {
     bool fit = false;
 };
 MeshData make_scenery_mesh(const sim::Track& track, std::vector<PropPlacement>* props = nullptr);
+
+// Where a volcano track's lava shows: the pool (the out-of-bounds floor)
+// where the ground dips below it, by the shader's 4 m bubble cells, and the
+// middle line of every lava zone; plus spots for lights along it all.
+struct LavaSpots {
+    bool pool = false;
+    float pool_y = 0.0f;
+    std::unordered_set<int64_t> pool_cells; // key(x, z) of 4 m cells
+    struct Line {
+        vec3 pos, right, tangent;
+        float half; // half the lava's width across the road
+        int zone;
+    };
+    std::vector<Line> zone_lines; // one per road sample a lava zone covers
+    struct Light {
+        vec3 pos;
+        int zone; // -1: the pool (always there)
+    };
+    std::vector<Light> lights;
+    static int64_t key(int x, int z) { return (int64_t(x) << 32) | int64_t(uint32_t(z)); }
+};
+LavaSpots find_lava(const sim::Track& track);
 
 MeshData make_spark_mesh();
 MeshData make_flame_mesh();

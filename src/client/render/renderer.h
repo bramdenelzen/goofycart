@@ -165,6 +165,11 @@ public:
     // Sun shafts and drifting mist, a post pass over the scene (post.frag).
     void set_volumetric(bool on) { volumetric_ = on; }
     bool volumetric() const { return volumetric_; }
+    // Heat shimmer over a lava pool at height `lava_y` (the same post pass,
+    // on without the volumetric option); off with `on` false.
+    void set_heat(bool on, float lava_y = 0.0f) { heat_ = on, heat_y_ = lava_y; }
+    // The clock the shaders animate by (frame.shadow.w), in seconds.
+    float shader_time() const { return std::fmod(time_, 1000.0f); }
     bool full_resolution() const { return options_.full_resolution; }
     VkExtent2D internal_extent() const { return offscreen_extent_; }
     // The 2D overlay is laid out in a virtual space kUiHeight pixels high
@@ -318,6 +323,8 @@ private:
     VkPipeline mesh_pipeline_add_ = VK_NULL_HANDLE;
     // The volumetric post pass: scene + depth in, post_color_ out.
     bool volumetric_ = false;
+    bool heat_ = false;
+    float heat_y_ = 0.0f;
     Image post_color_;
     VkSampler post_sampler_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout post_set_layout_ = VK_NULL_HANDLE;

@@ -9,6 +9,7 @@
 #include "frontend.h"
 #include "menu.h"
 #include "render/renderer.h"
+#include "render/track_mesh.h"
 
 #include "gk/net/client_game.h"
 #include "gk/sim/ghost.h"
@@ -20,6 +21,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace gk {
@@ -229,6 +231,14 @@ private:
     std::map<std::string, std::pair<render::MeshId, render::MeshId>> track_meshes_;
     std::map<std::string, std::vector<render::PointLight>> track_lights_; // lamps, neon, lanterns, lava per track
     const std::vector<render::PointLight>* lights_ = nullptr;
+    // Lava on volcano tracks: where it shows, the lights along it (the tail
+    // of light_.lights from lava_light_base_), and each bubble cell's last
+    // phase near the camera, to splash where one pops.
+    std::map<std::string, render::LavaSpots> lava_spots_;
+    const render::LavaSpots* lava_ = nullptr;
+    size_t lava_light_base_ = 0;
+    std::unordered_map<int64_t, float> lava_phase_;
+    void update_lava(const sim::World* w, vec3 camera);
     render::SceneLighting light_;
 
     render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0, shadow_mesh_ = 0, fireball_mesh_ = 0;

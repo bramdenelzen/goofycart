@@ -1617,7 +1617,7 @@ void Renderer::end_frame() {
     depth.imageView = offscreen_depth_.view;
     depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth.storeOp = volumetric_ ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE; // the post pass reads it
+    depth.storeOp = volumetric_ || heat_ ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE; // the post pass reads it
     depth.clearValue.depthStencil = {1.0f, 0};
     VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
     ri.renderArea = {{0, 0}, offscreen_extent_};
@@ -1755,7 +1755,7 @@ void Renderer::end_frame() {
     // Volumetric light and mist: a full-screen pass over the scene and its
     // depth into post_color_, which then takes the scene's place.
     VkImage scene_image = offscreen_color_.image;
-    if (volumetric_ && post_pipeline_ && post_set_) {
+    if ((volumetric_ || heat_) && post_pipeline_ && post_set_) {
         image_barrier(cmd, offscreen_color_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                       VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
@@ -1787,8 +1787,10 @@ void Renderer::end_frame() {
             mat4 inv_view_proj;
             vec4 params;
             vec4 range;
-        } pp{glm::inverse(view_proj_), vec4(1.2f, 1.0f, float(offscreen_extent_.width) / float(std::max<uint32_t>(offscreen_extent_.height, 1)), 0.0f),
-             vec4(near_z_, far_z_, 0.0f, 0.0f)};
+        } pp{glm::inverse(view_proj_),
+             vec4(volumetric_ ? 1.2f : 0.0f, volumetric_ ? 1.0f : 0.0f, float(offscreen_extent_.width) / float(std::max<uint32_t>(offscreen_extent_.height, 1)),
+                  heat_ ? 1.0f : 0.0f),
+             vec4(near_z_, far_z_, heat_y_, 0.0f)};
         vkCmdPushConstants(cmd, post_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pp), &pp);
         vkCmdDraw(cmd, 3, 1, 0, 0);
         vkCmdEndRendering(cmd);

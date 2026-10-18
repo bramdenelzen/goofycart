@@ -123,7 +123,7 @@ Texel tread(int x, int y) { return grey(((y + (x / (8 * S)) * 2 * S) % (6 * S)) 
 Texel cloud(int x, int y) { return grey(0.95f + 0.08f * fbm(float(x), float(y), 181)); }
 
 constexpr Fn kFns[TexCount] = {white,  asphalt, grass, dirt,   sand,   snow, ice,     water, brick, panel,
-                               wood,   rock,    arrows, stripes, leaves, bark, windows, tread, cloud};
+                               wood,   rock,    arrows, stripes, leaves, bark, windows, tread, cloud, rock};
 
 uint8_t to_byte(float v) { return uint8_t(std::clamp(v * 127.5f, 0.0f, 255.0f)); }
 
