@@ -11,6 +11,7 @@ layout(set = 0, binding = 0) uniform Frame {
 layout(push_constant) uniform Draw {
     mat4 model;
     vec4 tint;
+    ivec4 flags; // x: 1 = textured model (set 1), else the detail array
 } draw;
 
 layout(location = 0) in vec3 in_pos;

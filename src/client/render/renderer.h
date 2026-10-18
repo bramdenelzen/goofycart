@@ -17,6 +17,7 @@ struct SDL_Window;
 namespace gk::render {
 
 using MeshId = uint32_t;
+using TextureId = uint32_t;
 
 struct UiVertex {
     vec2 pos;       // pixels in the internal (low-res) image, origin top-left
@@ -52,7 +53,12 @@ public:
     bool init(SDL_Window* window, const RendererOptions& options);
     void shutdown();
 
-    MeshId upload_mesh(const MeshData& mesh);
+    // A 2D RGBA8 texture with a full mip chain, for loaded models. Texture 0
+    // is a 1x1 white, bound to meshes that use the detail array instead.
+    TextureId upload_texture(int width, int height, const uint8_t* rgba);
+    // `texture` > 0 draws the mesh with that texture (its UVs, no detail
+    // array); `two_sided` skips back-face culling for thin leaves and cloth.
+    MeshId upload_mesh(const MeshData& mesh, TextureId texture = 0, bool two_sided = false);
 
     // Per-frame: begin, queue draws, end. begin_frame returns false when the
     // frame must be skipped (minimised window, swapchain being rebuilt).
@@ -97,6 +103,12 @@ private:
     struct GpuMesh {
         Buffer vertices, indices;
         uint32_t index_count = 0;
+        TextureId texture = 0;
+        bool two_sided = false;
+    };
+    struct Texture2D {
+        Image image;
+        VkDescriptorSet set = VK_NULL_HANDLE;
     };
     struct DrawCmd {
         MeshId mesh;
@@ -136,6 +148,8 @@ private:
     void destroy_image(Image& img);
     void finish_readback(Frame& f);
     bool create_textures();
+    bool upload_image_mips(Image& img, const std::vector<std::vector<uint8_t>>& mips, const std::vector<VkExtent2D>& extents,
+                           uint32_t layers);
 
     Image textures_;                   // the texture array (textures.h)
     VkSampler sampler_ = VK_NULL_HANDLE;
@@ -168,9 +182,14 @@ private:
     VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
     VkPipelineLayout pipeline_layout_ = VK_NULL_HANDLE;
     VkPipeline mesh_pipeline_ = VK_NULL_HANDLE;
+    VkPipeline mesh_pipeline_two_sided_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout texture_set_layout_ = VK_NULL_HANDLE;
+    VkDescriptorPool texture_pool_ = VK_NULL_HANDLE;
+    std::vector<Texture2D> textures2d_;
     VkPipelineLayout ui_layout_ = VK_NULL_HANDLE;
     VkPipeline ui_pipeline_ = VK_NULL_HANDLE;
     static constexpr uint32_t kMaxUiVertices = 120000;
+    static constexpr uint32_t kMaxTextures = 1024;
     std::vector<UiVertex> ui_vertices_;
 
     std::array<Frame, kFramesInFlight> frames_{};

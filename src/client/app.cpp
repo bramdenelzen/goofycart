@@ -135,6 +135,8 @@ bool App::init() {
     ro.full_resolution = options_.full_resolution;
     ro.validation = options_.validation;
     if (!renderer_.init(window_, ro)) return false;
+    // An optional model pack beside the data folder (not in the repository).
+    if (assets_.load(sim::data_path("../assets/models"), renderer_)) log_info("Model pack loaded from assets/models");
     if (const std::string sp = settings_path(); !sp.empty()) settings_.load(sp);
     if (options_.full_resolution) settings_.low_res = false;
     apply_settings();
@@ -182,24 +184,76 @@ bool App::init() {
     return true;
 }
 
-std::pair<render::MeshId, render::MeshId> App::build_mesh(const sim::Build& b, int slot) {
+const App::KartVisual& App::build_visual(const sim::Build& b, int slot) {
     const uint64_t key = uint64_t(slot % 12) | uint64_t(b.driver & 0xff) << 8 | uint64_t(b.body & 0xff) << 16 |
                          uint64_t(b.tires & 0xff) << 24 | uint64_t(b.glider & 0xff) << 32;
-    auto it = build_meshes_.find(key);
-    if (it == build_meshes_.end()) {
-        const render::KartLook look = render::kart_look(parts_, b, kart_color(slot));
-        it = build_meshes_.emplace(key, std::pair{renderer_.upload_mesh(render::make_kart_mesh(look)),
-                                                  renderer_.upload_mesh(render::make_glider_mesh(look.glider))}).first;
+    auto it = build_visuals_.find(key);
+    if (it != build_visuals_.end()) return it->second;
+    KartVisual v;
+    const render::KartLook look = render::kart_look(parts_, b, kart_color(slot));
+    auto id_of = [](const std::vector<sim::Part>& parts, int i) {
+        return parts.empty() ? std::string() : parts[size_t(std::clamp(i, 0, int(parts.size()) - 1))].id;
+    };
+    v.driver_model = assets_.driver(id_of(parts_.drivers, b.driver));
+    v.body_model = assets_.body(id_of(parts_.bodies, b.body));
+    v.tire_model = assets_.tire(id_of(parts_.tires, b.tires));
+    v.glider_model = assets_.glider(id_of(parts_.gliders, b.glider));
+    // Procedural pieces for whatever the pack doesn't cover, and the layout.
+    render::MeshData full = render::make_kart_mesh(look, &v.layout, render::KartAll);
+    if (!v.body_model && !v.driver_model && !v.tire_model) {
+        v.body = renderer_.upload_mesh(full);
+    } else {
+        if (!v.body_model) v.body = renderer_.upload_mesh(render::make_kart_mesh(look, nullptr, render::KartBody));
+        if (!v.driver_model) v.driver = renderer_.upload_mesh(render::make_kart_mesh(look, nullptr, render::KartDriver));
+        if (!v.tire_model) v.wheels = renderer_.upload_mesh(render::make_kart_mesh(look, nullptr, render::KartWheels));
     }
-    return it->second;
+    // A body model may say where its wheels and seat are.
+    if (v.body_model)
+        if (const ModelSpec* spec = assets_.body_spec(id_of(parts_.bodies, b.body))) {
+            if (!spec->wheels.empty()) {
+                const float r = spec->wheel_radius > 0.0f ? spec->wheel_radius : v.layout.wheels.empty() ? 0.26f : v.layout.wheels[0].radius;
+                v.layout.wheels.clear();
+                for (const vec3& w : spec->wheels) v.layout.wheels.push_back({vec3(w.x, w.y > 0.0f ? w.y : r, w.z), r});
+            }
+            if (spec->has_seat) v.layout.seat = spec->seat;
+        }
+    if (!v.glider_model) v.glider = renderer_.upload_mesh(render::make_glider_mesh(look.glider));
+    return build_visuals_.emplace(key, std::move(v)).first->second;
+}
+
+void App::draw_model(const GpuModel& model, const mat4& m, vec4 tint) {
+    for (render::MeshId id : model.meshes) renderer_.draw(id, m, tint);
+}
+
+void App::draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle) {
+    const mat4 lifted = glm::translate(m, vec3(0, v.layout.lift, 0));
+    if (v.body_model) draw_model(*v.body_model, lifted, tint);
+    if (v.body) renderer_.draw(v.body, m, tint);
+    if (v.driver_model) draw_model(*v.driver_model, glm::translate(m, v.layout.seat), tint);
+    if (v.driver) renderer_.draw(v.driver, m, tint);
+    if (v.tire_model) {
+        for (const auto& w : v.layout.wheels) {
+            const float ref = v.tire_model->bounds_max.y - v.tire_model->bounds_min.y;
+            const float s = ref > 1e-6f ? 2.0f * w.radius / ref : 1.0f;
+            mat4 t = glm::translate(m, w.center);
+            if (w.center.x < -0.01f) t = glm::rotate(t, kPi, vec3(0, 1, 0)); // left wheels face out
+            t = glm::rotate(t, w.center.x < -0.01f ? -wheel_angle : wheel_angle, vec3(1, 0, 0));
+            draw_model(*v.tire_model, glm::scale(t, vec3(s)), tint);
+        }
+    }
+    if (v.wheels) renderer_.draw(v.wheels, m, tint);
+}
+
+void App::draw_glider_visual(const KartVisual& v, const mat4& m, vec4 tint) {
+    if (v.glider_model) draw_model(*v.glider_model, glm::translate(m, vec3(0, 1.0f + v.layout.lift, 0)), tint);
+    else if (v.glider) renderer_.draw(v.glider, m, tint);
 }
 
 void App::set_kart_meshes(const std::vector<sim::Build>& builds) {
-    kart_meshes_.assign(12, 0);
-    glider_meshes_.assign(12, 0);
+    kart_visuals_.clear();
     for (int i = 0; i < 12; ++i) {
         const sim::Build b = size_t(i) < builds.size() ? builds[size_t(i)] : sim::Build{i % int(parts_.drivers.size()), 0, 0, 0};
-        std::tie(kart_meshes_[size_t(i)], glider_meshes_[size_t(i)]) = build_mesh(b, i);
+        kart_visuals_.push_back(build_visual(b, i));
     }
 }
 
@@ -313,9 +367,9 @@ void App::draw_ghost(float alpha) {
     const mat4 m = glm::rotate(glm::translate(mat4(1.0f), glm::mix(ghost_prev_.pos, s.pos, alpha)) *
                                    glm::mat4_cast(glm::slerp(ghost_prev_.rot, s.rot, alpha)),
                                -s.visual_drift_yaw, vec3(0, 1, 0));
-    const auto [kart, glider] = build_mesh(ghost_build_, 6);
-    renderer_.draw(kart, m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
-    if (s.gliding) renderer_.draw(glider, m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
+    const KartVisual& v = build_visual(ghost_build_, 6);
+    draw_kart_visual(v, m, vec4(0.7f, 0.85f, 1.0f, 0.45f), 0.0f);
+    if (s.gliding) draw_glider_visual(v, m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
 }
 
 void App::finish_offline_race() {
@@ -702,15 +756,18 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         tint = vec4(1.0f + 0.6f * std::sin(h), 1.0f + 0.6f * std::sin(h + 2.1f), 1.0f + 0.6f * std::sin(h + 4.2f), 1.0f);
     }
     if (s.ghost_frames > 0) tint = vec4(index == player_ ? 0.45f : 0.12f);
-    if (s.bullet_frames > 0) renderer_.draw(bullet_mesh_, base);
-    else renderer_.draw(kart_meshes_[size_t(index % 12)], m, tint);
+    const KartVisual& visual = kart_visuals_[size_t(index % 12)];
+    if (!visual.layout.wheels.empty() && index < 12)
+        wheel_angle_[size_t(index)] += s.speed / visual.layout.wheels[0].radius * frame_dt_;
+    if (s.bullet_frames > 0) draw_item_mesh(bullet_mesh_, "bullet", base);
+    else draw_kart_visual(visual, m, tint, index < 12 ? wheel_angle_[size_t(index)] : 0.0f);
     if (s.chomper_frames > 0) {
         const float lunge = s.chomper_cooldown > world()->item_tuning().chomper_cooldown - 10 ? 0.8f : 0.0f;
-        renderer_.draw(chomper_mesh_, glm::translate(base, vec3(0, 0.3f, 1.1f + lunge)));
+        draw_item_mesh(chomper_mesh_, "chomper", glm::translate(base, vec3(0, 0.3f, 1.1f + lunge)));
     }
     if (s.item != sim::Item::None && s.roulette == 0 && s.bullet_frames == 0)
         draw_held_item(s.item, s.item_uses, base, s.trailing);
-    if (s.gliding) renderer_.draw(glider_meshes_[size_t(index % 12)], m);
+    if (s.gliding) draw_glider_visual(visual, m, tint);
 
     const auto& kc = world()->tables().constants;
     if (s.drift == sim::DriftState::Drifting && s.mt_charge >= kc.spark_threshold) {
@@ -740,6 +797,21 @@ render::MeshId App::item_mesh(sim::Item item) const {
     }
 }
 
+const char* App::item_name(sim::Item item) {
+    switch (item) {
+    case sim::Item::Banana: case sim::Item::TripleBanana: return "banana";
+    case sim::Item::GreenShell: case sim::Item::TripleGreen: return "green_shell";
+    case sim::Item::RedShell: case sim::Item::TripleRed: return "red_shell";
+    case sim::Item::Bomb: return "bomb";
+    default: return "";
+    }
+}
+
+void App::draw_item_mesh(render::MeshId mesh, const char* name, const mat4& m, vec4 tint) {
+    if (const GpuModel* model = assets_.item(name)) draw_model(*model, m, tint);
+    else if (mesh) renderer_.draw(mesh, m, tint);
+}
+
 void App::draw_held_item(sim::Item item, int uses, const mat4& kart, bool trailing) {
     const render::MeshId mesh = item_mesh(item);
     if (!mesh) return;
@@ -748,10 +820,10 @@ void App::draw_held_item(sim::Item item, int uses, const mat4& kart, bool traili
         // Orbiting the kart.
         for (int i = 0; i < uses; ++i) {
             const float a = float(frame_) * 0.08f + float(i) * 2.0f * kPi / 3.0f;
-            renderer_.draw(mesh, glm::translate(kart, vec3(std::cos(a) * 1.3f, 0.2f, std::sin(a) * 1.3f)));
+            draw_item_mesh(mesh, item_name(item), glm::translate(kart, vec3(std::cos(a) * 1.3f, 0.2f, std::sin(a) * 1.3f)));
         }
     } else if (trailing) {
-        renderer_.draw(mesh, glm::translate(kart, vec3(0, 0.05f, -1.4f)));
+        draw_item_mesh(mesh, item_name(item), glm::translate(kart, vec3(0, 0.05f, -1.4f)));
     }
 }
 
@@ -767,29 +839,29 @@ void App::draw_items(const sim::World& w) {
         mat4 m = glm::translate(mat4(1.0f), boxes[i] + vec3(0, bob, 0));
         m = glm::rotate(m, spin + float(i), vec3(0, 1, 0));
         m = glm::rotate(m, 0.5f, vec3(1, 0, 1));
-        renderer_.draw(box_mesh_, glm::scale(m, vec3(scale)));
+        draw_item_mesh(box_mesh_, "item_box", glm::scale(m, vec3(scale)));
     }
     for (const sim::ItemEntity& e : w.entities()) {
         mat4 m = glm::translate(mat4(1.0f), e.pos - vec3(0, 0.3f, 0));
         const float yaw = std::atan2(e.vel.x, e.vel.z);
         switch (e.type) {
-        case sim::EntityType::Banana: renderer_.draw(banana_mesh_, m); break;
-        case sim::EntityType::GreenShell: renderer_.draw(green_mesh_, glm::rotate(m, float(e.age) * 0.4f, vec3(0, 1, 0))); break;
-        case sim::EntityType::RedShell: renderer_.draw(red_mesh_, glm::rotate(m, float(e.age) * 0.4f, vec3(0, 1, 0))); break;
+        case sim::EntityType::Banana: draw_item_mesh(banana_mesh_, "banana", m); break;
+        case sim::EntityType::GreenShell: draw_item_mesh(green_mesh_, "green_shell", glm::rotate(m, float(e.age) * 0.4f, vec3(0, 1, 0))); break;
+        case sim::EntityType::RedShell: draw_item_mesh(red_mesh_, "red_shell", glm::rotate(m, float(e.age) * 0.4f, vec3(0, 1, 0))); break;
         case sim::EntityType::SpikedShell:
-            renderer_.draw(spiked_mesh_, glm::rotate(glm::scale(m, vec3(1.4f)), float(e.age) * 0.3f, vec3(0, 1, 0)));
+            draw_item_mesh(spiked_mesh_, "spiked_shell", glm::rotate(glm::scale(m, vec3(1.4f)), float(e.age) * 0.3f, vec3(0, 1, 0)));
             break;
         case sim::EntityType::Bomb: {
             // Flashes faster as the fuse runs down.
             const bool lit = e.life > 0 && (e.life < 40 ? (e.age / 3) % 2 : (e.age / 10) % 2);
-            renderer_.draw(bomb_mesh_, glm::rotate(m, yaw, vec3(0, 1, 0)), lit ? vec4(2.5f, 1.2f, 1.0f, 1.0f) : vec4(1.0f));
+            draw_item_mesh(bomb_mesh_, "bomb", glm::rotate(m, yaw, vec3(0, 1, 0)), lit ? vec4(2.5f, 1.2f, 1.0f, 1.0f) : vec4(1.0f));
             break;
         }
         case sim::EntityType::Fireball:
-            renderer_.draw(ball_mesh_, glm::translate(m, vec3(0, 0.3f, 0)), vec4(1.6f, 0.7f, 0.2f, 1.0f));
+            draw_item_mesh(ball_mesh_, "fireball", glm::translate(m, vec3(0, 0.3f, 0)), vec4(1.6f, 0.7f, 0.2f, 1.0f));
             break;
         case sim::EntityType::Boomerang:
-            renderer_.draw(boomerang_mesh_, glm::rotate(glm::translate(m, vec3(0, 0.3f, 0)), float(e.age) * 0.6f, vec3(0, 1, 0)));
+            draw_item_mesh(boomerang_mesh_, "boomerang", glm::rotate(glm::translate(m, vec3(0, 0.3f, 0)), float(e.age) * 0.6f, vec3(0, 1, 0)));
             break;
         case sim::EntityType::Explosion: {
             const float t = 1.0f - float(e.life) / 30.0f;
@@ -803,6 +875,7 @@ void App::draw_items(const sim::World& w) {
 }
 
 void App::render(float alpha, float dt) {
+    frame_dt_ = std::clamp(dt, 0.0f, 0.1f);
     if (screen_ == Screen::Title || screen_ == Screen::Options || screen_ == Screen::Online || screen_ == Screen::Course ||
         screen_ == Screen::Select) {
         render_menu(dt);
@@ -1010,7 +1083,7 @@ void App::render_menu(float dt) {
     renderer_.draw(track_mesh_, mat4(1.0f));
     renderer_.draw(scenery_mesh_, mat4(1.0f));
     const int mesh = online_ ? std::max(online_->seat(), 0) : std::clamp(options_.karts, 1, 12) - 1;
-    renderer_.draw(build_mesh(select_.build, mesh).first, glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot));
+    draw_kart_visual(build_visual(select_.build, mesh), glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot), vec4(1.0f), 0.0f);
     switch (screen_) {
     case Screen::Title: draw_title(renderer_, title_); break;
     case Screen::Options: draw_options(renderer_, options_menu_, settings_); break;

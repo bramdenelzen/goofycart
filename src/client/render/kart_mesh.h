@@ -13,7 +13,23 @@ struct KartLook {
 };
 
 KartLook kart_look(const sim::PartsCatalog& parts, const sim::Build& build, uint32_t paint);
-MeshData make_kart_mesh(const KartLook& look);
+
+// Where the pieces of a kart sit, for placing loaded models in place of the
+// procedural ones: wheel centres (y = radius), the driver's seat, the hands.
+struct KartLayout {
+    struct Wheel {
+        vec3 center;
+        float radius;
+    };
+    std::vector<Wheel> wheels;
+    vec3 seat{0, 0.5f, -0.2f};
+    vec3 hands{0, 0.85f, 0.35f};
+    bool bike = false;
+    float lift = 0.0f; // how far big tyres raise the body
+};
+// Which pieces to build; the layout comes out the same whatever is built.
+enum KartParts : unsigned { KartBody = 1, KartDriver = 2, KartWheels = 4, KartAll = 7 };
+MeshData make_kart_mesh(const KartLook& look, KartLayout* layout = nullptr, unsigned parts = KartAll);
 MeshData make_glider_mesh(const sim::PartLook& glider);
 
 // 0xRRGGBB from the data files to the renderer's RGBA8.

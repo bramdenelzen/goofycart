@@ -8,6 +8,12 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 sky_color;
 } frame;
 
+layout(push_constant) uniform Draw {
+    mat4 model;
+    vec4 tint;
+    ivec4 flags; // x: 1 = textured model (set 1), else the detail array
+} draw;
+
 layout(location = 0) in vec3 v_normal;
 layout(location = 1) in vec4 v_color;
 layout(location = 2) in vec3 v_world;
@@ -16,6 +22,8 @@ layout(location = 4) flat in uint v_layer;
 
 // Detail textures (render/textures.cpp): 0..1 stored, 0..2 meant.
 layout(set = 0, binding = 1) uniform sampler2DArray textures;
+// A loaded model's own texture, when draw.flags.x is set.
+layout(set = 1, binding = 0) uniform sampler2D albedo_tex;
 
 layout(location = 0) out vec4 out_color;
 
@@ -24,7 +32,15 @@ void main() {
     vec3 l = normalize(frame.light_dir.xyz);
     vec3 v = normalize(frame.camera_pos.xyz - v_world);
     float ambient = frame.light_dir.w;
-    vec3 albedo = v_color.rgb * texture(textures, vec3(v_uv, float(v_layer))).rgb * 2.0;
+    vec3 albedo;
+    float alpha = v_color.a;
+    if (draw.flags.x == 1) {
+        vec4 t = texture(albedo_tex, v_uv);
+        if (t.a < 0.4) discard; // cut-outs: leaves, hair, grilles
+        albedo = v_color.rgb * t.rgb;
+    } else {
+        albedo = v_color.rgb * texture(textures, vec3(v_uv, float(v_layer))).rgb * 2.0;
+    }
 
     // Soft wrapped diffuse: the shadow side stays readable, the terminator is
     // smooth over rounded shapes.
@@ -43,5 +59,5 @@ void main() {
 
     float dist = length(v_world - frame.camera_pos.xyz);
     float fog = 1.0 - exp(-dist * frame.fog_color.a);
-    out_color = vec4(mix(lit, frame.fog_color.rgb, clamp(fog, 0.0, 1.0)), v_color.a);
+    out_color = vec4(mix(lit, frame.fog_color.rgb, clamp(fog, 0.0, 1.0)), alpha);
 }

@@ -265,7 +265,7 @@ KartLook kart_look(const sim::PartsCatalog& parts, const sim::Build& b, uint32_t
     return {paint, pick(parts.drivers, b.driver), pick(parts.bodies, b.body), pick(parts.tires, b.tires), pick(parts.gliders, b.glider)};
 }
 
-MeshData make_kart_mesh(const KartLook& l) {
+MeshData make_kart_mesh(const KartLook& l, KartLayout* layout, unsigned parts) {
     // Faces +Z, about 1.6 m long, wheels touching y = 0.
     MeshBuilder b;
     const uint32_t paint = l.paint, trim = hex_rgba(l.body.color2);
@@ -413,15 +413,29 @@ MeshData make_kart_mesh(const KartLook& l) {
         seat = {0, 0.4f, -0.25f};
         wheel = {0, 0.78f, 0.35f};
     }
-    if (bike) {
-        // Hands on the handlebar ends.
-        driver(body, seat, l.driver, bike, wheel);
-    } else {
-        steering_wheel(body, wheel, 0.17f, trim);
-        driver(body, seat, l.driver, bike, wheel + vec3(0, 0.02f, -0.03f));
+    if (layout) {
+        layout->wheels.clear();
+        for (const Wheel& w : ws) {
+            const float r = 0.24f * l.tires.size * w.scale;
+            layout->wheels.push_back({vec3(w.x, r, w.z), r});
+        }
+        layout->seat = seat + vec3(0, lift, 0);
+        layout->hands = wheel + vec3(0, lift, 0);
+        layout->bike = bike;
+        layout->lift = lift;
+    }
+    if (!(parts & KartBody)) body = {};
+    if (parts & KartDriver) {
+        if (bike) {
+            // Hands on the handlebar ends.
+            driver(body, seat, l.driver, bike, wheel);
+        } else {
+            if (parts & KartBody) steering_wheel(body, wheel, 0.17f, trim);
+            driver(body, seat, l.driver, bike, wheel + vec3(0, 0.02f, -0.03f));
+        }
     }
     b.append(body.data(), glm::translate(mat4(1.0f), vec3(0, lift, 0)));
-    wheels(b, ws, l.tires);
+    if (parts & KartWheels) wheels(b, ws, l.tires);
     return b.take();
 }
 

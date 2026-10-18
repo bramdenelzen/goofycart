@@ -36,7 +36,9 @@ add_executable(gk_client
   frontend.cpp
   audio_device.cpp
   settings.cpp
+  assets.cpp
   render/mesh.cpp
+  render/model.cpp
   render/textures.cpp
   render/track_mesh.cpp
   render/kart_mesh.cpp

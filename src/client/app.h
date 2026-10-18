@@ -1,4 +1,6 @@
 #pragma once
+#include "assets.h"
+#include "render/kart_mesh.h"
 #include "audio_device.h"
 #include "hud.h"
 #include "input.h"
@@ -78,6 +80,11 @@ private:
     void draw_items(const sim::World& w);
     void draw_held_item(sim::Item item, int uses, const mat4& kart, bool trailing);
     render::MeshId item_mesh(sim::Item item) const;
+    static const char* item_name(sim::Item item);
+    // Draws a loaded model if the asset pack has one under `name`, else the
+    // procedural mesh.
+    void draw_item_mesh(render::MeshId mesh, const char* name, const mat4& m, vec4 tint = vec4(1.0f));
+    void draw_model(const GpuModel& model, const mat4& m, vec4 tint = vec4(1.0f));
 
     AppOptions options_;
     SDL_Window* window_ = nullptr;
@@ -151,9 +158,24 @@ private:
     render::MeshId box_mesh_ = 0, banana_mesh_ = 0, green_mesh_ = 0, red_mesh_ = 0, spiked_mesh_ = 0, bomb_mesh_ = 0,
                    ball_mesh_ = 0, boomerang_mesh_ = 0, bullet_mesh_ = 0, chomper_mesh_ = 0;
     float flash_ = 0.0f; // white screen flash (lightning)
-    std::vector<render::MeshId> kart_meshes_, glider_meshes_; // per kart in the race
-    std::map<uint64_t, std::pair<render::MeshId, render::MeshId>> build_meshes_; // (build, colour) -> kart, glider
-    std::pair<render::MeshId, render::MeshId> build_mesh(const sim::Build& b, int slot);
+    // What a kart looks like: procedural pieces, each replaced by a model
+    // from the asset pack when it has one.
+    struct KartVisual {
+        render::MeshId body = 0, driver = 0, wheels = 0, glider = 0;
+        const GpuModel* body_model = nullptr;
+        const GpuModel* driver_model = nullptr;
+        const GpuModel* tire_model = nullptr;
+        const GpuModel* glider_model = nullptr;
+        render::KartLayout layout;
+    };
+    AssetLibrary assets_;
+    std::vector<KartVisual> kart_visuals_;              // per kart in the race
+    std::map<uint64_t, KartVisual> build_visuals_;      // (build, colour) -> visual
+    std::array<float, 12> wheel_angle_{};               // tyre spin per kart, radians
+    float frame_dt_ = 1.0f / 60.0f;
+    const KartVisual& build_visual(const sim::Build& b, int slot);
+    void draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle);
+    void draw_glider_visual(const KartVisual& v, const mat4& m, vec4 tint);
     void set_kart_meshes(const std::vector<sim::Build>& builds);
     sim::Build ghost_build_;
 

@@ -178,6 +178,21 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
     dp.pPoolSizes = pool_sizes;
     GK_VK_CHECK(vkCreateDescriptorPool(device_, &dp, nullptr, &descriptor_pool_));
 
+    // Set 1: one 2D texture per loaded model part.
+    const VkDescriptorSetLayoutBinding tex_binding{0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+    VkDescriptorSetLayoutCreateInfo tdsl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    tdsl.bindingCount = 1;
+    tdsl.pBindings = &tex_binding;
+    GK_VK_CHECK(vkCreateDescriptorSetLayout(device_, &tdsl, nullptr, &texture_set_layout_));
+    const VkDescriptorPoolSize tex_pool_size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kMaxTextures};
+    VkDescriptorPoolCreateInfo tdp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    tdp.maxSets = kMaxTextures;
+    tdp.poolSizeCount = 1;
+    tdp.pPoolSizes = &tex_pool_size;
+    GK_VK_CHECK(vkCreateDescriptorPool(device_, &tdp, nullptr, &texture_pool_));
+    const uint8_t white[4] = {255, 255, 255, 255};
+    if (upload_texture(1, 1, white) != 0) return false;
+
     for (auto& f : frames_) {
         VkCommandPoolCreateInfo cp{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
         cp.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
@@ -243,9 +258,12 @@ void Renderer::shutdown() {
         destroy_buffer(m.indices);
     }
     meshes_.clear();
+    for (auto& t : textures2d_) destroy_image(t.image);
+    textures2d_.clear();
     destroy_offscreen();
     destroy_swapchain();
     vkDestroyPipeline(device_, mesh_pipeline_, nullptr);
+    vkDestroyPipeline(device_, mesh_pipeline_two_sided_, nullptr);
     vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
     vkDestroyPipeline(device_, ui_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, ui_layout_, nullptr);
@@ -253,6 +271,8 @@ void Renderer::shutdown() {
     vkDestroySampler(device_, sampler_, nullptr);
     vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
     vkDestroyDescriptorSetLayout(device_, set_layout_, nullptr);
+    vkDestroyDescriptorPool(device_, texture_pool_, nullptr);
+    vkDestroyDescriptorSetLayout(device_, texture_set_layout_, nullptr);
     vmaDestroyAllocator(allocator_);
     vkb::destroy_device(vkb_device_);
     vkb::destroy_surface(vkb_instance_, surface_);
@@ -328,10 +348,11 @@ bool Renderer::create_pipeline() {
     VkShaderModule fs = make_shader(device_, k_mesh_frag, sizeof(k_mesh_frag));
     if (!vs || !fs) return false;
 
-    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mat4) + sizeof(vec4)};
+    VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(mat4) + 2 * sizeof(vec4)};
+    const VkDescriptorSetLayout layouts[2] = {set_layout_, texture_set_layout_};
     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    pl.setLayoutCount = 1;
-    pl.pSetLayouts = &set_layout_;
+    pl.setLayoutCount = 2;
+    pl.pSetLayouts = layouts;
     pl.pushConstantRangeCount = 1;
     pl.pPushConstantRanges = &push;
     GK_VK_CHECK(vkCreatePipelineLayout(device_, &pl, nullptr, &pipeline_layout_));
@@ -399,9 +420,12 @@ bool Renderer::create_pipeline() {
     gp.pDynamicState = &dy;
     gp.layout = pipeline_layout_;
     const VkResult r = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &mesh_pipeline_);
+    rs.cullMode = VK_CULL_MODE_NONE;
+    const VkResult r2 = r == VK_SUCCESS ? vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &mesh_pipeline_two_sided_) : r;
     vkDestroyShaderModule(device_, vs, nullptr);
     vkDestroyShaderModule(device_, fs, nullptr);
     GK_VK_CHECK(r);
+    GK_VK_CHECK(r2);
     return true;
 }
 
@@ -603,23 +627,42 @@ bool Renderer::create_textures() {
     sc.maxLod = float(kTexMips);
     GK_VK_CHECK(vkCreateSampler(device_, &sc, nullptr, &sampler_));
 
-    // Upload through a staging buffer, once.
-    Buffer staging = create_buffer(pixels.size(), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
-    if (!staging.mapped) return false;
-    std::memcpy(staging.mapped, pixels.data(), pixels.size());
-    vmaFlushAllocation(allocator_, staging.alloc, 0, VK_WHOLE_SIZE);
-    std::vector<VkBufferImageCopy> copies;
-    VkDeviceSize offset = 0;
+    // Upload every layer's mip chain.
+    std::vector<std::vector<uint8_t>> mips;
+    std::vector<VkExtent2D> extents;
+    size_t at = 0;
     for (uint32_t layer = 0; layer < TexCount; ++layer)
         for (uint32_t mip = 0; mip < uint32_t(kTexMips); ++mip) {
             const uint32_t size = uint32_t(kTexSize) >> mip;
-            VkBufferImageCopy c{};
-            c.bufferOffset = offset;
-            c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, mip, layer, 1};
-            c.imageExtent = {size, size, 1};
-            copies.push_back(c);
-            offset += VkDeviceSize(size) * size * 4;
+            const size_t bytes = size_t(size) * size * 4;
+            mips.emplace_back(pixels.begin() + long(at), pixels.begin() + long(at + bytes));
+            extents.push_back({size, size});
+            at += bytes;
         }
+    return upload_image_mips(textures_, mips, extents, TexCount);
+}
+
+// Copies `mips` (layer-major, mip-minor, RGBA8) into `img` and leaves it
+// ready for sampling.
+bool Renderer::upload_image_mips(Image& img, const std::vector<std::vector<uint8_t>>& mips, const std::vector<VkExtent2D>& extents,
+                                 uint32_t layers) {
+    size_t total = 0;
+    for (const auto& m : mips) total += m.size();
+    Buffer staging = create_buffer(std::max<size_t>(total, 4), VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
+    if (!staging.mapped) return false;
+    std::vector<VkBufferImageCopy> copies;
+    VkDeviceSize offset = 0;
+    const uint32_t per_layer = uint32_t(mips.size() / layers);
+    for (size_t i = 0; i < mips.size(); ++i) {
+        std::memcpy(static_cast<uint8_t*>(staging.mapped) + offset, mips[i].data(), mips[i].size());
+        VkBufferImageCopy c{};
+        c.bufferOffset = offset;
+        c.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(i) % per_layer, uint32_t(i) / per_layer, 1};
+        c.imageExtent = {extents[i].width, extents[i].height, 1};
+        copies.push_back(c);
+        offset += VkDeviceSize(mips[i].size());
+    }
+    vmaFlushAllocation(allocator_, staging.alloc, 0, VK_WHOLE_SIZE);
 
     VkCommandPool pool = VK_NULL_HANDLE;
     VkCommandPoolCreateInfo cp{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -637,14 +680,14 @@ bool Renderer::create_textures() {
     vkBeginCommandBuffer(cmd, &bi);
     VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    b.image = textures_.image;
-    b.subresourceRange = vc.subresourceRange;
+    b.image = img.image;
+    b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, per_layer, 0, layers};
     b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr,
                          1, &b);
-    vkCmdCopyBufferToImage(cmd, staging.buffer, textures_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    vkCmdCopyBufferToImage(cmd, staging.buffer, img.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                            uint32_t(copies.size()), copies.data());
     b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -663,13 +706,90 @@ bool Renderer::create_textures() {
     return true;
 }
 
+TextureId Renderer::upload_texture(int width, int height, const uint8_t* rgba) {
+    if (width <= 0 || height <= 0 || !rgba || textures2d_.size() >= kMaxTextures) return 0;
+    // Mip chain, box filtered, down to 1x1.
+    std::vector<std::vector<uint8_t>> mips;
+    std::vector<VkExtent2D> extents;
+    mips.emplace_back(rgba, rgba + size_t(width) * size_t(height) * 4);
+    extents.push_back({uint32_t(width), uint32_t(height)});
+    int w = width, h = height;
+    while (w > 1 || h > 1) {
+        const int nw = std::max(1, w / 2), nh = std::max(1, h / 2);
+        const std::vector<uint8_t>& src = mips.back();
+        std::vector<uint8_t> dst(size_t(nw) * size_t(nh) * 4);
+        for (int y = 0; y < nh; ++y)
+            for (int x = 0; x < nw; ++x)
+                for (int c = 0; c < 4; ++c) {
+                    int sum = 0;
+                    for (int dy = 0; dy < 2; ++dy)
+                        for (int dx = 0; dx < 2; ++dx) {
+                            const int sx = std::min(w - 1, 2 * x + dx), sy = std::min(h - 1, 2 * y + dy);
+                            sum += src[(size_t(sy) * size_t(w) + size_t(sx)) * 4 + size_t(c)];
+                        }
+                    dst[(size_t(y) * size_t(nw) + size_t(x)) * 4 + size_t(c)] = uint8_t(sum / 4);
+                }
+        mips.push_back(std::move(dst));
+        extents.push_back({uint32_t(nw), uint32_t(nh)});
+        w = nw;
+        h = nh;
+    }
+    Texture2D t;
+    VkImageCreateInfo ic{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ic.imageType = VK_IMAGE_TYPE_2D;
+    ic.format = VK_FORMAT_R8G8B8A8_UNORM;
+    ic.extent = {uint32_t(width), uint32_t(height), 1};
+    ic.mipLevels = uint32_t(mips.size());
+    ic.arrayLayers = 1;
+    ic.samples = VK_SAMPLE_COUNT_1_BIT;
+    ic.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ic.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    VmaAllocationCreateInfo ac{};
+    ac.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    if (vmaCreateImage(allocator_, &ic, &ac, &t.image.image, &t.image.alloc, nullptr) != VK_SUCCESS) {
+        log_error("Texture allocation failed ({}x{})", width, height);
+        return 0;
+    }
+    VkImageViewCreateInfo vc{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vc.image = t.image.image;
+    vc.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    vc.format = ic.format;
+    vc.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, ic.mipLevels, 0, 1};
+    if (vkCreateImageView(device_, &vc, nullptr, &t.image.view) != VK_SUCCESS) {
+        destroy_image(t.image);
+        return 0;
+    }
+    if (!upload_image_mips(t.image, mips, extents, 1)) {
+        destroy_image(t.image);
+        return 0;
+    }
+    VkDescriptorSetAllocateInfo da{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    da.descriptorPool = texture_pool_;
+    da.descriptorSetCount = 1;
+    da.pSetLayouts = &texture_set_layout_;
+    if (vkAllocateDescriptorSets(device_, &da, &t.set) != VK_SUCCESS) {
+        destroy_image(t.image);
+        return 0;
+    }
+    VkDescriptorImageInfo ii{sampler_, t.image.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    write.dstSet = t.set;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &ii;
+    vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+    textures2d_.push_back(t);
+    return TextureId(textures2d_.size() - 1);
+}
+
 void Renderer::destroy_image(Image& img) {
     if (img.view) vkDestroyImageView(device_, img.view, nullptr);
     if (img.image) vmaDestroyImage(allocator_, img.image, img.alloc);
     img = {};
 }
 
-MeshId Renderer::upload_mesh(const MeshData& mesh) {
+MeshId Renderer::upload_mesh(const MeshData& mesh, TextureId texture, bool two_sided) {
     // Low-poly meshes are small, so host-visible memory is fine; a staging
     // path can come later if a track ever needs it.
     GpuMesh g;
@@ -682,6 +802,8 @@ MeshId Renderer::upload_mesh(const MeshData& mesh) {
     vmaFlushAllocation(allocator_, g.vertices.alloc, 0, VK_WHOLE_SIZE);
     vmaFlushAllocation(allocator_, g.indices.alloc, 0, VK_WHOLE_SIZE);
     g.index_count = static_cast<uint32_t>(mesh.indices.size());
+    g.texture = texture < textures2d_.size() ? texture : 0;
+    g.two_sided = two_sided;
     meshes_.push_back(g);
     return static_cast<MeshId>(meshes_.size() - 1);
 }
@@ -804,16 +926,29 @@ void Renderer::end_frame() {
     struct {
         mat4 model;
         vec4 tint;
+        glm::ivec4 flags; // x: 1 = textured (set 1) instead of the detail array
     } push;
+    VkPipeline bound_pipeline = mesh_pipeline_;
+    TextureId bound_texture = UINT32_MAX;
     for (const auto& d : draws_) {
         const GpuMesh& m = meshes_[d.mesh];
         if (!m.index_count) continue;
+        const VkPipeline want = m.two_sided ? mesh_pipeline_two_sided_ : mesh_pipeline_;
+        if (want != bound_pipeline) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, want);
+            bound_pipeline = want;
+        }
+        if (m.texture != bound_texture) {
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 1, 1, &textures2d_[m.texture].set, 0, nullptr);
+            bound_texture = m.texture;
+        }
+        push.flags = glm::ivec4(m.texture ? 1 : 0, 0, 0, 0);
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
         vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
         push.model = d.model;
         push.tint = d.tint;
-        vkCmdPushConstants(cmd, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+        vkCmdPushConstants(cmd, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
         vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
     }
     if (!ui_vertices_.empty()) {
