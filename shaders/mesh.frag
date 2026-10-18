@@ -47,17 +47,62 @@ float sun_visibility(vec3 world, vec3 n) {
 
 layout(location = 0) out vec4 out_color;
 
+// Filmic response: highlights roll off instead of clipping, mid-tones get
+// a little contrast, colours a touch less candy.
+vec3 grade(vec3 c) {
+    // A soft shoulder above 0.8 so bright sun never clips flat.
+    vec3 over = max(c - 0.8, 0.0);
+    c = min(c, 0.8) + 0.2 * (1.0 - exp(-over * 3.0));
+    // Arcade punch: an S-curve for contrast and richer colour.
+    // (gentler at night, where it would crush the dark road)
+    c = mix(c, c * c * (3.0 - 2.0 * c), mix(0.05, 0.35, clamp(frame.shadow.z, 0.0, 1.0)));
+    float luma = dot(c, vec3(0.299, 0.587, 0.114));
+    c = mix(vec3(luma), c, 1.18);
+    // Warm highlights, slightly cool shadows.
+    c *= mix(vec3(0.95, 0.98, 1.05), vec3(1.04, 1.0, 0.94), smoothstep(0.2, 0.8, luma));
+    return clamp(c, 0.0, 1.0);
+}
+
+// Smooth value noise for large-scale variation across the ground.
+float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash2(i), hash2(i + vec2(1, 0)), u.x), mix(hash2(i + vec2(0, 1)), hash2(i + vec2(1, 1)), u.x), u.y);
+}
+
+// The haze colour along a view direction: warmer towards the sun.
+vec3 haze(vec3 dir, vec3 l, float sun) {
+    float toward = pow(max(dot(dir, l), 0.0), 6.0);
+    return mix(frame.fog_color.rgb, mix(frame.fog_color.rgb, vec3(1.0, 0.86, 0.66), 0.55), toward * clamp(sun, 0.0, 1.0));
+}
+
 void main() {
+    vec3 l = normalize(frame.light_dir.xyz);
+    float sun = frame.shadow.z; // 1 by day, low under the moon
+    if (draw.flags.w == 1) { // the sky dome: a gradient, haze at the horizon, the sun
+        vec3 dir = normalize(v_world - frame.camera_pos.xyz);
+        float up = clamp(dir.y, 0.0, 1.0);
+        vec3 deep = mix(vec3(0.12, 0.36, 0.86), frame.sky_color.rgb * vec3(0.4, 0.6, 1.0), 0.35);
+        vec3 zenith = mix(deep, frame.sky_color.rgb * 0.3, 1.0 - clamp(sun, 0.0, 1.0));
+        vec3 col = mix(haze(dir, l, sun), zenith, pow(up, 0.45));
+        float d = max(dot(dir, l), 0.0);
+        vec3 sun_col = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.92, 0.75), clamp(sun, 0.0, 1.0));
+        col += sun_col * (pow(d, 600.0) * 2.0 + pow(d, 40.0) * 0.25 + pow(d, 6.0) * 0.08) * clamp(sun, 0.25, 1.0);
+        col = mix(col, frame.fog_color.rgb * 0.92, smoothstep(0.0, -0.25, dir.y)); // below the horizon: haze
+        out_color = vec4(grade(col), 1.0);
+        return;
+    }
     if (draw.flags.y == 1) { // unlit: the texture as is, fogged
         vec4 t = texture(albedo_tex, v_uv) * v_color;
         if (t.a < 0.01) discard;
         float d = length(v_world - frame.camera_pos.xyz);
         float f = 1.0 - exp(-d * frame.fog_color.a);
-        out_color = vec4(mix(t.rgb, frame.fog_color.rgb, clamp(f, 0.0, 1.0)), t.a);
+        vec3 dir = (v_world - frame.camera_pos.xyz) / max(d, 1e-3);
+        out_color = vec4(grade(mix(t.rgb, haze(dir, l, sun), clamp(f, 0.0, 1.0))), t.a);
         return;
     }
     vec3 n = normalize(v_normal);
-    vec3 l = normalize(frame.light_dir.xyz);
     vec3 v = normalize(frame.camera_pos.xyz - v_world);
     float ambient = frame.light_dir.w;
     vec3 albedo;
@@ -74,28 +119,40 @@ void main() {
         alpha *= t.a;
     } else {
         albedo = v_color.rgb * texture(textures, vec3(v_uv, float(v_layer))).rgb * 2.0;
+        // Break up big flat areas: patches of wear and colour over tens of metres,
+        // and mowing stripes on grass.
+        if (v_layer != 0u) {
+            float macro = vnoise(v_world.xz * 0.035) * 0.6 + vnoise(v_world.xz * 0.12 + 17.0) * 0.4;
+            albedo *= 0.86 + 0.28 * macro;
+        }
+        if (v_layer == 2u) albedo *= 0.92 + 0.13 * smoothstep(0.42, 0.58, fract((v_world.x + v_world.z) * 0.055));
     }
 
-    // Soft wrapped diffuse: the shadow side stays readable, the terminator is
-    // smooth over rounded shapes.
+    // Diffuse with a soft terminator; shadowed faces keep a little sun.
     float ndl = dot(n, l);
-    float diffuse = smoothstep(-0.35, 0.9, ndl) * mix(0.12, 1.0, sun_visibility(v_world, n));
-    // Hemisphere ambient: faces towards the sky take a touch of its colour.
+    float vis = sun_visibility(v_world, n);
+    float diffuse = smoothstep(-0.2, 0.85, ndl) * mix(0.08, 1.0, vis);
+    // Hemisphere ambient: sky from above, warm bounce from the ground below.
     float up = n.y * 0.5 + 0.5;
-    vec3 amb = ambient * mix(vec3(0.85, 0.82, 0.8), mix(vec3(1.0), frame.sky_color.rgb * 1.4, 0.35), up);
-    // Sun and sky: the sun is strong enough that its shadows read clearly.
-    float sun = frame.shadow.z; // 1 by day, low under the moon
-    vec3 sun_col = mix(vec3(0.55, 0.65, 1.0), vec3(1.0, 0.97, 0.9), clamp(sun, 0.0, 1.0));
-    vec3 lit = albedo * (amb * 0.78 + (1.05 - ambient * 0.55) * diffuse * sun * sun_col);
+    vec3 sky_amb = mix(frame.sky_color.rgb, vec3(0.62, 0.72, 0.9), 0.4) * 1.05;
+    vec3 ground_amb = vec3(0.48, 0.42, 0.34);
+    vec3 amb = ambient * mix(ground_amb, sky_amb, up);
+    // Occlusion near the ground: the bottoms of things sit in their own shade.
+    float ao = mix(0.72, 1.0, smoothstep(-0.6, 0.6, n.y)) ;
+    vec3 sun_col = mix(vec3(0.5, 0.6, 0.95), vec3(1.0, 0.93, 0.8), clamp(sun, 0.0, 1.0));
+    vec3 lit = albedo * (amb * ao * 0.85 + (1.15 - ambient * 0.55) * diffuse * sun * sun_col);
 
-    // A broad glossy highlight and a thin rim: plastic and paint, not matte.
+    // A soft sheen, not plastic: broad and faint, and only in the sun.
     vec3 h = normalize(l + v);
-    float spec = pow(max(dot(n, h), 0.0), 36.0) * 0.28 * step(0.0, ndl) * diffuse;
-    float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.12 * (0.5 + 0.5 * ndl);
-    lit += (spec + rim) * mix(vec3(1.0), frame.sky_color.rgb, 0.3) * max(sun, 0.3);
+    float spec = pow(max(dot(n, h), 0.0), 18.0) * 0.07 * step(0.0, ndl) * vis;
+    float rim = pow(1.0 - max(dot(n, v), 0.0), 4.0) * 0.05 * (0.5 + 0.5 * ndl);
+    lit += (spec * sun_col + rim * sky_amb) * max(sun, 0.3);
     lit = mix(lit, albedo * 1.7, emission); // windows, neon and lamps light themselves
 
-    float dist = length(v_world - frame.camera_pos.xyz);
-    float fog = (1.0 - exp(-dist * frame.fog_color.a)) * (1.0 - 0.85 * emission); // lights shine through the haze
-    out_color = vec4(mix(lit, frame.fog_color.rgb, clamp(fog, 0.0, 1.0)), alpha);
+    // Aerial perspective: distance and low ground thicken the haze.
+    vec3 to = v_world - frame.camera_pos.xyz;
+    float dist = length(to);
+    float height_k = mix(1.0, 0.55, clamp((v_world.y + 10.0) / 60.0, 0.0, 1.0));
+    float fog = (1.0 - exp(-dist * frame.fog_color.a * height_k)) * (1.0 - 0.85 * emission); // lights shine through the haze
+    out_color = vec4(grade(mix(lit, haze(to / max(dist, 1e-3), l, sun), clamp(fog, 0.0, 1.0))), alpha);
 }

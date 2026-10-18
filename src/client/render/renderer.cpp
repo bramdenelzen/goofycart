@@ -685,6 +685,24 @@ void Renderer::ui_slant_rect(float x, float y, float w, float h, float slant, ui
     ui_vertices_.insert(ui_vertices_.end(), {a, b, cc, a, cc, d});
 }
 
+void Renderer::ui_vignette(float strength, uint32_t color) {
+    if (!frame_active_) return;
+    const VkExtent2D e = ui_extent();
+    const vec2 half(0.5f * float(e.width), 0.5f * float(e.height));
+    auto v = [&](float x, float y) {
+        UiVertex u;
+        u.pos = {x, y};
+        u.uv = vec2(x, y) - half;
+        u.color = color;
+        u.mode = 3;
+        u.params = vec4(half, strength, 0.0f);
+        return u;
+    };
+    const float w = float(e.width), h = float(e.height);
+    const UiVertex a = v(0, 0), b = v(w, 0), c = v(w, h), d = v(0, h);
+    ui_vertices_.insert(ui_vertices_.end(), {a, b, c, a, c, d});
+}
+
 void Renderer::ui_glyphs(float x, float y, const char* text, uint32_t color, float em, float edge, float soft, uint32_t color_bottom,
                          float slant, float tracking) {
     const float baseline = y + g_font.cap_height() * em;
@@ -1132,6 +1150,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
     std::memcpy(f.uniforms.mapped, &u, sizeof(u));
     vmaFlushAllocation(allocator_, f.uniforms.alloc, 0, VK_WHOLE_SIZE);
     clear_color_ = lighting.sky;
+    sky_center_ = camera.position;
 
     draws_.clear();
     ui_vertices_.clear();
@@ -1244,6 +1263,26 @@ void Renderer::end_frame() {
     } push;
     VkPipeline bound_pipeline = mesh_pipeline_;
     TextureId bound_texture = UINT32_MAX;
+    {   // The sky first: a sphere just inside the far plane, round the camera.
+        if (!sky_mesh_) {
+            MeshBuilder b;
+            b.icosphere(vec3(0.0f), 1.0f, rgba(255, 255, 255));
+            sky_mesh_ = upload_mesh(b.take(), 0, true);
+        }
+        const GpuMesh& m = meshes_[sky_mesh_];
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_pipeline_two_sided_);
+        bound_pipeline = mesh_pipeline_two_sided_;
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 1, 1, &textures2d_[0].set, 0, nullptr);
+        bound_texture = 0;
+        push.model = glm::scale(glm::translate(mat4(1.0f), sky_center_), vec3(900.0f));
+        push.tint = vec4(1.0f);
+        push.flags = glm::ivec4(0, 0, 0, 1);
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
+        vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdPushConstants(cmd, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
+        vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+    }
     // Opaque meshes first, then the see-through ones in the order they came.
     for (int pass = 0; pass < 2; ++pass)
     for (const auto& d : draws_) {

@@ -87,6 +87,8 @@ public:
     // A parallelogram leaning right by `slant` (x shift per unit of height),
     // with crisp anti-aliased edges; `feather` softens it into a shadow.
     void ui_slant_rect(float x, float y, float w, float h, float slant, uint32_t top, uint32_t bottom, float feather = 0.0f);
+    // Darkens the corners of the screen (drawn first, under the HUD).
+    void ui_vignette(float strength, uint32_t color = 0xff000000u);
     // Text, its cap height about 7 * scale pixels, `y` the top of the capitals.
     // `shadow` gives it a dark outline and a soft drop shadow.
     void ui_text(float x, float y, const char* text, uint32_t color, float scale = 1.0f, bool shadow = true);
@@ -252,6 +254,8 @@ private:
     static constexpr uint32_t kMaxTextures = 1024;
     std::vector<UiVertex> ui_vertices_;
     TextureId font_texture_ = 0;
+    MeshId sky_mesh_ = 0;     // a sphere round the camera, shaded as sky (mesh.frag)
+    vec3 sky_center_{0.0f};
     void ui_glyphs(float x, float y, const char* text, uint32_t color, float em, float edge, float soft, uint32_t color_bottom = 0,
                    float slant = 0.0f, float tracking = 0.0f);
 

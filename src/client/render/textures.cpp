@@ -39,11 +39,12 @@ Texel grey(float v) { return {v, v, v}; }
 // Values are brightness multipliers around 1 (the shader scales 0..255 to 0..2).
 Texel white(int, int) { return grey(1.0f); }
 Texel asphalt(int x, int y) {
-    float v = 0.92f + 0.12f * fbm(float(x), float(y), 11);
+    // Coarse aggregate: grain, light and dark stones, a faint warm cast.
+    float v = 0.88f + 0.2f * fbm(float(x), float(y), 11);
     const float s = rnd(x, y, 12);
-    if (s > 0.93f) v += 0.1f;
-    else if (s < 0.06f) v -= 0.1f;
-    return grey(v);
+    if (s > 0.92f) v += 0.16f;
+    else if (s < 0.08f) v -= 0.16f;
+    return {v * 1.01f, v, v * 0.98f};
 }
 Texel grass(int x, int y) {
     float v = 0.85f + 0.2f * noise(float(x), float(y) * 0.35f, 8, 21) + 0.1f * fbm(float(x), float(y), 22);

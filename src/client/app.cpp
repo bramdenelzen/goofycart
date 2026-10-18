@@ -1352,6 +1352,7 @@ void App::render(float alpha, float dt) {
         draw_standings();
     } else if (w) {
         const auto& karts = w->karts();
+        renderer_.ui_vignette(0.55f); // a lens feel; first, so the HUD sits on top
         draw_items(*w);
         draw_breakables(*w);
         draw_movers(*w, alpha);
