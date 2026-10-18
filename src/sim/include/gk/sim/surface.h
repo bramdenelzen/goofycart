@@ -18,6 +18,7 @@ enum class Surface : uint8_t {
     TrickRamp,      // ramp lip that allows a trick
     Wall,
     OutOfBounds,    // lava, void, deep water: respawn
+    Oil,            // an oil spill: road with almost no sideways grip
     Count
 };
 

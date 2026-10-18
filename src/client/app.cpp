@@ -248,6 +248,7 @@ bool App::init() {
     spark_mesh_ = renderer_.upload_mesh(render::make_spark_mesh());
     flame_mesh_ = renderer_.upload_mesh(render::make_flame_mesh());
     fireball_mesh_ = renderer_.upload_mesh(render::make_fireball_mesh());
+    oil_disc_mesh_ = renderer_.upload_mesh(render::make_oil_disc_mesh());
     box_mesh_ = renderer_.upload_mesh(render::make_item_box_mesh());
     banana_mesh_ = renderer_.upload_mesh(render::make_banana_mesh());
     green_mesh_ = renderer_.upload_mesh(render::make_shell_mesh(render::rgba(60, 200, 70), false));
@@ -379,6 +380,7 @@ void App::show_track(const std::string& id) {
         const uint64_t t0 = SDL_GetPerformanceCounter();
         auto ms = [&] { return int(double(SDL_GetPerformanceCounter() - t0) * 1000.0 / double(SDL_GetPerformanceFrequency())); };
         const render::MeshId track = renderer_.upload_mesh(render::make_track_mesh(*shown_track_, true));
+        if (const render::MeshData oil = render::make_oil_mesh(*shown_track_); !oil.indices.empty()) oil_meshes_[shown_track_->id] = renderer_.upload_mesh(oil);
         const int ms_road = ms();
         std::vector<render::PropPlacement> placements;
         const render::MeshId scenery = renderer_.upload_mesh(render::make_scenery_mesh(*shown_track_, &placements));
@@ -429,6 +431,7 @@ void App::show_track(const std::string& id) {
     scenery_mesh_ = it->second.second;
     prop_meshes_ = &track_props_[shown_track_->id];
     lights_ = &track_lights_[shown_track_->id];
+    oil_mesh_ = oil_meshes_.count(shown_track_->id) ? oil_meshes_[shown_track_->id] : 0;
     const render::ThemeStyle& th = render::theme_style(shown_track_->theme);
     light_ = {};
     light_.sky = th.sky;
@@ -586,6 +589,9 @@ void App::update() {
         else if (options_.demo_fx == "hit") world_->apply_hit(player_, sim::HitKind::Spin, -1);
         else if (options_.demo_fx == "tumble") world_->apply_hit(player_, sim::HitKind::Tumble, -1);
         else if (options_.demo_fx == "trick") k.trick_anim = 1.0f, event_particles({sim::KartEventType::Trick, player_, 0});
+        else if (options_.demo_fx == "oil") // every other kart pours out a slick, so the player sees them ahead
+            for (size_t i = 0; i < world_->karts().size(); ++i)
+                if (int(i) != player_) world_->throw_item(int(i), sim::Item::OilSlick, true, false);
     }
     if (online_) {
         const sim::World* w = online_->world();
@@ -931,7 +937,8 @@ void App::event_sound(const sim::KartEvent& e) {
     case sim::KartEventType::ItemUse:
         switch (sim::Item(e.value)) {
         case sim::Item::Banana:
-        case sim::Item::TripleBanana: s = Sfx::Drop; break;
+        case sim::Item::TripleBanana:
+        case sim::Item::OilSlick: s = Sfx::Drop; break;
         case sim::Item::Mushroom:
         case sim::Item::TripleMushroom:
         case sim::Item::GoldenMushroom:
@@ -1669,6 +1676,7 @@ render::MeshId App::item_mesh(sim::Item item) const {
     case sim::Item::GreenShell: case sim::Item::TripleGreen: return green_mesh_;
     case sim::Item::RedShell: case sim::Item::TripleRed: return red_mesh_;
     case sim::Item::Bomb: return bomb_mesh_;
+    case sim::Item::OilSlick: return bomb_mesh_;
     default: return 0;
     }
 }
@@ -1679,6 +1687,7 @@ const char* App::item_name(sim::Item item) {
     case sim::Item::GreenShell: case sim::Item::TripleGreen: return "green_shell";
     case sim::Item::RedShell: case sim::Item::TripleRed: return "red_shell";
     case sim::Item::Bomb: return "bomb";
+    case sim::Item::OilSlick: return "oil_slick";
     default: return "";
     }
 }
@@ -1919,6 +1928,14 @@ void App::draw_items(const sim::World& w) {
         const float yaw = std::atan2(e.vel.x, e.vel.z);
         switch (e.type) {
         case sim::EntityType::Banana: draw_item_mesh(banana_mesh_, "banana", m); break;
+        case sim::EntityType::OilSlick: { // a puddle on the road, spreading out as it lands
+            const float spread = std::min(1.0f, float(e.age) / 20.0f);
+            renderer_.set_fx(6);
+            renderer_.draw(oil_disc_mesh_, glm::scale(glm::rotate(glm::translate(mat4(1.0f), e.pos - vec3(0, 0.32f, 0)), float(e.owner) * 1.3f, vec3(0, 1, 0)),
+                                                      vec3(2.2f * spread, 1.0f, 1.9f * spread)));
+            renderer_.set_fx(0);
+            break;
+        }
         case sim::EntityType::GreenShell: draw_item_mesh(green_mesh_, "green_shell", glm::rotate(m, float(e.age) * 0.4f, vec3(0, 1, 0))); break;
         case sim::EntityType::RedShell: draw_item_mesh(red_mesh_, "red_shell", glm::rotate(m, float(e.age) * 0.4f, vec3(0, 1, 0))); break;
         case sim::EntityType::SpikedShell:
@@ -2001,6 +2018,7 @@ void App::render(float alpha, float dt) {
     if (scenery_mesh_) renderer_.draw(scenery_mesh_, mat4(1.0f));
     if (prop_meshes_)
         for (render::MeshId id : *prop_meshes_) renderer_.draw(id, mat4(1.0f));
+    if (oil_mesh_) renderer_.set_fx(6), renderer_.draw(oil_mesh_, mat4(1.0f)), renderer_.set_fx(0);
     if (w && screen_ == Screen::Standings) {
         for (size_t i = 0; i < w->karts().size(); ++i) draw_kart(int(i), w->karts()[i], alpha);
         draw_standings();

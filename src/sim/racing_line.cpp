@@ -15,6 +15,7 @@ bool drivable(Surface s) {
     case Surface::Road:
     case Surface::Sand:
     case Surface::Ice:
+    case Surface::Oil:
     case Surface::Water:
     case Surface::BoostPad:
     case Surface::GlideRamp:

@@ -81,6 +81,7 @@ public:
     // Testing: a hit or an explosion on demand.
     void spawn_explosion(vec3 pos, int owner);
     void apply_hit(int kart, HitKind kind, int from);
+    void throw_item(int kart, Item item, bool backwards, bool forwards);
 
     uint64_t tick_count() const { return tick_; }
     int countdown_left() const { return countdown_left_; }
@@ -98,7 +99,6 @@ private:
     void items_before_step(std::vector<KartInput>& inputs);
     void items_after_step();
     void use_item(int kart, const KartInput& in, bool pressed, bool released);
-    void throw_item(int kart, Item item, bool backwards, bool forwards);
     bool shield_blocks(int kart, vec3 from_pos, bool any_side);
     void update_entities();
     int kart_in_place(int place) const;

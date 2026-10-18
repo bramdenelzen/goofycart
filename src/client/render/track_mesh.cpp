@@ -33,6 +33,7 @@ uint32_t surface_color(const ThemeStyle& th, sim::Surface s) {
     case Surface::TrickRamp: return rgba(240, 220, 60);
     case Surface::Wall: return th.wall_a;
     case Surface::OutOfBounds: return th.below;
+    case Surface::Oil: return th.road;
     case Surface::Count: break;
     }
     return rgba(255, 0, 255);
@@ -119,6 +120,7 @@ uint32_t surface_texture(const std::string& theme, sim::Surface s) {
     case Surface::TrickRamp: return TexStripes;
     case Surface::Wall: return TexPanel;
     case Surface::OutOfBounds: return terrain(false);
+    case Surface::Oil: return TexAsphalt;
     case Surface::Count: break;
     }
     return TexWhite;
@@ -1244,6 +1246,29 @@ MeshData make_flame_mesh() {
         }
     }
     b.grid(pts, rows, cols, true, rgba(255, 255, 255), 1.0f, 1.0f);
+    return b.take();
+}
+
+MeshData make_oil_mesh(const sim::Track& t) {
+    MeshBuilder b;
+    for (const auto& tri : t.triangles) {
+        if (tri.surface != sim::Surface::Oil) continue;
+        const vec3 lift(0.0f, 0.03f, 0.0f);
+        b.tri(t.vertices[tri.a] + lift, t.vertices[tri.b] + lift, t.vertices[tri.c] + lift, rgba(255, 255, 255));
+    }
+    return b.take();
+}
+
+MeshData make_oil_disc_mesh() {
+    MeshBuilder b;
+    const int n = 28;
+    std::vector<vec3> rim;
+    for (int i = 0; i < n; ++i) {
+        const float a = 2.0f * kPi * float(i) / float(n);
+        const float r = 1.0f + 0.14f * std::sin(a * 3.0f) + 0.07f * std::sin(a * 7.0f + 1.3f);
+        rim.push_back({std::cos(a) * r, 0.0f, std::sin(a) * r});
+    }
+    for (int i = 0; i < n; ++i) b.tri(vec3(0.0f), rim[size_t((i + 1) % n)], rim[size_t(i)], rgba(255, 255, 255));
     return b.take();
 }
 

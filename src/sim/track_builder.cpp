@@ -391,7 +391,7 @@ bool parse_surface(const std::string& s, Surface& out) {
         {"road", Surface::Road},          {"offroad_light", Surface::OffroadLight},
         {"offroad_medium", Surface::OffroadMedium}, {"offroad_heavy", Surface::OffroadHeavy},
         {"sand", Surface::Sand},          {"ice", Surface::Ice},
-        {"water", Surface::Water},
+        {"water", Surface::Water},          {"oil", Surface::Oil},
     };
     for (const auto& [name, surf] : kNames)
         if (s == name) {

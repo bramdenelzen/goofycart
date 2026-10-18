@@ -270,7 +270,7 @@ void write_entity(Writer& w, const sim::ItemEntity& e) {
 
 sim::ItemEntity read_entity(Reader& r) {
     sim::ItemEntity e;
-    e.type = sim::EntityType(std::min<int>(r.u8(), int(sim::EntityType::Explosion)));
+    e.type = sim::EntityType(std::min<int>(r.u8(), int(sim::EntityType::OilSlick)));
     e.owner = r.i8();
     e.target = r.i8();
     e.bounces = r.u8();

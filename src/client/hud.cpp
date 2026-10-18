@@ -158,6 +158,7 @@ ItemLook item_look(sim::Item item) {
     case Item::LuckyEight: return {"LUCKY 8", rgba(160, 80, 200)};
     case Item::Coin: return {"COIN", rgba(240, 200, 40)};
     case Item::Ghost: return {"GHOST", rgba(200, 200, 220)};
+    case Item::OilSlick: return {"OIL", rgba(40, 38, 48)};
     default: return {"", rgba(0, 0, 0)};
     }
 }

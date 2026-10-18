@@ -217,6 +217,8 @@ private:
     render::SceneLighting light_;
 
     render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0, shadow_mesh_ = 0, fireball_mesh_ = 0;
+    render::MeshId oil_disc_mesh_ = 0, oil_mesh_ = 0; // a dropped slick, and the track's own spills
+    std::map<std::string, render::MeshId> oil_meshes_;
     // Hit flash per kart: seconds left of the white-to-red glow.
     std::array<float, 12> hit_flash_{};
     // Explosions seen this second, so each one bursts once.

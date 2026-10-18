@@ -276,6 +276,30 @@ PaintedModel horn() {
     return m;
 }
 
+// An oil can: a squat black drum with a yellow cap and a drip, held behind
+// the kart and tipped out as a slick.
+PaintedModel oil_can() {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect drum = span(0, 0, 2, 2), cap = span(2, 0, 3, 1), label = span(0, 2, 2, 3);
+    region(b, drum);
+    b.lathe({0, 0, 0}, {0, 1, 0}, {{0.0f, 0.0f}, {0.2f, 0.0f}, {0.24f, 0.05f}, {0.25f, 0.42f}, {0.2f, 0.5f}, {0.0f, 0.5f}}, 24, kWhite, 1.0f, 1.0f);
+    t.gradient_v(drum, col(55, 52, 62), col(22, 20, 26));
+    t.band_u(drum, 0.1f, 0.25f, col(120, 118, 130, 0.35f), 0.06f); // a highlight down one side
+    region(b, label);
+    b.lathe({0, 0.15f, 0}, {0, 1, 0}, {{0.252f, 0.0f}, {0.252f, 0.2f}}, 24, kWhite, 1.0f, 1.0f);
+    t.fill(label, col(240, 190, 40));
+    t.ellipse(label, {0.25f, 0.5f}, {0.05f, 0.09f}, col(30, 28, 34), 0.02f);   // a drop
+    t.ellipse(label, {0.75f, 0.5f}, {0.05f, 0.09f}, col(30, 28, 34), 0.02f);
+    region(b, cap);
+    b.lathe({0.12f, 0.5f, 0.0f}, {0, 1, 0}, {{0.0f, 0.0f}, {0.07f, 0.0f}, {0.07f, 0.08f}, {0.0f, 0.08f}}, 12, kWhite, 1.0f, 1.0f);
+    t.gradient_v(cap, col(250, 200, 50), col(200, 150, 30));
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
 PaintedModel coin() {
     PaintedModel m;
     MeshBuilder b;
@@ -362,6 +386,7 @@ std::map<std::string, PaintedModel> make_gobby_items() {
     jobs.emplace_back("blooper", [] { return blooper(); });
     jobs.emplace_back("horn", [] { return horn(); });
     jobs.emplace_back("coin", [] { return coin(); });
+    jobs.emplace_back("oil_slick", [] { return oil_can(); });
     jobs.emplace_back("fireball", [] { return fireball(); });
     return build_models_parallel(std::move(jobs));
 }

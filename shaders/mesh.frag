@@ -127,6 +127,25 @@ void main() {
         out_color = vec4(grade(mix(c, haze(dir, l, sun), clamp(f, 0.0, 1.0) * 0.6)), 1.0);
         return;
     }
+    if (draw.flags.w == 6) { // oil: black, with the thin-film rainbow sheen of a spill, rippling slowly
+        vec3 n6 = normalize(v_normal);
+        vec3 v6 = normalize(frame.camera_pos.xyz - v_world);
+        float time = frame.shadow.w;
+        float f = 1.0 - max(dot(n6, v6), 0.0);
+        float rip = vnoise(v_world.xz * 1.3 + vec2(time * 0.12, -time * 0.08)) * 0.6 + vnoise(v_world.xz * 3.7 - vec2(time * 0.05, time * 0.1)) * 0.4;
+        float phase = f * 2.2 + rip * 3.0 + (v_world.x + v_world.z) * 0.15;
+        vec3 rainbow = 0.5 + 0.5 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + phase));
+        float sheen = pow(f, 1.4) * 0.6 + 0.1;
+        vec3 c = vec3(0.015, 0.015, 0.02) + rainbow * sheen * 0.55 * (0.6 + 0.4 * rip);
+        vec3 h6 = normalize(l + v6);
+        c += vec3(1.0, 0.95, 0.85) * pow(max(dot(n6, h6), 0.0), 90.0) * 0.9 * sun; // the sun's glint
+        c += frame.sky_color.rgb * f * f * 0.3;                                      // the sky in it
+        float d = length(v_world - frame.camera_pos.xyz);
+        float fg = 1.0 - exp(-d * frame.fog_color.a);
+        vec3 dir = (v_world - frame.camera_pos.xyz) / max(d, 1e-3);
+        out_color = vec4(grade(mix(c, haze(dir, l, sun), clamp(fg, 0.0, 1.0))), 1.0);
+        return;
+    }
     if (draw.flags.w == 5) { // fireball: a ball of noise that burns away from the outside in
         float p = clamp(draw.tint.a, 0.0, 1.0);
         vec3 d = normalize(v_world - draw.model[3].xyz + vec3(0.001));

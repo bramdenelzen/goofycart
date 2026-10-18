@@ -340,6 +340,18 @@
       ],
       "period": 2.9,
       "phase": 0.3
+    },
+    {
+      "type": "road",
+      "surface": "oil",
+      "from": [
+        7,
+        30
+      ],
+      "to": [
+        8,
+        2
+      ]
     }
   ]
 }

@@ -64,6 +64,7 @@ const char* surface_name(Surface s) {
     case Surface::TrickRamp: return "trick_ramp";
     case Surface::Wall: return "wall";
     case Surface::OutOfBounds: return "out_of_bounds";
+    case Surface::Oil: return "oil";
     case Surface::Count: break;
     }
     return "?";

@@ -190,6 +190,21 @@ std::vector<uint8_t> paint_item_icons(int size) {
             }
             break;
         case Item::Coin: coin(t, r, c, 1.0f); break;
+        case Item::OilSlick: { // a black puddle with an oily rainbow sheen and a drip
+            t.custom(r, [&](float u, float v) {
+                const vec2 p = vec2(u, v) - c;
+                const float a = std::atan2(p.y, p.x);
+                const float edge = 0.36f + 0.06f * std::sin(a * 3.0f) + 0.03f * std::sin(a * 7.0f + 1.0f);
+                const float d = glm::length(vec2(p.x, p.y * 1.5f));
+                if (d > edge) return vec4(0.0f);
+                if (d > edge - 0.04f) return kInk;
+                const float k = 0.5f + 0.5f * std::sin(d * 18.0f - a * 2.0f);
+                const vec3 rainbow = vec3(0.5f) + 0.5f * glm::cos(6.2831f * (vec3(0.0f, 0.33f, 0.67f) + k));
+                return vec4(glm::mix(vec3(0.08f, 0.08f, 0.1f), rainbow, 0.35f * k), 1.0f);
+            });
+            t.ellipse(r, c + vec2(-0.12f, -0.08f), vec2(0.07f, 0.035f), col(255, 255, 255, 0.6f), 0.02f);
+            break;
+        }
         case Item::Ghost:
             blob(t, r, c, vec2(0.32f, 0.36f), col(250, 250, 255), col(200, 200, 225));
             t.ellipse(r, c + vec2(-0.1f, -0.05f), vec2(0.05f, 0.08f), kInk, 0.005f);

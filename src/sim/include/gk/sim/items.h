@@ -32,6 +32,7 @@ enum class Item : uint8_t {
     LuckyEight,
     Coin,
     Ghost,          // turn invisible and steal an item
+    OilSlick,       // dropped behind: whoever drives through it spins out
     Count
 };
 inline constexpr int kItemCount = int(Item::Count) - 1; // 22 race items
@@ -43,7 +44,7 @@ int item_uses(Item item);
 bool item_trails(Item item);
 
 // Things on the track: thrown and dropped items, and explosions.
-enum class EntityType : uint8_t { Banana, GreenShell, RedShell, SpikedShell, Bomb, Fireball, Boomerang, Explosion };
+enum class EntityType : uint8_t { Banana, GreenShell, RedShell, SpikedShell, Bomb, Fireball, Boomerang, Explosion, OilSlick };
 
 struct ItemEntity {
     EntityType type = EntityType::Banana;

@@ -38,5 +38,9 @@ MeshData make_spark_mesh();
 MeshData make_flame_mesh();
 // A unit sphere for the fireball shader (explosions).
 MeshData make_fireball_mesh();
+// The track's oil spills (Surface::Oil), lifted just off the road, for the oil shader.
+MeshData make_oil_mesh(const sim::Track& track);
+// A puddle: an irregular flat disc about a unit across, for a dropped oil slick.
+MeshData make_oil_disc_mesh();
 
 } // namespace gk::render

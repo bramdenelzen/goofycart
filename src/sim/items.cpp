@@ -35,6 +35,7 @@ const char* item_name(Item item) {
     case Item::LuckyEight: return "Lucky Eight";
     case Item::Coin: return "Coin";
     case Item::Ghost: return "Ghost";
+    case Item::OilSlick: return "Oil Slick";
     case Item::Count: break;
     }
     return "?";
@@ -55,7 +56,7 @@ int item_uses(Item item) {
 }
 
 bool item_trails(Item item) {
-    return item == Item::Banana || item == Item::GreenShell || item == Item::RedShell || item == Item::Bomb;
+    return item == Item::Banana || item == Item::GreenShell || item == Item::RedShell || item == Item::Bomb || item == Item::OilSlick;
 }
 
 namespace {
@@ -79,6 +80,7 @@ constexpr Odds kOdds[] = {
     {Item::Boomerang, {2, 6, 6, 4, 2}},       {Item::Chomper, {0, 3, 6, 6, 4}},
     {Item::Horn, {6, 6, 4, 2, 1}},            {Item::LuckyEight, {0, 0, 2, 4, 5}},
     {Item::Coin, {22, 9, 4, 1, 0}},           {Item::Ghost, {0, 3, 4, 3, 2}},
+    {Item::OilSlick, {12, 9, 6, 2, 0}},
 };
 static_assert(sizeof(kOdds) / sizeof(kOdds[0]) == kItemCount);
 
@@ -327,6 +329,12 @@ void World::throw_item(int i, Item item, bool backwards, bool forwards) {
             e.pos = behind;
             e.vel = -fwd * 2.0f;
         }
+        break;
+    case Item::OilSlick: // poured out behind: a puddle that stays a while
+        e.type = EntityType::OilSlick;
+        e.pos = behind;
+        e.vel = -fwd * 1.5f;
+        e.life = 1500;
         break;
     case Item::GreenShell:
     case Item::Fireball:
@@ -634,7 +642,7 @@ void World::update_entities() {
                 e.vel.y = 0.0f;
                 if (!e.grounded && e.type == EntityType::Bomb && e.life == 0) e.life = int16_t(t.bomb_fuse);
                 e.grounded = true;
-                if (e.type == EntityType::Banana || e.type == EntityType::Bomb) e.vel = vec3(0.0f);
+                if (e.type == EntityType::Banana || e.type == EntityType::Bomb || e.type == EntityType::OilSlick) e.vel = vec3(0.0f);
             } else {
                 e.grounded = false;
                 e.vel.y -= g * kDt;
@@ -665,7 +673,12 @@ void World::update_entities() {
             if (j == e.owner && (e.age < 25 || e.type == EntityType::Boomerang)) continue;
             if (k.respawn_frames > 0 || k.ghost_frames > 0 || k.finished) continue;
             if (e.type == EntityType::RedShell && e.target >= 0 && j != e.target && e.age < 25) continue;
-            if (glm::length(k.pos + k.up() * 0.4f - e.pos) > kHitRadius) continue;
+            if (glm::length(k.pos + k.up() * 0.4f - e.pos) > (e.type == EntityType::OilSlick ? 2.0f : kHitRadius)) continue;
+            if (e.type == EntityType::OilSlick) { // the puddle stays; the kart spins out
+                if (k.star_frames == 0 && k.bullet_frames == 0 && k.invincible_frames == 0 && k.spin_frames == 0 && k.tumble_frames == 0)
+                    apply_hit(j, HitKind::Spin, e.owner);
+                continue;
+            }
             if (k.star_frames > 0 || k.bullet_frames > 0) {
                 dead[idx] = e.type != EntityType::Boomerang;
                 break;

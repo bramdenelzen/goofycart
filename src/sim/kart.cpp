@@ -89,6 +89,7 @@ float terrain_multiplier(const KartState& s, const KartParams& p, const PhysicsC
     case Surface::OffroadHeavy: return k.offroad_heavy;
     case Surface::Sand: return p.sand_grip;
     case Surface::Ice: return p.ice_grip;
+    case Surface::Oil: return p.ice_grip * 0.97f;
     case Surface::Water: return p.top_speed_water / p.top_speed;
     default: return 1.0f;
     }
@@ -371,6 +372,7 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     float retention = s.drift == DriftState::Drifting ? glm::mix(k.drift_entry_slip_retention, k.drift_slip_retention, entry)
                                                       : k.road_slip_retention;
     if (s.surface == Surface::Ice) retention = glm::mix(0.97f, 0.85f, p.slip_traction);
+    else if (s.surface == Surface::Oil) retention = 0.985f; // an oil spill: the kart keeps sliding whichever way it was going
     else if (s.surface == Surface::Sand) retention = glm::mix(0.85f, 0.6f, p.slip_traction);
     s.slide = lateral * retention;
 

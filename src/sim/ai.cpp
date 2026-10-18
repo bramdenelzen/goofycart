@@ -145,7 +145,7 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
                 shift += -sign(l.x) * (1.8f - std::abs(l.x)) * 1.2f;
         }
         for (const ItemEntity& e : world.entities()) {
-            if (e.type != EntityType::Banana && e.type != EntityType::Bomb) continue;
+            if (e.type != EntityType::Banana && e.type != EntityType::Bomb && e.type != EntityType::OilSlick) continue;
             const Local l = to_local(k, e.pos);
             if (l.z > 0.0f && l.z < 25.0f && std::abs(l.x) < 2.4f && std::abs(l.y) < 3.0f)
                 shift += -sign(l.x) * (2.4f - std::abs(l.x)) * 1.5f;
@@ -312,7 +312,8 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
 
     Act act = Act::Nothing;
     switch (k.item) {
-    case Item::Banana: act = behind ? Act::FireBack : Act::Hold; break;
+    case Item::Banana:
+    case Item::OilSlick: act = behind ? Act::FireBack : Act::Hold; break;
     case Item::GreenShell:
     case Item::Bomb: act = ahead ? Act::Fire : behind ? Act::FireBack : Act::Hold; break;
     case Item::RedShell: act = place > 1 ? Act::Fire : behind ? Act::FireBack : Act::Hold; break;
