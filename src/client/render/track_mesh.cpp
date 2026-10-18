@@ -128,7 +128,7 @@ std::pair<uint32_t, uint32_t> obstacle_look(const std::string& theme, bool pilla
     return {TexWood, rgba(196, 150, 96)}; // crates
 }
 
-MeshData make_track_mesh(const sim::Track& t) {
+MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
     const ThemeStyle& th = theme_style(t.theme);
     MeshBuilder b;
     const sim::CenterSample& start = t.center.front();
@@ -155,6 +155,7 @@ MeshData make_track_mesh(const sim::Track& t) {
         const vec3 a = t.vertices[tri.a], c1 = t.vertices[tri.b], c2 = t.vertices[tri.c];
         const vec3 centroid = (a + c1 + c2) / 3.0f;
         if (obstacle_of[ti] >= 0) {
+            if (skip_obstacles) continue;
             const auto& o = t.obstacles[size_t(obstacle_of[ti])];
             const auto [tex, color] = obstacle_look(t.theme, o.sides > 4);
             b.texture(tex, o.sides > 4 ? 2.0f : 2.0f * std::max(o.half.x, o.half.y));
@@ -416,12 +417,146 @@ void hills(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng& rnd, 
     }
 }
 
-MeshData make_scenery_mesh(const sim::Track& t) {
+// Lamp posts on the walls, leaning over the road, and billboards on the
+// outside of the walls along straights, facing the road.
+void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<bool>& left, const std::vector<bool>& right, Rng& rnd,
+                std::vector<PropPlacement>& out) {
+    using S = ThemeStyle::Scenery;
+    constexpr int kStride = 9;
+    const int n = int(t.center.size());
+    const int lamp_every = th.scenery == S::City ? 12 : 20;
+    auto oriented = [&](const sim::CenterSample& c, vec3 pos, vec3 x_axis, float scale) {
+        const vec3 x = glm::normalize(x_axis - c.up * glm::dot(x_axis, c.up));
+        const vec3 y = c.up, z = glm::cross(x, y);
+        return mat4(vec4(x * scale, 0.0f), vec4(y * scale, 0.0f), vec4(z * scale, 0.0f), vec4(pos, 1.0f));
+    };
+    for (int i = 9; i < n - 6; i += lamp_every) {
+        const int side = (i / lamp_every) % 2 ? 1 : -1;
+        if (!(side > 0 ? right[size_t(i)] : left[size_t(i)])) continue;
+        const sim::CenterSample& c = t.center[size_t(i)];
+        const vec3 top = t.vertices[size_t(i * kStride + (side > 0 ? 8 : 7))];
+        const vec3 outward = c.right * float(side);
+        out.push_back({"lamp_post", oriented(c, top + outward * 0.35f - c.up * 0.05f, -outward, 0.9f)});
+    }
+    // Billboards where the road runs straight for a while.
+    for (int i = 30; i < n - 30; i += 70) {
+        const sim::CenterSample& c = t.center[size_t(i)];
+        const float bend = glm::dot(t.center[size_t(i - 8)].tangent, t.center[size_t(i + 8)].tangent);
+        if (bend < 0.97f) continue;
+        const int side = rnd() < 0.5f ? 1 : -1;
+        if (!(side > 0 ? right[size_t(i)] : left[size_t(i)])) continue;
+        const vec3 top = t.vertices[size_t(i * kStride + (side > 0 ? 8 : 7))];
+        const vec3 outward = c.right * float(side);
+        const vec3 pos = top + outward * 1.6f - c.up * 0.8f;
+        bool clear = true; // not over another part of the track
+        for (int j = 0; j < n && clear; j += 3) {
+            const int along = std::abs(j - i);
+            if (std::min(along, n - along) < 12) continue;
+            clear = glm::distance(t.center[size_t(j)].pos, pos) > t.center[size_t(j)].half_width + 8.0f;
+        }
+        if (!clear) continue;
+        // The board's front is +Z: turn it to face the road.
+        const vec3 z = -outward;
+        const vec3 x = glm::normalize(glm::cross(c.up, z));
+        const char* kind = int(rnd() * 3.0f) == 0 ? "billboard" : rnd() < 0.5f ? "billboard_2" : "billboard_3";
+        out.push_back({kind, mat4(vec4(x, 0.0f), vec4(c.up, 0.0f), vec4(glm::cross(x, c.up), 0.0f), vec4(pos, 1.0f))});
+    }
+}
+
+// Small islands just outside the walls, at road height, each with a few of
+// the theme's props, so the roadside is never empty.
+void roadside_islands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng& rnd, std::vector<PropPlacement>& out) {
+    using S = ThemeStyle::Scenery;
+    if (th.scenery == S::City) return;
+    constexpr int kStride = 9;
+    const int n = int(t.center.size());
+    auto place = [&](const char* name, vec3 pos, float yaw, float scale) {
+        out.push_back({name, glm::scale(glm::rotate(glm::translate(mat4(1.0f), pos), yaw, kUp), vec3(scale))});
+    };
+    for (int i = 12; i < n - 6; i += 9) {
+        if (rnd() < 0.25f) continue;
+        const sim::CenterSample& c = t.center[size_t(i)];
+        if (!c.has_floor) continue;
+        const float side = rnd() < 0.5f ? -1.0f : 1.0f;
+        const vec3 outward = c.right * side;
+        const vec3 wall = t.vertices[size_t(i * kStride + (side > 0 ? 6 : 0))];
+        const float r = 3.0f + rnd() * 2.5f;
+        vec3 centre = wall + outward * (r + 1.2f);
+        centre.y = c.pos.y - 0.7f;
+        // Not over or under any other part of the track.
+        bool clear = true;
+        for (int j = 0; j < n && clear; j += 2) {
+            const int along = std::abs(j - i);
+            if (std::min(along, n - along) < 10) continue;
+            const sim::CenterSample& o = t.center[size_t(j)];
+            clear = glm::length(vec2(o.pos.x - centre.x, o.pos.z - centre.z)) > o.half_width + r + 5.0f || std::abs(o.pos.y - centre.y) > 14.0f;
+        }
+        if (!clear) continue;
+        const float yaw = rnd() * 6.28f;
+        if (th.scenery == S::Clouds) {
+            place("cloud", centre - vec3(0, 2.5f, 0), yaw, 0.35f + rnd() * 0.2f);
+            continue;
+        }
+        // The island: a flat top in the theme's ground and a rocky underside.
+        b.texture(surface_texture(t.theme, sim::Surface::OffroadLight), 3.0f);
+        b.lathe(centre, kUp, {{r, -0.25f}, {r * 0.98f, 0.1f}, {r * 0.7f, 0.28f}, {0.0f, 0.32f}}, 18, th.offroad_light, 2.0f, 1.0f);
+        b.texture(TexRock, 2.5f);
+        b.lathe(centre, -kUp, {{0.0f, 4.5f + r}, {r * 0.45f, 2.5f + r * 0.4f}, {r * 0.85f, 0.9f}, {r, 0.25f}}, 18, th.underside, 2.0f, 1.0f);
+        const vec3 top = centre + vec3(0, 0.25f, 0);
+        auto spot = [&](float spread) {
+            const float a = rnd() * 6.28f, d = r * spread * std::sqrt(rnd());
+            return top + vec3(std::cos(a) * d, 0.0f, std::sin(a) * d);
+        };
+        switch (th.scenery) {
+        case S::Trees:
+            place(rnd() < 0.15f ? "tree_autumn" : rnd() < 0.5f ? "tree_round" : "tree_round_2", spot(0.3f), yaw, 0.65f + rnd() * 0.35f);
+            if (rnd() < 0.5f) place("tree_round_2", spot(0.6f), yaw, 0.5f + rnd() * 0.3f);
+            for (int k = 0; k < 3; ++k) {
+                const float roll = rnd();
+                place(roll < 0.4f ? "bush" : roll < 0.7f ? "flower_pink" : roll < 0.9f ? "flower_yellow" : "rock", spot(0.85f), rnd() * 6.28f,
+                      roll < 0.4f ? 0.8f + rnd() * 0.4f : roll < 0.9f ? 1.8f + rnd() : 0.6f);
+            }
+            if (rnd() < 0.2f) place(rnd() < 0.5f ? "tire_stack" : "cone", spot(0.7f), rnd() * 6.28f, 1.2f);
+            break;
+        case S::Harbor:
+            place("tree_palm", spot(0.3f), yaw, 0.9f + rnd() * 0.3f);
+            if (rnd() < 0.6f) place(rnd() < 0.5f ? "barrel" : "crate", spot(0.8f), rnd() * 6.28f, 1.0f);
+            if (rnd() < 0.4f) place("barrel_red", spot(0.8f), rnd() * 6.28f, 1.0f);
+            break;
+        case S::Cactus:
+            place("cactus", spot(0.4f), yaw, 0.9f + rnd() * 0.5f);
+            if (rnd() < 0.6f) place(rnd() < 0.5f ? "rock_red" : "barrel_red", spot(0.8f), rnd() * 6.28f, 0.8f + rnd() * 0.4f);
+            if (rnd() < 0.25f) place("dead_tree", spot(0.6f), rnd() * 6.28f, 0.9f);
+            break;
+        case S::Pines:
+            place("tree_pine_snow", spot(0.35f), yaw, 0.7f + rnd() * 0.3f);
+            if (rnd() < 0.5f) place("tree_pine_snow", spot(0.7f), yaw, 0.5f + rnd() * 0.2f);
+            if (rnd() < 0.35f) place(rnd() < 0.5f ? "snowman" : "crystal", spot(0.75f), rnd() * 6.28f, rnd() < 0.5f ? 0.8f : 1.0f);
+            break;
+        case S::Mesas:
+            place(rnd() < 0.6f ? "rock_red" : "boulder", spot(0.4f), yaw, 1.0f + rnd() * 0.8f);
+            if (rnd() < 0.6f) place("cactus", spot(0.7f), rnd() * 6.28f, 0.9f + rnd() * 0.4f);
+            break;
+        case S::Lava:
+            place("lava_rock", spot(0.3f), yaw, 0.5f + rnd() * 0.4f);
+            if (rnd() < 0.4f) place("dead_tree", spot(0.7f), rnd() * 6.28f, 0.9f);
+            break;
+        default: break;
+        }
+    }
+}
+
+MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* props) {
     using S = ThemeStyle::Scenery;
     const ThemeStyle& th = theme_style(t.theme);
     MeshBuilder b;
     MeshData tree = make_tree_mesh();
     Rng rnd{hash_name(t.id) | 1u};
+    // A painted prop, turned about the vertical and scaled.
+    auto place = [&](const char* name, vec3 pos, float yaw, vec3 scale) {
+        props->push_back({name, glm::scale(glm::rotate(glm::translate(mat4(1.0f), pos), yaw, kUp), scale)});
+    };
+    auto pick = [&](std::initializer_list<const char*> names) { return names.begin()[std::min(int(rnd() * float(names.size())), int(names.size()) - 1)]; };
     vec3 lo(1e9f), hi(-1e9f);
     for (const auto& c : t.center) lo = glm::min(lo, c.pos), hi = glm::max(hi, c.pos);
     const vec3 mid = 0.5f * (lo + hi);
@@ -481,7 +616,21 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 const int trees = 1 + int(rnd() * 3.0f);
                 for (int k = 0; k < trees; ++k) {
                     const vec3 off(rnd() * r - r * 0.5f, 0.2f, rnd() * r - r * 0.5f);
-                    b.append(tree, glm::scale(glm::translate(mat4(1.0f), base + off), vec3(0.8f + rnd() * 0.6f)));
+                    if (props) {
+                        const char* kind = rnd() < 0.15f ? "tree_autumn" : pick({"tree_round", "tree_round_2"});
+                        place(kind, base + off * 0.8f + vec3(0, 0.15f, 0), rnd() * 6.28f, vec3(0.55f + rnd() * 0.4f));
+                    } else {
+                        b.append(tree, glm::scale(glm::translate(mat4(1.0f), base + off), vec3(0.8f + rnd() * 0.6f)));
+                    }
+                }
+                if (props) { // undergrowth round the edge of the island
+                    for (int k = 0; k < 4; ++k) {
+                        const float a = rnd() * 6.28f, d = r * (0.55f + 0.3f * rnd());
+                        const vec3 p = base + vec3(std::cos(a) * d, 0.25f, std::sin(a) * d);
+                        const float roll = rnd();
+                        place(roll < 0.4f ? "bush" : roll < 0.7f ? "flower_pink" : roll < 0.9f ? "flower_yellow" : "rock", p, rnd() * 6.28f,
+                              vec3(roll < 0.4f ? 0.7f + rnd() * 0.5f : roll < 0.9f ? 1.6f + rnd() : 0.5f + rnd() * 0.4f));
+                    }
                 }
                 break;
             }
@@ -489,17 +638,35 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 base.y = floor_y;
                 const float h = 4.0f + rnd() * 5.0f;
                 const uint32_t g = rgba(70, 150, 80);
-                b.texture(TexBark, 1.0f);
-                b.capsule(base, base + vec3(0, h, 0), 0.5f, g, 12, 4);
-                b.sweep({base + vec3(0.3f, h * 0.45f, 0), base + vec3(1.0f, h * 0.5f, 0), base + vec3(1.2f, h * 0.9f, 0)}, 0.3f, g, 10);
-                b.sweep({base + vec3(-0.3f, h * 0.6f, 0), base + vec3(-0.9f, h * 0.65f, 0), base + vec3(-1.0f, h * 0.95f, 0)}, 0.26f, g, 10);
+                if (props) {
+                    place("cactus", base + vec3(0, 0.8f, 0), rnd() * 6.28f, vec3(h / 3.6f));
+                    if (rnd() < 0.4f) place(pick({"rock_red", "boulder"}), base + vec3(2.5f, 0.6f, 1.0f), rnd() * 6.28f, vec3(0.8f + rnd()));
+                    if (rnd() < 0.2f) place("dead_tree", base + vec3(-2.0f, 0.8f, -1.5f), rnd() * 6.28f, vec3(1.2f));
+                } else {
+                    b.texture(TexBark, 1.0f);
+                    b.capsule(base, base + vec3(0, h, 0), 0.5f, g, 12, 4);
+                    b.sweep({base + vec3(0.3f, h * 0.45f, 0), base + vec3(1.0f, h * 0.5f, 0), base + vec3(1.2f, h * 0.9f, 0)}, 0.3f, g, 10);
+                    b.sweep({base + vec3(-0.3f, h * 0.6f, 0), base + vec3(-0.9f, h * 0.65f, 0), base + vec3(-1.0f, h * 0.95f, 0)}, 0.26f, g, 10);
+                }
                 b.texture(TexSand, 2.0f);
                 b.cone(base, 3.0f + rnd() * 4.0f, 1.2f, 10, rgba(230, 196, 132));
                 break;
             }
             case S::Harbor: {
                 base.y = floor_y + 0.2f;
-                if (rnd() < 0.5f) { // a little boat
+                if (props && rnd() < 0.55f) {
+                    const float roll = rnd();
+                    if (roll < 0.55f) place("boat", base, rnd() * 6.28f, vec3(1.0f + rnd() * 0.4f));
+                    else if (roll < 0.8f) { // a sandy islet with a palm
+                        b.texture(TexSand, 2.0f);
+                        b.lathe(base - vec3(0, 0.6f, 0), kUp, {{0.0f, 0.0f}, {4.0f, 0.0f}, {3.2f, 0.9f}, {0.0f, 1.3f}}, 16, rgba(236, 210, 150), 3.0f, 1.0f);
+                        place("tree_palm", base + vec3(0, 0.6f, 0), rnd() * 6.28f, vec3(1.0f + rnd() * 0.3f));
+                    } else {
+                        b.texture(TexRock, 2.0f);
+                        b.lathe(base - vec3(0, 0.6f, 0), kUp, {{0.0f, 0.0f}, {4.5f, 0.0f}, {3.5f, 1.5f}, {0.0f, 2.0f}}, 16, rgba(120, 118, 112), 3.0f, 1.0f);
+                        place("tower", base + vec3(0, 1.4f, 0), rnd() * 6.28f, vec3(0.9f));
+                    }
+                } else if (rnd() < 0.5f) { // a little boat
                     const float yaw = rnd() * 6.28f;
                     const mat4 m = glm::rotate(glm::translate(mat4(1.0f), base), yaw, kUp);
                     MeshBuilder boat;
@@ -520,7 +687,18 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 b.cone(base, 5.0f + rnd() * 3.0f, -4.0f, 10, rgba(120, 120, 130));
                 b.texture(TexSnow, 2.0f);
                 b.cone(base, 5.0f, 0.5f, 10, rgba(240, 245, 252));
-                for (int k = 0; k < 2; ++k) {
+                for (int k = 0; k < 2 && props; ++k) {
+                    const vec3 p = base + vec3(rnd() * 4.0f - 2.0f, 0.3f, rnd() * 4.0f - 2.0f);
+                    place("tree_pine_snow", p, rnd() * 6.28f, vec3(0.7f + rnd() * 0.35f));
+                }
+                if (props) {
+                    const float roll = rnd();
+                    const vec3 p = base + vec3(rnd() * 5.0f - 2.5f, 0.35f, rnd() * 5.0f - 2.5f);
+                    if (roll < 0.25f) place("snowman", p, rnd() * 6.28f, vec3(0.9f));
+                    else if (roll < 0.5f) place("crystal", p, rnd() * 6.28f, vec3(1.0f + rnd() * 0.6f));
+                    else if (roll < 0.7f) place("rock", p, rnd() * 6.28f, vec3(0.8f + rnd() * 0.5f));
+                }
+                for (int k = 0; k < 2 && !props; ++k) {
                     const vec3 p = base + vec3(rnd() * 4.0f - 2.0f, 0.4f, rnd() * 4.0f - 2.0f);
                     b.texture(TexBark, 1.0f);
                     b.tube(p - vec3(0, 0.4f, 0), p + vec3(0, 1.0f, 0), 0.22f, 0.16f, rgba(90, 60, 40), 10, true);
@@ -537,6 +715,15 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 base.y = floor_y;
                 const float h = (c.pos.y - floor_y) + 6.0f + rnd() * 25.0f;
                 const float r = 6.0f + rnd() * 9.0f;
+                if (props) {
+                    place("mesa", base, rnd() * 6.28f, vec3(r, h, r));
+                    for (int k = 0; k < 3; ++k) {
+                        const float a = rnd() * 6.28f;
+                        place(pick({"rock_red", "boulder", "rock_red"}), base + vec3(std::cos(a), 0.0f, std::sin(a)) * (r * 1.4f + 2.0f), rnd() * 6.28f, vec3(1.0f + rnd() * 1.5f));
+                    }
+                    if (rnd() < 0.4f) place("cactus", base + vec3(r * 1.6f + 3.0f, 0.0f, 0.0f), rnd() * 6.28f, vec3(1.3f));
+                    break;
+                }
                 b.texture(TexRock, 4.0f);
                 // A flat-topped butte: a wide skirt, two ledges and a cap.
                 std::vector<vec2> prof{{r * 1.3f, 0.0f}, {r * 1.05f, h * 0.12f}, {r * 0.95f, h * 0.4f}, {r * 0.8f, h * 0.44f},
@@ -549,12 +736,22 @@ MeshData make_scenery_mesh(const sim::Track& t) {
             case S::Lava: {
                 base.y = floor_y;
                 const float h = (c.pos.y - floor_y) + 2.0f + rnd() * 14.0f;
+                if (props) {
+                    const float r = 2.5f + rnd() * 3.0f;
+                    place("lava_rock", base - vec3(0, 0.2f * h, 0), rnd() * 6.28f, vec3(r / 2.4f, h / 2.6f, r / 2.2f));
+                    if (rnd() < 0.3f) place("dead_tree", base + vec3(0, h * 0.95f, 0), rnd() * 6.28f, vec3(1.0f));
+                    break;
+                }
                 b.texture(TexRock, 2.0f);
                 b.cone(base, 2.5f + rnd() * 3.0f, h, 8, rgba(46, 38, 40));
                 break;
             }
             case S::Clouds: {
                 base.y = c.pos.y - 8.0f - rnd() * 16.0f;
+                if (props) {
+                    place("cloud", base, rnd() * 6.28f, vec3(0.7f + rnd() * 0.5f));
+                    break;
+                }
                 b.texture(TexCloud, 3.0f);
                 for (int k = 0; k < 4; ++k)
                     b.sphere(base + vec3(rnd() * 10.0f - 5.0f, rnd() * 2.0f, rnd() * 10.0f - 5.0f), 3.0f + rnd() * 4.0f,
@@ -565,6 +762,13 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 base.y = floor_y;
                 const float h = (c.pos.y - floor_y) + 8.0f + rnd() * 40.0f;
                 const float w = 4.0f + rnd() * 5.0f;
+                if (props) { // stacked blocks so the windows keep their size
+                    const char* kind = pick({"building", "building_2", "building_3"});
+                    const float yaw = std::atan2(c.pos.x - base.x, c.pos.z - base.z);
+                    const int floors = std::max(1, int(std::ceil(h / (2.0f * w))));
+                    for (int k = 0; k < floors; ++k) place(kind, base + vec3(0, float(k) * 2.0f * w, 0), yaw, vec3(2.0f * w));
+                    break;
+                }
                 b.texture(TexPanel, 4.0f);
                 b.box(base + vec3(0, h * 0.5f, 0), vec3(w, h * 0.5f, w), rgba(30, 30, 46));
                 // Lit windows on the side facing the track.
@@ -591,6 +795,10 @@ MeshData make_scenery_mesh(const sim::Track& t) {
         const float a = rnd() * 2.0f * kPi;
         const float d = span * 0.8f + 120.0f + rnd() * 380.0f;
         const vec3 p(mid.x + std::cos(a) * d, mid.y + 10.0f + rnd() * 50.0f, mid.z + std::sin(a) * d);
+        if (props) {
+            place("cloud", p, rnd() * 6.28f, vec3(1.2f + rnd() * 1.0f));
+            continue;
+        }
         for (int k = 0; k < 4; ++k)
             b.sphere(p + vec3(rnd() * 16.0f - 8.0f, rnd() * 3.0f, rnd() * 10.0f - 5.0f), 5.0f + rnd() * 5.0f,
                      rgba(250, 250, 255), 14, 10);
@@ -611,6 +819,22 @@ MeshData make_scenery_mesh(const sim::Track& t) {
     {
         const auto [left, right] = walls_of(t);
         flags(b, t, th, left, right);
+        if (props) {
+            wall_props(t, th, left, right, rnd, *props);
+            roadside_islands(b, t, th, rnd, *props);
+            // Obstacles as painted props, fitted to their collision shapes.
+            for (const auto& o : t.obstacles) {
+                const bool pillar = o.sides > 4;
+                const std::string& th_name = t.theme;
+                const char* kind = th_name == "desert" || th_name == "canyon" ? "rock_red"
+                                   : th_name == "snow"                       ? "crystal"
+                                   : th_name == "volcano"                    ? "lava_rock"
+                                   : pillar ? (th_name == "sky" || th_name == "night" ? "tire_stack" : "barrel")
+                                            : "crate";
+                const float h = 2.0f * o.half.y + 0.3f;
+                props->push_back({kind, mat4(vec4(o.right * o.half.x, 0.0f), vec4(o.up * h, 0.0f), vec4(o.forward * o.half.z, 0.0f), vec4(o.pos, 1.0f)), true});
+            }
+        }
     }
     return b.take();
 }

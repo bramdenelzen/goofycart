@@ -173,6 +173,15 @@ private:
     };
     AssetLibrary assets_;
     std::map<uint32_t, GpuModel> gobby_karts_;         // the painted standard kart, by paint colour
+    struct PropModel {
+        render::MeshData mesh;
+        render::TextureId texture = 0;
+        bool two_sided = false, blended = false;
+        vec3 lo{0.0f}, hi{0.0f};
+    };
+    std::map<std::string, PropModel> props_;           // painted map props, merged per track
+    std::map<std::string, std::vector<render::MeshId>> track_props_;
+    const std::vector<render::MeshId>* prop_meshes_ = nullptr;
     std::vector<KartVisual> kart_visuals_;              // per kart in the race
     std::map<uint64_t, KartVisual> build_visuals_;      // (build, colour) -> visual
     std::array<float, 12> wheel_angle_{};               // tyre spin per kart, radians

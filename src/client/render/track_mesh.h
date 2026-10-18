@@ -20,9 +20,19 @@ const ThemeStyle& theme_style(const std::string& theme);
 
 // Render mesh for a track: per-surface colours, a checkered start line,
 // two-tone walls and a dark underside so the floating track reads as solid.
-MeshData make_track_mesh(const sim::Track& track);
+// `skip_obstacles` leaves the obstacles out, for drawing them as props.
+MeshData make_track_mesh(const sim::Track& track, bool skip_obstacles = false);
 // Low-poly scenery placed around the track, by theme.
-MeshData make_scenery_mesh(const sim::Track& track);
+// With `props`, the trees, rocks, buildings, clouds and other props are not
+// built into the mesh but listed there, to be drawn with the painted models
+// (gobby_assets.h); their islands and ground stay in the mesh.
+struct PropPlacement {
+    std::string name;
+    mat4 transform;
+    // Fit the model's bounds to x, z in -1..1 and y in 0..1 first (obstacles).
+    bool fit = false;
+};
+MeshData make_scenery_mesh(const sim::Track& track, std::vector<PropPlacement>* props = nullptr);
 
 MeshData make_spark_mesh();
 MeshData make_flame_mesh();

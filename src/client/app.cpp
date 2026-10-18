@@ -139,6 +139,11 @@ bool App::init() {
     // data folder (not in the repository) that may override them.
     for (const auto& [name, model] : render::make_gobby_items()) assets_.add_builtin_item(name, model, renderer_);
     for (const auto& tire : parts_.tires) assets_.add_builtin_tire(tire.id, render::make_gobby_tire(tire.look), renderer_);
+    // Map props: kept on the CPU to merge per track, with one texture each.
+    for (auto& [name, model] : render::make_gobby_props()) {
+        const render::TextureId tex = renderer_.upload_texture(model.texture.size(), model.texture.size(), model.texture.rgba().data());
+        props_.emplace(name, PropModel{std::move(model.mesh), tex, model.two_sided, model.blended, model.bounds_min, model.bounds_max});
+    }
     if (assets_.load(sim::data_path("../assets/models"), renderer_)) log_info("Model pack loaded from assets/models");
     if (!options_.export_assets.empty()) {
         int written = 0;
@@ -310,12 +315,33 @@ void App::show_track(const std::string& id) {
     shown_track_ = std::make_unique<sim::Track>(sim::make_track(tracks_, id));
     auto it = track_meshes_.find(shown_track_->id);
     if (it == track_meshes_.end()) {
-        const render::MeshId track = renderer_.upload_mesh(render::make_track_mesh(*shown_track_));
-        const render::MeshId scenery = renderer_.upload_mesh(render::make_scenery_mesh(*shown_track_));
+        const render::MeshId track = renderer_.upload_mesh(render::make_track_mesh(*shown_track_, true));
+        std::vector<render::PropPlacement> placements;
+        const render::MeshId scenery = renderer_.upload_mesh(render::make_scenery_mesh(*shown_track_, &placements));
+        // One mesh per kind of prop, all its copies merged.
+        std::map<std::string, render::MeshBuilder> merged;
+        for (const auto& p : placements) {
+            auto pm = props_.find(p.name);
+            if (pm == props_.end()) continue;
+            mat4 m = p.transform;
+            if (p.fit) { // model bounds -> x, z in -1..1, y in 0..1
+                const vec3 lo = pm->second.lo, hi = pm->second.hi, size = glm::max(hi - lo, vec3(1e-4f));
+                m = m * glm::scale(mat4(1.0f), vec3(2.0f / size.x, 1.0f / size.y, 2.0f / size.z)) *
+                    glm::translate(mat4(1.0f), vec3(-0.5f * (lo.x + hi.x), -lo.y, -0.5f * (lo.z + hi.z)));
+            }
+            merged[p.name].append(pm->second.mesh, m);
+        }
+        std::vector<render::MeshId>& ids = track_props_[shown_track_->id];
+        for (auto& [name, builder] : merged) {
+            const PropModel& pm = props_.at(name);
+            ids.push_back(renderer_.upload_mesh(builder.take(), pm.texture, pm.two_sided, false, pm.blended));
+        }
+        log_info("Track {}: {} props in {} meshes", shown_track_->id, placements.size(), ids.size());
         it = track_meshes_.emplace(shown_track_->id, std::pair(track, scenery)).first;
     }
     track_mesh_ = it->second.first;
     scenery_mesh_ = it->second.second;
+    prop_meshes_ = &track_props_[shown_track_->id];
     const render::ThemeStyle& th = render::theme_style(shown_track_->theme);
     light_ = {};
     light_.sky = th.sky;
@@ -931,6 +957,8 @@ void App::render(float alpha, float dt) {
     if (!renderer_.begin_frame(cam, light_)) return;
     renderer_.draw(track_mesh_, mat4(1.0f));
     renderer_.draw(scenery_mesh_, mat4(1.0f));
+    if (prop_meshes_)
+        for (render::MeshId id : *prop_meshes_) renderer_.draw(id, mat4(1.0f));
     if (w && screen_ == Screen::Standings) {
         for (size_t i = 0; i < w->karts().size(); ++i) draw_kart(int(i), w->karts()[i], alpha);
         draw_standings();
@@ -1122,6 +1150,8 @@ void App::render_menu(float dt) {
     if (!renderer_.begin_frame(cam, light_)) return;
     renderer_.draw(track_mesh_, mat4(1.0f));
     renderer_.draw(scenery_mesh_, mat4(1.0f));
+    if (prop_meshes_)
+        for (render::MeshId id : *prop_meshes_) renderer_.draw(id, mat4(1.0f));
     const int mesh = online_ ? std::max(online_->seat(), 0) : std::clamp(options_.karts, 1, 12) - 1;
     const mat4 kart_m = glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot);
     renderer_.draw(shadow_mesh_, glm::scale(glm::translate(kart_m, vec3(0, 0.03f, -0.02f)), vec3(1.15f, 1.0f, 1.55f)));
