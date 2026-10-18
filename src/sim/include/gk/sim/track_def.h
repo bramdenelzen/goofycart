@@ -23,6 +23,7 @@ struct TrackFeature {
     float width = 9.0f;     // verges and obstacles (m, across the road)
     float offset = 0.0f;    // obstacles: from the centre line, + to the right (m)
     int sides = 4;          // obstacles: 4 a block, 8 a round pillar
+    std::string prop;       // obstacles: "solid", "crate", "barrel", "crystal", "tires" or "" (by theme)
     int lanes = 0b1111;     // boost pads: which of the 4 lanes (bit 0 = leftmost)
     bool left = true, right = true; // verges and walls: which side
     Surface surface = Surface::Road;

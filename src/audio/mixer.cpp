@@ -1,3 +1,4 @@
+#include <utility>
 #include "gk/audio/mixer.h"
 #include "music.h"
 #include "synth.h"
@@ -51,6 +52,7 @@ Mixer::Mixer(int sample_rate) : rate_(sample_rate), engine_(new EngineSynth) {
 
 Mixer::~Mixer() {
     delete song_;
+    delete held_;
     delete engine_;
 }
 
@@ -86,19 +88,42 @@ void Mixer::play_music(uint32_t seed, Mood mood) {
     {
         std::lock_guard lock(mutex_);
         if (song_ && seed == song_seed_ && mood == song_mood_) return;
+        // Back from an interruption (the star): pick the song up where it was.
+        if (held_ && seed == held_seed_ && mood == held_mood_) {
+            std::swap(song_, held_);
+            std::swap(song_seed_, held_seed_);
+            std::swap(song_mood_, held_mood_);
+            music_fade_ = 0.0f;
+            fresh = held_; // the interruption, deleted below
+            held_ = nullptr;
+        }
+    }
+    if (fresh) {
+        delete fresh;
+        return;
     }
     fresh = new Song(seed, mood, rate_); // outside the lock: the audio thread keeps running
-    Song* old = nullptr;
+    Song* old_song = nullptr;
+    Song* old_held = nullptr;
     {
         std::lock_guard lock(mutex_);
-        old = song_;
+        if (mood == Mood::Star && song_ && song_mood_ != Mood::Star) {
+            old_held = held_;
+            held_ = song_; // paused, not deleted
+            held_seed_ = song_seed_;
+            held_mood_ = song_mood_;
+        } else {
+            old_song = song_;
+            if (mood != Mood::Star) old_held = std::exchange(held_, nullptr); // a new race: forget it
+        }
         song_ = fresh;
         song_seed_ = seed;
         song_mood_ = mood;
-        music_speed_ = 1.0f;
-        music_fade_ = 0.0f;
+        if (mood != Mood::Star) music_speed_ = 1.0f;
+        music_fade_ = mood == Mood::Star ? 0.8f : 0.0f;
     }
-    delete old;
+    delete old_song;
+    delete old_held;
 }
 
 void Mixer::stop_music() {
@@ -107,6 +132,8 @@ void Mixer::stop_music() {
         std::lock_guard lock(mutex_);
         old = song_;
         song_ = nullptr;
+        delete held_;
+        held_ = nullptr;
     }
     delete old;
 }

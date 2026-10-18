@@ -128,6 +128,7 @@ TEST_CASE("obstacles are solid from every side") {
         CAPTURE(def.id);
         const Track t = build_track(def);
         for (const Track::Obstacle& o : t.obstacles) {
+            if (o.breakable != Track::Breakable::None) continue; // the World breaks those (test_props)
             for (const vec3 dir : {o.right, -o.right, o.forward, -o.forward}) {
                 const float reach = std::abs(glm::dot(dir, o.right)) * o.half.x + std::abs(glm::dot(dir, o.forward)) * o.half.z;
                 const vec3 sphere = o.pos + o.up * 1.0f + dir * (reach + 0.3f);

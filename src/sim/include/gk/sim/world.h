@@ -18,6 +18,18 @@ struct RaceConfig {
     uint64_t seed = 1;
 };
 
+// A breakable obstacle: standing (down == 0), or broken / knocked over for
+// `down` ticks. Tire stacks scatter three loose tires in direction `dir`
+// (1/256 turns in the road plane); `used` marks the ones already kicked away.
+struct PropState {
+    uint16_t down = 0;
+    uint8_t dir = 0;
+    uint8_t used = 0;
+};
+inline constexpr int kCrateRespawnTicks = 540; // 9 s
+inline constexpr int kTiresRespawnTicks = 660; // 11 s
+inline constexpr int kLooseTires = 3;
+
 // Everything needed to rewind the simulation (client-side reconciliation).
 struct WorldState {
     uint64_t tick = 0;
@@ -27,6 +39,7 @@ struct WorldState {
     std::vector<ItemEntity> entities;
     std::vector<int> box_respawn;
     Rng rng;
+    std::vector<PropState> props;
 };
 
 // The authoritative race simulation: track, karts and race clock, stepped at
@@ -37,7 +50,7 @@ public:
 
     int add_kart(const KartParams& params);
     void set_kart_params(int kart, const KartParams& params) { params_[size_t(kart)] = params; }
-    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_, entities_, box_respawn_, rng_}; }
+    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_, entities_, box_respawn_, rng_, props_}; }
     void restore(const WorldState& s);
     void tick(std::span<const KartInput> inputs);
 
@@ -59,6 +72,10 @@ public:
     // Frames until each item box is back (0 = there).
     const std::vector<int>& box_respawn() const { return box_respawn_; }
     const ItemTuning& item_tuning() const { return item_tuning_; }
+    // Breakable obstacles, one per track obstacle (unused for solid ones).
+    const std::vector<PropState>& props() const { return props_; }
+    // Where loose tire `i` of a knocked-over stack lies now.
+    vec3 loose_tire_pos(int obstacle, int i) const;
     // Test and debug hook: put an item in a kart's hand.
     void give_item(int kart, Item item);
 
@@ -72,6 +89,7 @@ public:
 
 private:
     void collide_karts();
+    void collide_props();
     // items.cpp
     void items_before_step(std::vector<KartInput>& inputs);
     void items_after_step();
@@ -91,6 +109,7 @@ private:
     std::vector<KartEvent> events_;
     std::vector<ItemEntity> entities_;
     std::vector<int> box_respawn_;
+    std::vector<PropState> props_;
     std::vector<KartInput> step_inputs_;
     Rng rng_;
     ItemTuning item_tuning_;

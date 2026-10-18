@@ -211,6 +211,7 @@ void ClientGame::apply_snapshot(const SnapshotMsg& m) {
     for (const auto& k : m.karts) ws.karts.push_back(k.state);
     ws.entities = m.entities;
     ws.box_respawn = m.boxes;
+    ws.props = m.props;
     ws.rng.state = m.rng;
     world_->restore(ws);
     // Our own kart goes where we drove it: keep our movement over the

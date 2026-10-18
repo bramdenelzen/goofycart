@@ -107,6 +107,21 @@ std::vector<float> make_sfx(Sfx s, int rate) {
         return render(rate, 0.25f, 0.65f, [&](float t) {
             return (0.7f * lp.low(noise.next(), 0.25f) + 0.5f * a.square_bl(110.0f, 0.5f, sr)) * std::exp(-t * 20.0f);
         });
+    case Sfx::Crunch: // splintering wood: a few cracks over a hollow knock
+        return render(rate, 0.45f, 0.7f, [&](float t) {
+            const float crack = (noise.next() > 0.82f ? 1.0f : 0.15f) * noise.next() * std::exp(-t * 9.0f);
+            const float knock = a.sine(140.0f - 120.0f * t, sr) * std::exp(-t * 22.0f);
+            return 0.8f * crack + 0.7f * knock + 0.3f * lp.low(noise.next(), 0.2f) * std::exp(-t * 14.0f);
+        });
+    case Sfx::Boing: // rubber spring: a wobbling upward sweep
+        return render(rate, 0.5f, 0.55f, [&](float t) {
+            const float f = 180.0f * std::pow(2.0f, t * 3.0f) * (1.0f + 0.08f * std::sin(t * 70.0f));
+            return (a.sine(f, sr) + 0.35f * b.sine(f * 2.01f, sr)) * std::exp(-t * 5.0f) * std::min(1.0f, t * 300.0f);
+        });
+    case Sfx::Pause:
+        return render(rate, 0.25f, 0.4f, [&](float t) {
+            return (a.sine(t < 0.08f ? 880.0f : 660.0f, sr)) * std::exp(-std::fmod(t, 0.08f) * 18.0f);
+        });
     case Sfx::Bump:
         return render(rate, 0.18f, 0.5f, [&](float t) {
             return (a.sine(160.0f - 300.0f * t, sr) + 0.4f * lp.low(noise.next(), 0.15f)) * std::exp(-t * 25.0f);

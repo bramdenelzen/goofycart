@@ -448,6 +448,14 @@ std::vector<uint8_t> encode(const SnapshotMsg& m) {
     for (size_t i = 0; i < m.boxes.size() && i < 255; ++i) w.u8(uint8_t(std::clamp(m.boxes[i], 0, 255)));
     w.u8(uint8_t(std::min<size_t>(m.entities.size(), 255)));
     for (size_t i = 0; i < m.entities.size() && i < 255; ++i) write_entity(w, m.entities[i]);
+    w.u8(uint8_t(std::min<size_t>(m.props.size(), 255)));
+    for (size_t i = 0; i < m.props.size() && i < 255; ++i) {
+        w.u16(m.props[i].down);
+        if (m.props[i].down) {
+            w.u8(m.props[i].dir);
+            w.u8(m.props[i].used);
+        }
+    }
     return w.take();
 }
 
@@ -473,6 +481,14 @@ bool decode(std::span<const uint8_t> d, SnapshotMsg& m) {
     for (int& b : m.boxes) b = r.u8();
     m.entities.resize(r.u8());
     for (auto& e : m.entities) e = read_entity(r);
+    m.props.resize(r.u8());
+    for (auto& p : m.props) {
+        p.down = r.u16();
+        if (p.down) {
+            p.dir = r.u8();
+            p.used = r.u8();
+        }
+    }
     return r.ok();
 }
 

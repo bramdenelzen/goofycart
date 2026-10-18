@@ -72,12 +72,17 @@ public:
     // Solid things standing on the road: prisms on the road's frame. Their
     // faces are in `triangles` (as walls), from first_tri on, so the client
     // can draw them as props instead of track.
+    // Obstacles that break (crates, barrels, crystals) or topple (tire
+    // stacks) when hit, and come back a while later. They have no triangles:
+    // the World handles them.
+    enum class Breakable : uint8_t { None, Crate, Barrel, Crystal, Tires };
     struct Obstacle {
         vec3 pos;                    // base centre
         vec3 forward, right, up;
         vec3 half;                   // across, up, along (m)
         int sides = 4;
         int sample = 0;
+        Breakable breakable = Breakable::None;
         uint32_t first_tri = 0, tri_count = 0;
     };
     std::vector<Obstacle> obstacles;

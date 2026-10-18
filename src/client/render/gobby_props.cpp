@@ -267,6 +267,22 @@ PaintedModel tire_stack() {
     return m;
 }
 
+// One loose tire from a toppled stack, lying flat.
+PaintedModel loose_tire() {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect rubber = span(0, 0, 4, 4);
+    region(b, rubber);
+    b.torus({0, 0.18f, 0}, {0, 1, 0}, 0.42f, 0.18f, kWhite, 24, 12);
+    t.gradient_v(rubber, col(60, 60, 66), col(25, 25, 30));
+    t.band_v(rubber, 0.15f, 0.4f, col(235, 235, 235), 0.02f);
+    for (int i = 0; i < 24; ++i) t.band_u(rubber, float(i) / 24.0f, float(i) / 24.0f + 0.012f, col(15, 15, 18, 0.6f), 0.004f);
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
 PaintedModel cone() {
     PaintedModel m;
     MeshBuilder b;
@@ -897,6 +913,7 @@ std::map<std::string, PaintedModel> make_gobby_props() {
     out["billboard_2"] = billboard(1);
     out["billboard_3"] = billboard(2);
     out["tire_stack"] = tire_stack();
+    out["tire"] = loose_tire();
     out["cone"] = cone();
     out["crate"] = crate();
     out["barrel"] = barrel(col(60, 110, 200));

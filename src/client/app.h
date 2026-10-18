@@ -31,6 +31,7 @@ struct AppOptions {
     int max_frames = -1;          // quit after this many frames (CI smoke tests)
     std::string screenshot_path;  // saved on the last frame when max_frames is set
     bool autodrive = false;       // the player kart drives itself (demos, screenshots)
+    int spawn_obstacle = -1;      // testing: start lined up 14 m before this obstacle and drive straight at it
     int karts = 12;
     sim::EngineClass engine = sim::EngineClass::cc150;
     sim::Build build{1, 0, 0, 0};
@@ -83,6 +84,10 @@ private:
     void render(float alpha, float dt);
     void draw_kart(int index, const sim::KartState& s, float alpha);
     void draw_items(const sim::World& w);
+    // Crates, barrels and tire stacks that break and come back.
+    void draw_breakables(const sim::World& w);
+    render::MeshId single_prop(const std::string& name);
+    mat4 fit_prop(const std::string& name, const mat4& transform) const;
     void draw_held_item(sim::Item item, int uses, const mat4& kart, bool trailing);
     render::MeshId item_mesh(sim::Item item) const;
     static const char* item_name(sim::Item item);
@@ -197,6 +202,17 @@ private:
     std::map<std::string, PropModel> props_;           // painted map props, merged per track
     std::map<std::string, std::vector<render::MeshId>> track_props_;
     const std::vector<render::MeshId>* prop_meshes_ = nullptr;
+    std::map<std::string, render::MeshId> single_props_; // one copy, drawn per instance
+    struct Debris {
+        vec3 pos, vel, axis;
+        float angle = 0.0f, spin = 0.0f, life = 0.0f, size = 0.2f;
+        vec4 tint{1.0f};
+    };
+    std::vector<Debris> debris_;
+    std::vector<uint16_t> prop_seen_down_;  // last drawn state per obstacle
+    std::vector<float> prop_pop_;           // seconds since it came back
+    render::MeshId chip_mesh_ = 0;
+    uint32_t debris_seed_ = 1;
     std::vector<KartVisual> kart_visuals_;              // per kart in the race
     std::map<uint64_t, KartVisual> build_visuals_;      // (build, colour) -> visual
     std::array<float, 12> wheel_angle_{};               // tyre spin per kart, radians

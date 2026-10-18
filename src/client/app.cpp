@@ -194,6 +194,14 @@ bool App::init() {
         if (const int i = tracks_.find(options_.track); i >= 0) course_.track = i;
         start_race();
         screen_ = Screen::Race;
+        if (world_ && options_.spawn_obstacle >= 0 && size_t(options_.spawn_obstacle) < world_->track().obstacles.size()) {
+            const auto& o = world_->track().obstacles[size_t(options_.spawn_obstacle)];
+            sim::KartState& k = world_->karts_mut()[size_t(player_)];
+            k.pos = o.pos + o.up * 0.3f - o.forward * 14.0f;
+            k.rot = glm::normalize(glm::quat_cast(glm::mat3(-o.right, o.up, o.forward)));
+            k.sample = world_->track().nearest_sample(k.pos);
+            prev_ = world_->karts();
+        }
     } else {
         if (options_.menu == "options") screen_ = Screen::Options;
         else if (options_.menu == "course") screen_ = Screen::Course;
@@ -524,6 +532,7 @@ void App::update() {
         } else {
             inputs[i] = net::bot_input(*world_, int(i), int(i) == player_ ? sim::CpuLevel::Hard : options_.cpu_level);
         }
+        if (int(i) == player_ && options_.spawn_obstacle >= 0) inputs[i] = sim::KartInput{.accelerate = world_->racing()};
     }
     if (ghost_) inputs[size_t(player_)] = sim::quantize(inputs[size_t(player_)]); // exactly what the ghost file holds
     last_input_ = inputs[size_t(player_)];
@@ -551,6 +560,9 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
         case sim::KartEventType::Land: input_.rumble(0.5f, 0.2f, 120); break;
         case sim::KartEventType::WallHit: input_.rumble(0.8f, 0.4f, 120); break;
         case sim::KartEventType::Bump: input_.rumble(0.6f, 0.6f, 100); break;
+        case sim::KartEventType::Smash: input_.rumble(0.5f, 0.3f, 90); break;
+        case sim::KartEventType::TireKnock: input_.rumble(0.7f, 0.5f, 120); break;
+        case sim::KartEventType::TireBounce: input_.rumble(0.3f, 0.6f, 120); break;
         case sim::KartEventType::Hit:
             input_.rumble(1.0f, 0.8f, 300);
             if ((e.value & 0xff) == int(sim::HitKind::Shrink)) flash_ = 1.0f;
@@ -847,6 +859,9 @@ void App::event_sound(const sim::KartEvent& e) {
     case sim::KartEventType::Hit: s = (e.value & 0xff) == int(sim::HitKind::Shrink) ? Sfx::Shrink : Sfx::Hit; break;
     case sim::KartEventType::Explosion: s = Sfx::Explosion; break;
     case sim::KartEventType::Blocked: s = Sfx::Blocked; break;
+    case sim::KartEventType::Smash: s = Sfx::Crunch; break;
+    case sim::KartEventType::TireKnock: s = Sfx::Bump, pitch = 0.75f; break;
+    case sim::KartEventType::TireBounce: s = Sfx::Boing; break;
     case sim::KartEventType::Lap:
         if (mine && world()) s = e.value == world()->config().laps ? Sfx::FinalLap : Sfx::Lap;
         break;
@@ -879,6 +894,7 @@ void App::update_audio() {
     const bool done = screen_ == Screen::Standings || k.finished ||
                       (online_ && online_->phase() == net::RoomPhase::Results);
     if (done) mx.play_music(fnv1a(t.id) + 1u, audio::Mood::Results);
+    else if (k.star_frames > 0) mx.play_music(0x57a2u, audio::Mood::Star);
     else mx.play_music(fnv1a(t.id), audio::mood_for_theme(t.theme));
     mx.set_music_speed(!done && k.lap >= w->config().laps ? 1.1f : 1.0f);
 
@@ -1058,6 +1074,128 @@ void App::draw_held_item(sim::Item item, int uses, const mat4& kart, bool traili
     }
 }
 
+render::MeshId App::single_prop(const std::string& name) {
+    if (auto it = single_props_.find(name); it != single_props_.end()) return it->second;
+    const auto pm = props_.find(name);
+    if (pm == props_.end()) return single_props_[name] = 0;
+    const PropModel& m = pm->second;
+    return single_props_[name] = renderer_.upload_mesh(m.mesh, m.texture, m.two_sided, m.unlit, m.blended, m.glow);
+}
+
+mat4 App::fit_prop(const std::string& name, const mat4& transform) const {
+    const auto pm = props_.find(name);
+    if (pm == props_.end()) return transform;
+    // Model bounds -> x, z in -1..1, y in 0..1, as for placed scenery.
+    const vec3 lo = pm->second.lo, hi = pm->second.hi, size = glm::max(hi - lo, vec3(1e-4f));
+    return transform * glm::scale(mat4(1.0f), vec3(2.0f / size.x, 1.0f / size.y, 2.0f / size.z)) *
+           glm::translate(mat4(1.0f), vec3(-0.5f * (lo.x + hi.x), -lo.y, -0.5f * (lo.z + hi.z)));
+}
+
+void App::draw_breakables(const sim::World& w) {
+    using B = sim::Track::Breakable;
+    const auto& obstacles = w.track().obstacles;
+    const auto& props = w.props();
+    if (prop_seen_down_.size() != obstacles.size()) {
+        prop_seen_down_.assign(obstacles.size(), 0);
+        prop_pop_.assign(obstacles.size(), 10.0f);
+        debris_.clear();
+    }
+    if (!chip_mesh_) {
+        render::MeshBuilder b;
+        b.box(vec3(0.0f), vec3(0.5f), render::rgba(255, 255, 255));
+        chip_mesh_ = renderer_.upload_mesh(b.take());
+    }
+    auto rnd = [&] {
+        debris_seed_ ^= debris_seed_ << 13;
+        debris_seed_ ^= debris_seed_ >> 17;
+        debris_seed_ ^= debris_seed_ << 5;
+        return float(debris_seed_ & 0xffff) / 65535.0f;
+    };
+    for (size_t i = 0; i < obstacles.size() && i < props.size(); ++i) {
+        const sim::Track::Obstacle& o = obstacles[i];
+        if (o.breakable == B::None) continue;
+        const sim::PropState& p = props[i];
+        // Just broke: a burst of splinters. Just came back: pop up.
+        if (p.down > 0 && prop_seen_down_[i] == 0 && o.breakable != B::Tires) {
+            const vec4 tint = o.breakable == B::Crate ? vec4(0.75f, 0.55f, 0.33f, 1.0f)
+                            : o.breakable == B::Barrel ? (i % 2 ? vec4(0.82f, 0.24f, 0.2f, 1.0f) : vec4(0.24f, 0.43f, 0.78f, 1.0f))
+                                                       : vec4(0.55f, 0.9f, 1.3f, 1.0f);
+            const vec3 centre = o.pos + o.up * (o.half.y + 0.3f);
+            for (int k = 0; k < 16; ++k) {
+                const float a = rnd() * 2.0f * kPi;
+                Debris d;
+                d.pos = centre + vec3(std::cos(a), 0.0f, std::sin(a)) * (0.5f * rnd() * o.half.x);
+                d.vel = vec3(std::cos(a) * (3.0f + 5.0f * rnd()), 4.0f + 6.0f * rnd(), std::sin(a) * (3.0f + 5.0f * rnd()));
+                d.axis = glm::normalize(vec3(rnd() - 0.5f, rnd() - 0.5f, rnd() - 0.5f) + vec3(0.01f));
+                d.spin = 6.0f + 10.0f * rnd();
+                d.life = 1.0f + 0.6f * rnd();
+                d.size = 0.09f + 0.16f * rnd();
+                d.tint = tint;
+                debris_.push_back(d);
+            }
+        }
+        if (p.down == 0 && prop_seen_down_[i] > 0) prop_pop_[i] = 0.0f;
+        prop_seen_down_[i] = p.down;
+        prop_pop_[i] += frame_dt_;
+
+        const float h = 2.0f * o.half.y + 0.3f;
+        if (p.down == 0) {
+            // Pop back in with a little overshoot.
+            const float t = std::min(1.0f, prop_pop_[i] / 0.35f);
+            const float pop = t >= 1.0f ? 1.0f : 1.0f - std::cos(t * 4.0f) * (1.0f - t) * 0.9f;
+            if (o.breakable == B::Crate) {
+                // A stack of crates fitted to the block: rows, columns and layers of about a metre.
+                const int nx = std::max(1, int(std::round(2.0f * o.half.x / 1.15f)));
+                const int nz = std::max(1, int(std::round(2.0f * o.half.z / 1.15f)));
+                const int ny = std::max(1, int(std::round(h / 1.05f)));
+                const vec3 cell(2.0f * o.half.x / float(nx), h / float(ny), 2.0f * o.half.z / float(nz));
+                for (int y = 0; y < ny; ++y)
+                    for (int x = 0; x < nx; ++x)
+                        for (int z = 0; z < nz; ++z) {
+                            if (y > 0 && (x + z + y) % 3 == 0) continue; // stepped top
+                            const vec3 c = o.pos + o.right * (-o.half.x + cell.x * (float(x) + 0.5f)) +
+                                           o.forward * (-o.half.z + cell.z * (float(z) + 0.5f)) + o.up * (cell.y * float(y));
+                            const float yaw = 0.12f * std::sin(float(i * 7 + x * 3 + z * 5 + y));
+                            const quat q = glm::angleAxis(yaw, o.up);
+                            const vec3 r = q * o.right, f = q * o.forward;
+                            const mat4 m(vec4(r * (0.48f * cell.x * pop), 0.0f), vec4(o.up * (0.98f * cell.y * pop), 0.0f),
+                                         vec4(f * (0.48f * cell.z * pop), 0.0f), vec4(c, 1.0f));
+                            renderer_.draw(single_prop("crate"), fit_prop("crate", m));
+                        }
+            } else {
+                const char* name = o.breakable == B::Barrel ? (i % 2 ? "barrel_red" : "barrel")
+                                 : o.breakable == B::Crystal ? "crystal" : "tire_stack";
+                const mat4 m(vec4(o.right * (o.half.x * pop), 0.0f), vec4(o.up * (h * pop), 0.0f), vec4(o.forward * (o.half.z * pop), 0.0f),
+                             vec4(o.pos, 1.0f));
+                renderer_.draw(single_prop(name), fit_prop(name, m));
+            }
+        } else if (o.breakable == B::Tires) {
+            const float r = 0.62f;
+            for (int k = 0; k < sim::kLooseTires; ++k) {
+                if (p.used >> k & 1) continue;
+                const vec3 at = w.loose_tire_pos(int(i), k) - o.up * 0.3f;
+                // Rolls out on its side, then flops flat and settles.
+                const float t = std::min(1.0f, float(p.down) / 32.0f);
+                const float tilt = (1.0f - t) * 1.2f + 0.08f * std::sin(float(k) * 2.0f + float(p.down) * 0.2f) * (1.0f - t);
+                mat4 m(vec4(o.right * r, 0.0f), vec4(o.up * 0.5f, 0.0f), vec4(o.forward * r, 0.0f), vec4(at, 1.0f));
+                m = glm::rotate(m, tilt, vec3(1, 0, 0));
+                renderer_.draw(single_prop("tire"), fit_prop("tire", m));
+            }
+        }
+    }
+    // Splinters: fall, bounce once off the road height they started from, fade.
+    for (Debris& d : debris_) {
+        d.vel.y -= 22.0f * frame_dt_;
+        d.pos += d.vel * frame_dt_;
+        d.angle += d.spin * frame_dt_;
+        d.life -= frame_dt_;
+        const float s = d.size * std::clamp(d.life / 0.3f, 0.0f, 1.0f);
+        mat4 m = glm::rotate(glm::translate(mat4(1.0f), d.pos), d.angle, d.axis);
+        renderer_.draw(chip_mesh_, glm::scale(m, vec3(s, s * 0.3f, s * 2.2f)), d.tint);
+    }
+    std::erase_if(debris_, [](const Debris& d) { return d.life <= 0.0f; });
+}
+
 void App::draw_items(const sim::World& w) {
     const auto& boxes = w.track().item_boxes;
     const auto& respawn = w.box_respawn();
@@ -1131,6 +1269,7 @@ void App::render(float alpha, float dt) {
     } else if (w) {
         const auto& karts = w->karts();
         draw_items(*w);
+        draw_breakables(*w);
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
         if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;

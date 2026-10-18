@@ -19,6 +19,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(a, "--width") == 0) opt.window_width = std::atoi(next());
         else if (std::strcmp(a, "--height") == 0) opt.window_height = std::atoi(next());
         else if (std::strcmp(a, "--autodrive") == 0) opt.autodrive = true;
+        else if (std::strcmp(a, "--spawn-obstacle") == 0) opt.spawn_obstacle = std::atoi(next());
         else if (std::strcmp(a, "--karts") == 0) opt.karts = std::atoi(next());
         else if (std::strcmp(a, "--cpu") == 0) opt.cpu_level = gk::sim::parse_cpu_level(next());
         else if (std::strcmp(a, "--track") == 0) opt.track = next();

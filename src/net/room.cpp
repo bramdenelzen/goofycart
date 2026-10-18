@@ -447,6 +447,7 @@ void Room::send_snapshots() {
     const sim::WorldState ws = world_->save();
     base.rng = ws.rng.state;
     base.boxes = ws.box_respawn;
+    base.props = ws.props;
     base.entities = ws.entities;
     for (auto& [id, c] : clients_) {
         if (!c.hello) continue;

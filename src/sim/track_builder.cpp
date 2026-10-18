@@ -236,7 +236,27 @@ Track build_track(const TrackDef& def) {
         o.half = vec3(0.5f * f->width, 0.5f * f->height, 0.5f * f->length);
         o.pos = c.pos + c.right * f->offset - c.up * 0.3f;
         o.sides = std::clamp(f->sides, 3, 16);
+        {
+            using B = Track::Breakable;
+            const bool pillar = o.sides > 4;
+            const std::string& th = def.theme;
+            std::string kind = f->prop;
+            if (kind.empty()) {
+                if (th == "desert" || th == "canyon" || th == "volcano") kind = "solid";
+                else if (th == "snow") kind = "crystal";
+                else if (th == "market") kind = pillar ? "solid" : "crate";
+                else if (th == "sky" || th == "night") kind = pillar ? "tires" : "crate";
+                else kind = pillar ? "barrel" : "crate";
+            }
+            o.breakable = kind == "crate" ? B::Crate : kind == "barrel" ? B::Barrel : kind == "crystal" ? B::Crystal
+                        : kind == "tires" ? B::Tires : B::None;
+        }
         o.first_tri = uint32_t(t.triangles.size());
+        if (o.breakable != Track::Breakable::None) { // no collision triangles: the World handles it
+            o.tri_count = 0;
+            t.obstacles.push_back(o);
+            continue;
+        }
         const uint32_t v0 = uint32_t(t.vertices.size());
         const int k = o.sides;
         // Corners at half-angle offsets, so 4 sides make a box aligned with the road.
@@ -414,6 +434,13 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
                 if (shape == "block") tf.sides = 4;
                 else if (shape == "pillar") tf.sides = 8;
                 else throw std::runtime_error("unknown obstacle shape " + shape);
+                tf.prop = f.value("prop", std::string());
+                if (tf.prop == "tires") { // a stack of three: a pillar unless told otherwise
+                    if (!f.contains("shape")) tf.sides = 8;
+                    if (!f.contains("width")) tf.width = 1.7f;
+                    if (!f.contains("length")) tf.length = 1.7f;
+                    if (!f.contains("height")) tf.height = 1.1f;
+                }
             }
             if (f.contains("lanes")) {
                 tf.lanes = 0;

@@ -24,6 +24,9 @@ enum class KartEventType : uint8_t {
     Hit,        // value = HitKind
     Explosion,  // value unused; kart = owner
     Blocked,    // a held item absorbed a hit
+    Smash,      // value = obstacle index: a crate, barrel or crystal broke
+    TireKnock,  // value = obstacle index: a tire stack toppled
+    TireBounce, // value = obstacle index: a loose tire launched the kart
 };
 struct KartEvent {
     KartEventType type;

@@ -13,6 +13,7 @@ World::World(Track track, PhysicsTables tables, RaceConfig config)
     : track_(std::move(track)), tables_(std::move(tables)), config_(config), countdown_left_(config.countdown_frames) {
     track_.laps = config_.laps;
     box_respawn_.assign(track_.item_boxes.size(), 0);
+    props_.assign(track_.obstacles.size(), PropState{});
     rng_.state ^= config_.seed * 0xD1B54A32D192ED03ull;
 }
 
@@ -32,6 +33,7 @@ void World::restore(const WorldState& s) {
     for (size_t i = 0; i < karts_.size() && i < s.karts.size(); ++i) karts_[i] = s.karts[i];
     entities_ = s.entities;
     if (s.box_respawn.size() == box_respawn_.size()) box_respawn_ = s.box_respawn;
+    if (s.props.size() == props_.size()) props_ = s.props;
     rng_ = s.rng;
 }
 
@@ -65,6 +67,7 @@ void World::tick(std::span<const KartInput> inputs) {
             kart_on_go(karts_[i], ctx);
         }
     }
+    if (!frozen) collide_props();
     collide_karts();
     if (config_.items && !frozen) items_after_step();
     if (!frozen) ++race_ticks_;
@@ -79,6 +82,112 @@ void World::tick(std::span<const KartInput> inputs) {
             } else {
                 events_.push_back({KartEventType::Lap, int(i), k.lap});
             }
+        }
+    }
+}
+
+namespace {
+// Sets a kart's velocity, split into its grounded speed and slide.
+void set_velocity(KartState& k, vec3 v) {
+    if (k.grounded) {
+        const vec3 f = k.forward(), u = k.up();
+        k.speed = glm::dot(v, f);
+        vec3 lat = v - f * k.speed;
+        k.slide = lat - u * glm::dot(lat, u);
+    } else {
+        k.air_vel = v;
+    }
+}
+} // namespace
+
+vec3 World::loose_tire_pos(int obstacle, int i) const {
+    const Track::Obstacle& o = track_.obstacles[size_t(obstacle)];
+    const PropState& p = props_[size_t(obstacle)];
+    const float ang = float(p.dir) / 256.0f * 2.0f * kPi + (float(i) - 1.0f) * 0.55f;
+    const vec3 dir = o.right * std::cos(ang) + o.forward * std::sin(ang);
+    const float t = std::min(1.0f, float(p.down) / 32.0f);
+    const float out = (1.6f + 1.3f * float(i)) * (1.0f - (1.0f - t) * (1.0f - t)); // rolls out and settles
+    return o.pos + o.up * 0.3f + dir * out;
+}
+
+void World::collide_props() {
+    constexpr float kKartRadius = 0.55f;
+    using B = Track::Breakable;
+    for (size_t pi = 0; pi < props_.size(); ++pi) {
+        const Track::Obstacle& o = track_.obstacles[pi];
+        if (o.breakable == B::None) continue;
+        PropState& p = props_[pi];
+        const bool round = o.breakable == B::Tires || o.breakable == B::Barrel || o.sides > 4;
+        if (p.down == 0) {
+            for (size_t ki = 0; ki < karts_.size(); ++ki) {
+                KartState& k = karts_[ki];
+                if (k.respawn_frames > 0) continue;
+                const vec3 rel = k.pos - o.pos;
+                const float y = glm::dot(rel, o.up);
+                if (y < -0.5f || y > 2.0f * o.half.y + 0.6f) continue;
+                const float x = glm::dot(rel, o.right), z = glm::dot(rel, o.forward);
+                const float ax = o.half.x + kKartRadius, az = o.half.z + kKartRadius;
+                const bool inside = round ? (x * x) / (ax * ax) + (z * z) / (az * az) < 1.0f : std::abs(x) < ax && std::abs(z) < az;
+                if (!inside) continue;
+                vec3 n = o.right * x + o.forward * z;
+                n = glm::length(n) > 1e-3f ? glm::normalize(n) : -k.forward();
+                if (o.breakable == B::Tires) {
+                    // The stack topples away from the kart and bounces it back.
+                    if (!k.untouchable()) {
+                        vec3 v = k.velocity();
+                        const float vn = glm::dot(v, n);
+                        if (vn < 0.0f) v -= n * vn * 1.55f;
+                        set_velocity(k, v * 0.6f);
+                        k.wall_bump = 1.0f;
+                        k.pos += n * 0.25f;
+                    }
+                    const vec3 away = -n;
+                    float ang = std::atan2(glm::dot(away, o.forward), glm::dot(away, o.right));
+                    if (ang < 0.0f) ang += 2.0f * kPi;
+                    p.dir = uint8_t(int(ang / (2.0f * kPi) * 256.0f) & 255);
+                    p.used = 0;
+                    events_.push_back({KartEventType::TireKnock, int(ki), int(pi)});
+                } else {
+                    // Smashed to bits: it costs a little speed, unless you're a star.
+                    if (!k.untouchable()) set_velocity(k, k.velocity() * 0.72f);
+                    events_.push_back({KartEventType::Smash, int(ki), int(pi)});
+                }
+                p.down = 1;
+                break;
+            }
+            continue;
+        }
+        if (p.down < 65535) ++p.down;
+        if (o.breakable == B::Tires) {
+            // Driving over a loose tire springs the kart into the air.
+            for (int i = 0; i < kLooseTires; ++i) {
+                if (p.used >> i & 1) continue;
+                const vec3 tp = loose_tire_pos(int(pi), i);
+                for (size_t ki = 0; ki < karts_.size(); ++ki) {
+                    KartState& k = karts_[ki];
+                    if (k.respawn_frames > 0 || !k.grounded || std::abs(k.speed) < 4.0f || p.down < 8) continue;
+                    vec3 d = k.pos - tp;
+                    if (std::abs(glm::dot(d, o.up)) > 1.2f) continue;
+                    d -= o.up * glm::dot(d, o.up);
+                    if (glm::length(d) > 0.95f) continue;
+                    k.air_vel = k.velocity() + kUp * 7.5f;
+                    k.grounded = false;
+                    k.air_frames = 0;
+                    k.trick_window = tables_.constants.trick_window_frames; // a trick off a tire!
+                    p.used = uint8_t(p.used | 1u << i);
+                    events_.push_back({KartEventType::TireBounce, int(ki), int(pi)});
+                    break;
+                }
+            }
+        }
+        // Back again once nobody is in the way.
+        const int respawn = o.breakable == B::Tires ? kTiresRespawnTicks : kCrateRespawnTicks;
+        if (p.down >= respawn) {
+            const float clear = std::max(o.half.x, o.half.z) + 2.0f;
+            bool blocked = false;
+            for (const KartState& k : karts_)
+                if (glm::distance(k.pos, o.pos) < clear) blocked = true;
+            if (!blocked) p = PropState{};
         }
     }
 }

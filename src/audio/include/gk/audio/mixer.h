@@ -17,6 +17,7 @@ enum class Sfx : uint8_t {
     ItemBox, RouletteTick, ItemGet, Throw, Drop, Hit, Shrink, Explosion, Blocked,
     Lightning, Horn, Coin, Ink, Star, Ghost,
     Lap, FinalLap, Finish,
+    Crunch, Boing, Pause,
     Count
 };
 inline constexpr int kSfxCount = int(Sfx::Count);
@@ -33,7 +34,7 @@ struct EngineState {
 };
 
 // Mood of a procedurally written song: picked from a track theme.
-enum class Mood : uint8_t { Bright, Dusty, Breezy, Frosty, Driving, Fiery, Airy, Night, Menu, Results };
+enum class Mood : uint8_t { Bright, Dusty, Breezy, Frosty, Driving, Fiery, Airy, Night, Menu, Results, Star };
 Mood mood_for_theme(const std::string& theme);
 
 struct Volumes {
@@ -82,6 +83,9 @@ private:
     EngineState engine_target_;
     EngineSynth* engine_;
     Song* song_ = nullptr;
+    Song* held_ = nullptr; // paused under the star jingle
+    uint32_t held_seed_ = 0;
+    Mood held_mood_ = Mood::Menu;
     uint32_t song_seed_ = 0;
     Mood song_mood_ = Mood::Menu;
     float music_speed_ = 1.0f;

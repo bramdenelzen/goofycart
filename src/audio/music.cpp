@@ -40,6 +40,8 @@ MoodStyle style(Mood m) {
     case Mood::Night: return {kMinor, 132, 58, 2, 0.5f, 0.45f, true, bits({0, 4, 8, 12}), backbeat, bits({2, 6, 10, 14})};
     case Mood::Menu: return {kMajor, 100, 62, 0, 0.125f, 0.3f, true, bits({0, 8}), bits({12}), bits({0, 4, 8, 12})};
     case Mood::Results: return {kMajor, 92, 60, 1, 0.5f, 0.25f, true, bits({0}), 0, bits({0, 8})};
+    // The invincibility jingle: fast, bright and busy, four on the floor.
+    case Mood::Star: return {kMixo, 184, 64, 0, 0.25f, 0.9f, true, bits({0, 4, 8, 12}), backbeat, 0xffff};
     }
     return style(Mood::Bright);
 }

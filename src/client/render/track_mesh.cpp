@@ -981,6 +981,7 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
             if (th.scenery == ThemeStyle::Scenery::Market) market_town(b, t, th, rnd, floor_y, *props);
             // Obstacles as painted props, fitted to their collision shapes.
             for (const auto& o : t.obstacles) {
+                if (o.breakable != sim::Track::Breakable::None) continue; // drawn live: they break
                 const bool pillar = o.sides > 4;
                 const std::string& th_name = t.theme;
                 const char* kind = th_name == "market" ? (pillar ? "fountain" : "crate")

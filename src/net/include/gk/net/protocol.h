@@ -194,6 +194,7 @@ struct SnapshotMsg {
     std::vector<KartSnapshot> karts;
     uint64_t rng = 0;                     // item roulette state, so prediction rolls the same
     std::vector<int> boxes;               // item box respawn timers
+    std::vector<sim::PropState> props;    // breakable obstacles
     std::vector<sim::ItemEntity> entities;
 };
 
