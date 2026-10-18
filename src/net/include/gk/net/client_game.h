@@ -69,6 +69,7 @@ public:
     uint32_t tick() const { return tick_; }
     uint32_t server_tick() const { return last_snapshot_tick_; }
     int input_lead() const { return last_lead_; }
+    float target_lead() const { return target_lead_; }
 
     // Render offset for a kart: what is left of the last correction.
     vec3 visual_offset(int kart) const;
@@ -85,6 +86,8 @@ private:
     struct InputSlot {
         uint32_t tick = 0;
         sim::KartInput input{};
+        bool has_state = false;
+        sim::KartState state{}; // our kart after this tick, as we drove it
     };
     static constexpr size_t kHistory = 256;
 
@@ -115,6 +118,7 @@ private:
     int ticks_since_snapshot_ = 0;
     int last_lead_ = 0;
     double time_scale_ = 1.0;
+    float target_lead_ = float(kTargetLead); // grows on a bad connection
 
     std::array<InputSlot, kHistory> history_{};
     std::vector<sim::KartInput> remote_inputs_; // last known input per kart

@@ -45,6 +45,12 @@ public:
     const PhysicsTables& tables() const { return tables_; }
     const RaceConfig& config() const { return config_; }
     const std::vector<KartState>& karts() const { return karts_; }
+    // Takes a kart's movement (position, velocity, drift, boost) from `from`,
+    // keeping race progress, items and hits. Used by the server for the state
+    // a player's own client reports. Returns false when it was not plausible.
+    // `replay`: inputs to drive the kart on by itself afterwards, for a state
+    // that arrived some ticks late.
+    bool adopt_motion(int kart, const KartState& from, std::span<const KartInput> replay = {});
     std::vector<KartState>& karts_mut() { return karts_; }
     const KartParams& params(int kart) const { return params_[size_t(kart)]; }
     const std::vector<KartEvent>& events() const { return events_; }

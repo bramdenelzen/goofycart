@@ -49,6 +49,11 @@ public:
         }
     }
     void set_now(int ms) { now_ = ms; }
+    // A Wi-Fi hiccup: everything sent during [from, to) arrives at `to`.
+    void stall(int from, int to) {
+        stall_from_ = from;
+        stall_to_ = to;
+    }
     // Drops queued traffic for a client that went away.
     void forget(ClientId client) {
         std::erase_if(packets_, [&](const Packet& p) { return p.client == client; });
@@ -68,6 +73,7 @@ private:
             if (!reliable) return;
             due += 2 * one_way_ + 20;
         }
+        if (now_ >= stall_from_ && now_ < stall_to_) due = std::max(due, stall_to_ + one_way_);
         if (reliable) {
             int& last = last_reliable_[{to_client, client, channel}];
             due = std::max(due, last);
@@ -79,6 +85,7 @@ private:
     int one_way_, jitter_;
     float loss_;
     int now_ = 0;
+    int stall_from_ = 0, stall_to_ = 0;
     std::mt19937 rng_{7};
     std::vector<Packet> packets_;
     std::map<std::tuple<bool, ClientId, uint8_t>, int> last_reliable_;
@@ -314,6 +321,40 @@ TEST_CASE("four clients race at 150 ms round trip with 2% loss") {
                 c.game->max_correction(), " m over ", c.corrections, " snapshots");
         CHECK(c.corrections > 100);
         CHECK(mean < 0.15);
+    }
+}
+
+TEST_CASE("a bad connection: 250 ms round trip, 80 ms jitter, 8% loss") {
+    Harness h(125, 0.08f, quick_config(), 80);
+    h.connect(1, "A");
+    h.connect(2, "B");
+    REQUIRE(h.run_until([&] { return h.room.racing(); }, 8000));
+    h.run_ms(3000);
+    for (int i = 0; i < 300 && h.room.racing(); ++i) h.run_ms(100);
+    for (auto& [id, c] : h.clients) {
+        const double mean = c.corrections ? c.sum_correction / c.corrections : 0.0;
+        MESSAGE("client ", id, ": mean correction ", mean, " m, max ", c.game->max_correction(), " m");
+        CHECK(mean < 0.05);
+        CHECK(c.game->max_correction() < 1.0);
+    }
+}
+
+TEST_CASE("Wi-Fi hiccups don't throw the player's own kart around") {
+    Harness h(40, 0.02f, quick_config(3), 20);
+    h.connect(1, "A");
+    h.connect(2, "B");
+    REQUIRE(h.run_until([&] { return h.room.racing(); }, 8000));
+    h.run_ms(4000);
+    for (int spike = 0; spike < 8 && h.room.racing(); ++spike) {
+        h.net.stall(h.now_ms, h.now_ms + 400 + spike * 80);
+        h.run_ms(2000);
+    }
+    // Hits and bumps the client could not see coming still correct it a little.
+    for (auto& [id, c] : h.clients) {
+        const double mean = c.corrections ? c.sum_correction / c.corrections : 0.0;
+        MESSAGE("client ", id, ": mean correction ", mean, " m, worst ", c.game->max_correction(), " m");
+        CHECK(mean < 0.02);
+        CHECK(c.game->max_correction() < 5.0);
     }
 }
 

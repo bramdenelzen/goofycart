@@ -126,6 +126,7 @@ struct PhysicsConstants {
     float drift_turn_tight = 0.78f;
     float drift_turn_start = 0.1f;
     float drift_turn_response = 0.9f;
+    float drift_turn_response_settled = 3.2f; // once the entry is over: the stick has real authority
     float drift_inward_bonus = 1.15f; // inward-drifting parts turn this much tighter
     float coin_speed_bonus = 0.005f; // per coin; unpublished, to measure
     int max_coins = 10;

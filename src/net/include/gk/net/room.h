@@ -93,6 +93,8 @@ private:
         int seat = -1;
         int points = 0;                            // Grand Prix total
         std::map<uint32_t, sim::KartInput> inputs; // by world tick
+        std::map<uint32_t, sim::KartState> states; // the client's own kart after that tick
+        uint32_t late_state_tick = 0;
         sim::KartInput last_input{};
         uint32_t used_tick = 0;
         float lead = 0.0f;                         // smoothed ticks of input headroom

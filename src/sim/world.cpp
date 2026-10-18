@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <numeric>
 
 namespace gk::sim {
@@ -82,6 +83,49 @@ void World::tick(std::span<const KartInput> inputs) {
     }
 }
 
+bool World::adopt_motion(int kart, const KartState& c, std::span<const KartInput> replay) {
+    if (kart < 0 || size_t(kart) >= karts_.size()) return false;
+    KartState& k = karts_[size_t(kart)];
+    // The server decides hits, respawns and the finish; while those play out
+    // the client's view lags behind them, so keep the server's.
+    if (k.finished || k.respawn_frames > 0 || c.respawn_frames > 0 || k.knocked() != c.knocked() || k.stun_frames > 0) return false;
+    if (!std::isfinite(c.pos.x) || !std::isfinite(c.pos.y) || !std::isfinite(c.pos.z)) return false;
+    if (glm::distance(k.pos, c.pos) > 45.0f) return false; // far beyond a stutter: not believable
+    const float top = params_[size_t(kart)].top_speed * 2.2f;
+    if (glm::length(c.velocity()) > top || std::abs(c.speed) > top) return false;
+    { static int n = 0; if (++n % 500 == 0) std::fprintf(stderr, "adopt d=%.3f fin=%d\n", glm::distance(k.pos, c.pos), int(c.finished)); }
+    k.pos = c.pos;
+    k.rot = glm::normalize(c.rot);
+    k.speed = c.speed;
+    k.slide = c.slide;
+    k.air_vel = c.air_vel;
+    k.grounded = c.grounded;
+    k.air_frames = c.air_frames;
+    k.ground_normal = c.ground_normal;
+    k.surface = c.surface;
+    k.last_ground_surface = c.last_ground_surface;
+    k.drift = c.drift;
+    k.drift_dir = c.drift_dir;
+    k.mt_charge = c.mt_charge;
+    k.drift_button_prev = c.drift_button_prev;
+    k.hop_steer = c.hop_steer;
+    k.drift_frames = c.drift_frames;
+    k.drift_turn = c.drift_turn;
+    k.trick_window = c.trick_window;
+    k.trick_done = c.trick_done;
+    k.trick_anim = c.trick_anim;
+    k.glide_armed = c.glide_armed;
+    k.gliding = c.gliding;
+    k.visual_drift_yaw = c.visual_drift_yaw;
+    k.wall_bump = c.wall_bump;
+    k.stuck_frames = c.stuck_frames;
+    for (const KartInput& in : replay) {
+        KartStepContext ctx{track_, tables_.constants, params_[size_t(kart)], kart, countdown_left_ > 0, nullptr};
+        kart_step(k, in, ctx);
+    }
+    return true;
+}
+
 void World::collide_karts() {
     constexpr float kRadius = 0.75f;
     for (size_t a = 0; a < karts_.size(); ++a) {
@@ -111,30 +155,48 @@ void World::collide_karts() {
                     if (!karts_[size_t(victim)].untouchable()) apply_hit(victim, HitKind::Spin, sa ? int(b) : int(a));
                 }
             }
-            const vec3 n = d / dist;
+            vec3 n = d / dist;
             const float ma = params_[a].mass, mb = params_[b].mass;
+            const vec3 va0 = ka.velocity(), vb0 = kb.velocity();
+            // Rear-ending someone: tilt the contact sideways so the two slide
+            // past each other instead of the one behind getting stuck.
+            {
+                const vec3 fa = glm::normalize(vec3(ka.forward().x, 0.0f, ka.forward().z));
+                const vec3 side(-fa.z, 0.0f, fa.x);
+                const float along = glm::dot(n, fa);
+                if (std::abs(along) > 0.7f) {
+                    float s = glm::dot(n, side);
+                    if (std::abs(s) < 0.15f) s = ((tick_ + a + b) & 1) ? 0.15f : -0.15f; // dead centre: pick a side
+                    n = glm::normalize(n + side * (s > 0.0f ? 0.6f : -0.6f));
+                }
+            }
             const float overlap = 2.0f * kRadius - dist;
             ka.pos -= n * overlap * (mb / (ma + mb));
             kb.pos += n * overlap * (ma / (ma + mb));
-            vec3 va = ka.velocity(), vb = kb.velocity();
+            vec3 va = va0, vb = vb0;
             const float rel = glm::dot(vb - va, n);
             if (rel >= 0.0f) continue;
-            // Elastic-ish exchange along the contact normal, weighted by KartBound mass.
-            const float j = -(1.0f + 0.6f) * rel / (1.0f / ma + 1.0f / mb);
+            // A soft exchange along the contact normal, weighted by mass.
+            const float j = -(1.0f + 0.35f) * rel / (1.0f / ma + 1.0f / mb);
             va -= n * (j / ma);
             vb += n * (j / mb);
-            auto apply = [](KartState& k, vec3 v) {
+            auto apply = [](KartState& k, vec3 v0, vec3 v) {
                 if (k.grounded) {
+                    // Keep most of the speed along the heading: a bump shoves you
+                    // sideways, it doesn't stop you.
                     const vec3 f = k.forward(), u = k.up();
-                    k.speed = glm::dot(v, f);
-                    vec3 lat = v - f * k.speed;
+                    const float f0 = glm::dot(v0, f), f1 = glm::dot(v, f);
+                    float fwd = f0 + (f1 - f0) * 0.3f;
+                    if (f0 > 0.0f) fwd = std::max(fwd, f0 * 0.85f);
+                    k.speed = fwd;
+                    vec3 lat = v - f * f1;
                     k.slide = lat - u * glm::dot(lat, u);
                 } else {
                     k.air_vel = v;
                 }
             };
-            apply(ka, va);
-            apply(kb, vb);
+            apply(ka, va0, va);
+            apply(kb, vb0, vb);
             if (-rel > 2.0f) events_.push_back({KartEventType::Bump, int(a), int(b)});
         }
     }

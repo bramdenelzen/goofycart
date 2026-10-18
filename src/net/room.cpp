@@ -122,6 +122,17 @@ void Room::on_message(ClientId id, std::span<const uint8_t> data) {
             if (t <= now || t > now + 120) continue;
             c.inputs.emplace(t, m.inputs[i]);
         }
+        if (m.has_state && m.newest_tick > now && m.newest_tick <= now + 120) {
+            c.states[m.newest_tick] = m.state;
+            while (c.states.size() > 64) c.states.erase(c.states.begin());
+        } else if (m.has_state && m.newest_tick <= now && m.newest_tick + 90 > now && m.newest_tick > c.late_state_tick &&
+                   size_t(c.seat) < world_->karts().size()) {
+            // Held up on the way (a Wi-Fi hiccup): take it anyway and drive it
+            // on to the present with the newest input.
+            c.late_state_tick = m.newest_tick;
+            const std::vector<sim::KartInput> replay(now - m.newest_tick, m.inputs.front());
+            world_->adopt_motion(c.seat, m.state, replay);
+        }
         const float lead = float(int64_t(m.newest_tick) - int64_t(now) - 1);
         c.lead = c.lead * 0.8f + lead * 0.2f;
         break;
@@ -144,6 +155,7 @@ void Room::assign_seat(ClientId id, Client& c) {
             if (world_ && s < world_->karts().size()) world_->set_kart_params(int(s), seats_[s].params);
             c.seat = int(s);
             c.inputs.clear();
+            c.states.clear();
             c.lead = 0.0f;
             return;
         }
@@ -382,6 +394,15 @@ void Room::step_race() {
         step_inputs_[i] = in;
     }
     world_->tick(step_inputs_);
+    // Players own their kart's movement: take it from what their client drove.
+    const uint32_t now = uint32_t(world_->tick_count());
+    for (size_t i = 0; i < seats_.size(); ++i) {
+        if (!seats_[i].human) continue;
+        Client& c = clients_[seats_[i].client];
+        auto it = c.states.find(now);
+        if (it != c.states.end()) world_->adopt_motion(int(i), it->second);
+        c.states.erase(c.states.begin(), c.states.upper_bound(now));
+    }
 
     if (!world_->events().empty()) {
         EventsMsg ev;

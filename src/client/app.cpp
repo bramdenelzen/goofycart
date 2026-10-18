@@ -911,25 +911,45 @@ void App::update_audio() {
     mx.set_engine(e);
 }
 
-void App::update_camera(float dt) {
+void App::update_camera(float alpha, float dt) {
     const sim::KartState& now = world()->karts()[size_t(player_)];
-    const vec3 fwd = now.forward();
-    vec3 flat = vec3(fwd.x, 0.0f, fwd.z);
-    flat = glm::length(flat) > 0.01f ? glm::normalize(flat) : vec3(0, 0, 1);
+    const sim::KartState& prev = prev_.size() > size_t(player_) ? prev_[size_t(player_)] : now;
+    // Follow the kart as drawn (interpolated, with the network correction),
+    // so the camera never jitters against the kart.
+    vec3 pos = glm::mix(prev.pos, now.pos, alpha);
+    if (online_) pos += online_->visual_offset(player_);
+    const vec3 fwd = glm::slerp(prev.rot, now.rot, alpha) * vec3(0, 0, 1);
+    vec3 heading = vec3(fwd.x, 0.0f, fwd.z);
+    heading = glm::length(heading) > 0.01f ? glm::normalize(heading) : vec3(0, 0, 1);
     const bool back = input_.actions().look_back;
     const float dist = now.gliding ? 7.5f : 5.5f;
     const float height = now.gliding ? 3.2f : 2.2f;
-    const vec3 desired = now.pos + (back ? flat : -flat) * dist + kUp * height;
-    const vec3 look = now.pos + (back ? -flat : flat) * 3.0f + kUp * 0.9f;
-    if (!cam_init_ || back) {
-        cam_pos_ = desired;
-        cam_look_ = look;
-        cam_init_ = true;
+    if (!cam_init_) {
+        cam_dir_ = heading;
+        cam_height_ = height;
+        cam_dist_ = dist;
     } else {
-        const float k = 1.0f - std::exp(-8.0f * dt);
-        cam_pos_ = glm::mix(cam_pos_, desired, k);
-        cam_look_ = glm::mix(cam_look_, look, 1.0f - std::exp(-14.0f * dt));
+        // Swing round to the heading by angle, not by sliding the position,
+        // so turns and drifts never pull the camera through the kart.
+        const float k = 1.0f - std::exp(-7.0f * dt);
+        const float cross = cam_dir_.x * heading.z - cam_dir_.z * heading.x;
+        const float ang = std::atan2(cross, glm::dot(cam_dir_, heading));
+        const float turn = ang * k;
+        const float c = std::cos(turn), sn = std::sin(turn);
+        cam_dir_ = glm::normalize(vec3(cam_dir_.x * c - cam_dir_.z * sn, 0.0f, cam_dir_.x * sn + cam_dir_.z * c));
+        const float k2 = 1.0f - std::exp(-4.0f * dt);
+        cam_height_ += (height - cam_height_) * k2;
+        cam_dist_ += (dist - cam_dist_) * k2;
     }
+    // Looking back is a clean cut both ways, then follows just as smoothly.
+    const vec3 dir = back ? -cam_dir_ : cam_dir_;
+    const vec3 cam_target = pos - dir * cam_dist_ + kUp * cam_height_;
+    if (!cam_init_ || back != cam_back_) cam_y_ = cam_target.y;
+    else cam_y_ += (cam_target.y - cam_y_) * (1.0f - std::exp(-10.0f * dt)); // soften hops and bumps
+    cam_pos_ = vec3(cam_target.x, cam_y_, cam_target.z);
+    cam_look_ = pos + dir * 3.0f + kUp * 0.9f;
+    cam_back_ = back;
+    cam_init_ = true;
     const float target_fov = now.boost_frames > 0 ? 82.0f : 72.0f;
     cam_fov_ += (target_fov - cam_fov_) * (1.0f - std::exp(-5.0f * dt));
 }
@@ -1094,7 +1114,7 @@ void App::render(float alpha, float dt) {
         return;
     }
     const sim::World* w = world();
-    if (w && size_t(player_) < w->karts().size()) update_camera(dt);
+    if (w && size_t(player_) < w->karts().size()) update_camera(alpha, dt);
     render::Camera cam;
     cam.position = cam_init_ ? cam_pos_ : vec3(0, 12, -25);
     cam.target = cam_init_ ? cam_look_ : vec3(0, 0, 20);

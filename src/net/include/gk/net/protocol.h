@@ -19,7 +19,7 @@
 //   kChannelChat     reliable, low priority: chat and emotes
 namespace gk::net {
 
-inline constexpr uint16_t kProtocolVersion = 7; // bump when the race changes too: both sides build the track from data
+inline constexpr uint16_t kProtocolVersion = 8; // bump when the race changes too: both sides build the track from data
 inline constexpr uint16_t kDefaultPort = 7777;
 inline constexpr uint8_t kChannelState = 0;
 inline constexpr uint8_t kChannelEvents = 1;
@@ -172,6 +172,11 @@ struct ResultsMsg {
 struct InputMsg {
     uint32_t newest_tick = 0;               // world tick the first input is for
     std::vector<sim::KartInput> inputs;     // newest first
+    // The sender's own kart after newest_tick, as it drove it. The server
+    // takes the movement from this (within limits), so a player's kart goes
+    // where they steered it even when their connection stutters.
+    bool has_state = false;
+    sim::KartState state;
 };
 
 struct KartSnapshot {

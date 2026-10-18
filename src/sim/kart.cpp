@@ -332,9 +332,12 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
             entry = t * t * (3.0f - 2.0f * t);
         }
         if (s.drift_frames < 255) ++s.drift_frames;
-        // The drift turn eases towards what the stick asks for.
+        // The drift turn eases towards what the stick asks for: gently while
+        // the kart is still carrying its old momentum, then quickly, so the
+        // stick sets the arc rather than a fixed angle.
         const float target = drift_turn_target(k, p, in.steer * float(s.drift_dir));
-        s.drift_turn = approach(s.drift_turn, target, k.drift_turn_response * kDt);
+        const float response = glm::mix(k.drift_turn_response, k.drift_turn_response_settled, entry);
+        s.drift_turn = approach(s.drift_turn, target, response * kDt);
     }
 
     // Steering turns the heading directly; it is not a physics torque.

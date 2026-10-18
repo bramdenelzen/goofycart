@@ -79,7 +79,7 @@ private:
     void draw_online_results();
     void draw_standings();
     std::vector<std::string> kart_names() const;
-    void update_camera(float dt);
+    void update_camera(float alpha, float dt);
     void render(float alpha, float dt);
     void draw_kart(int index, const sim::KartState& s, float alpha);
     void draw_items(const sim::World& w);
@@ -210,6 +210,9 @@ private:
     vec3 cam_pos_{0.0f}, cam_look_{0.0f};
     float cam_fov_ = 70.0f;
     bool cam_init_ = false;
+    bool cam_back_ = false;
+    vec3 cam_dir_{0.0f, 0.0f, 1.0f};
+    float cam_height_ = 2.2f, cam_dist_ = 5.5f, cam_y_ = 0.0f;
     HudMessage message_;
     bool show_help_ = true;
     uint64_t frame_ = 0;

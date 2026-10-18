@@ -9,8 +9,9 @@
 namespace gk::net {
 namespace {
 constexpr int kInitialLead = 6;          // first guess before the server reports back
-constexpr int kStaleSnapshotTicks = 90;  // stop predicting when the server goes quiet
-constexpr float kSnapDistance = 5.0f;    // corrections larger than this snap instead of blending
+constexpr int kStaleSnapshotTicks = 150; // stop predicting when the server goes quiet
+constexpr float kSnapDistance = 14.0f;   // corrections larger than this snap instead of blending
+constexpr float kMaxLead = 14.0f;        // ticks: the most input buffer a bad connection gets
 constexpr int kLeadSettleTicks = 40;     // server ticks to ignore the lead after a jump
 constexpr float kOffsetDecay = 0.88f;    // per tick: most of a correction is gone in ~0.3 s
 } // namespace
@@ -108,6 +109,7 @@ void ClientGame::apply_setup(const RaceSetup& s) {
         last_snapshot_tick_ = 0;
         ignore_lead_until_ = 0;
         time_scale_ = 1.0;
+        target_lead_ = float(kTargetLead);
         remote_inputs_.assign(s.seats.size(), {});
         step_inputs_.assign(s.seats.size(), {});
         visual_offset_.assign(s.seats.size(), vec3(0.0f));
@@ -138,6 +140,13 @@ void ClientGame::simulate_to(uint32_t target, bool forward) {
             else step_inputs_[i] = remote_inputs_[i];
         }
         world_->tick(step_inputs_);
+        if (seat_ >= 0 && size_t(seat_) < karts.size()) {
+            InputSlot& slot = history_[t % kHistory];
+            if (slot.tick == t) {
+                slot.state = karts[size_t(seat_)];
+                slot.has_state = true;
+            }
+        }
         if (!forward) continue;
         // Lap and finish wait for the server; everything else is shown at once.
         for (const auto& e : world_->events())
@@ -163,7 +172,12 @@ void ClientGame::apply_snapshot(const SnapshotMsg& m) {
         // been through the server and its average has settled.
         if (m.tick >= ignore_lead_until_) {
             last_lead_ = m.input_lead;
-            const int err = last_lead_ - kTargetLead;
+            // Adaptive input buffer: when inputs reach the server late (a
+            // jittery or lossy connection), run further ahead so they arrive
+            // in time; on a steady connection creep back to the minimum.
+            if (last_lead_ < 1) target_lead_ = std::min(kMaxLead, target_lead_ + 1.5f);
+            else target_lead_ = std::max(float(kTargetLead), target_lead_ - 0.02f);
+            const int err = last_lead_ - int(std::lround(target_lead_));
             if (err < -4 || err > 20) {
                 // Far off (start-up, a long stall): jump instead of drifting there.
                 tick_ = uint32_t(std::max<int64_t>(int64_t(tick_) - err, int64_t(m.tick) + 1));
@@ -199,6 +213,13 @@ void ClientGame::apply_snapshot(const SnapshotMsg& m) {
     ws.box_respawn = m.boxes;
     ws.rng.state = m.rng;
     world_->restore(ws);
+    // Our own kart goes where we drove it: keep our movement over the
+    // server's (which only guesses our input while packets are held up),
+    // unless the server knows better, e.g. we were hit or fell off.
+    if (seat_ >= 0) {
+        const InputSlot& slot = history_[m.tick % kHistory];
+        if (slot.tick == m.tick && slot.has_state) world_->adopt_motion(seat_, slot.state);
+    }
     simulate_to(tick_, false);
 
     for (size_t i = 0; i < karts.size(); ++i) {
@@ -217,17 +238,22 @@ void ClientGame::send_inputs() {
     InputMsg m;
     m.newest_tick = tick_;
     for (int i = 0; i < kInputRedundancy && uint32_t(i) < tick_; ++i) m.inputs.push_back(input_at(tick_ - uint32_t(i)));
+    if (world_ && uint32_t(world_->tick_count()) == tick_ && size_t(seat_) < world_->karts().size()) {
+        m.has_state = true;
+        m.state = world_->karts()[size_t(seat_)];
+    }
     send_(kChannelState, encode(m), false);
 }
 
 bool ClientGame::step(const sim::KartInput& input) {
     if (!world_ || !clock_started_) return false;
     if (++ticks_since_snapshot_ > kStaleSnapshotTicks) return false;
-    for (vec3& o : visual_offset_) o *= kOffsetDecay;
+    // Corrections fade out: small ones quickly, big ones over half a second.
+    for (vec3& o : visual_offset_) o *= glm::length(o) > 1.5f ? 0.93f : kOffsetDecay;
     ++tick_;
     history_[tick_ % kHistory] = {tick_, input};
-    send_inputs();
     simulate_to(tick_, true);
+    send_inputs();
     return true;
 }
 

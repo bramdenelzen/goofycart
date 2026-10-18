@@ -410,6 +410,8 @@ std::vector<uint8_t> encode(const InputMsg& m) {
     w.u32(m.newest_tick);
     w.u8(uint8_t(std::min<size_t>(m.inputs.size(), 32)));
     for (size_t i = 0; i < m.inputs.size() && i < 32; ++i) write_input(w, m.inputs[i]);
+    w.u8(m.has_state ? 1 : 0);
+    if (m.has_state) write_kart(w, m.state);
     return w.take();
 }
 
@@ -421,6 +423,8 @@ bool decode(std::span<const uint8_t> d, InputMsg& m) {
     if (n > 32) return false;
     m.inputs.resize(n);
     for (auto& in : m.inputs) in = read_input(r);
+    m.has_state = r.u8() != 0;
+    if (m.has_state) m.state = read_kart(r);
     return r.ok();
 }
 
@@ -620,7 +624,7 @@ uint32_t hash_constants(const sim::PhysicsTables& t) {
     for (float f : {k.gravity, k.hop_velocity, k.min_drift_speed, k.brake_decel, k.coast_decel, k.reverse_top,
                     k.reverse_accel, k.overspeed_decel, k.slope_factor, k.road_slip_retention, k.drift_slip_retention,
                     k.drift_entry_slip_retention, k.drift_turn_wide, k.drift_turn_neutral, k.drift_turn_tight,
-                    k.drift_turn_start, k.drift_turn_response, k.drift_inward_bonus,
+                    k.drift_turn_start, k.drift_turn_response, k.drift_turn_response_settled, k.drift_inward_bonus,
                     k.coin_speed_bonus, k.charge_fast, k.charge_slow, k.spark_threshold, k.mt_thresholds[0],
                     k.mt_thresholds[1], k.mt_thresholds[2], k.mt_boost_mult, k.offroad_light, k.offroad_medium,
                     k.offroad_heavy, k.boost_pad_mult, k.mushroom_mult, k.trick_mult, k.rocket_mult, k.boost_accel,
