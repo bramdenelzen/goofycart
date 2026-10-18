@@ -182,6 +182,8 @@ void MeshBuilder::grid(const std::vector<vec3>& pts, int rows, int cols, bool wr
 }
 
 void MeshBuilder::sphere(vec3 c, vec3 radii, uint32_t color, int segments, int rings) {
+    segments = scaled(segments, 6);
+    rings = scaled(rings, 4);
     std::vector<vec3> pts;
     pts.reserve(size_t((rings + 1) * segments));
     for (int r = 0; r <= rings; ++r) {
@@ -206,6 +208,7 @@ void basis_for(vec3 axis, vec3& u, vec3& v) {
 void MeshBuilder::lathe(vec3 origin, vec3 axis, const std::vector<vec2>& profile, int segments, uint32_t color, float u_tiles,
                         float v_tiles) {
     if (profile.size() < 2) return;
+    segments = scaled(segments, 5);
     vec3 u, v;
     basis_for(axis, u, v);
     const vec3 a = glm::normalize(axis);
@@ -244,6 +247,7 @@ void MeshBuilder::loft(const std::vector<std::vector<vec3>>& rings, uint32_t col
 }
 
 void MeshBuilder::capsule(vec3 a, vec3 b, float r, uint32_t color, int segments, int rings) {
+    rings = scaled(rings, 2);
     const float len = glm::length(b - a);
     std::vector<vec2> prof;
     for (int i = 0; i <= rings; ++i) { // cap around a, from its far pole up to the seam
@@ -268,6 +272,8 @@ void MeshBuilder::tube(vec3 a, vec3 b, float ra, float rb, uint32_t color, int s
 }
 
 void MeshBuilder::rounded_box(vec3 c, vec3 half, float r, uint32_t color, int segments, int rings) {
+    segments = std::max(8, scaled(segments, 8) / 4 * 4); // a multiple of 4 keeps the corners
+    rings = std::max(4, scaled(rings, 4) / 2 * 2);
     r = std::min({r, half.x, half.y, half.z});
     const vec3 inner = half - vec3(r);
     std::vector<vec3> pts;
@@ -287,6 +293,8 @@ void MeshBuilder::rounded_box(vec3 c, vec3 half, float r, uint32_t color, int se
 }
 
 void MeshBuilder::torus(vec3 c, vec3 axis, float R, float r, uint32_t color, int segments, int sides) {
+    segments = scaled(segments, 6);
+    sides = scaled(sides, 4);
     vec3 u, v;
     basis_for(axis, u, v);
     const vec3 a = glm::normalize(axis);
@@ -304,6 +312,7 @@ void MeshBuilder::torus(vec3 c, vec3 axis, float R, float r, uint32_t color, int
 
 void MeshBuilder::sweep(const std::vector<vec3>& path, const std::vector<float>& radii, uint32_t color, int segments, bool caps) {
     if (path.size() < 2 || radii.size() != path.size()) return;
+    segments = scaled(segments, 4);
     std::vector<std::vector<vec3>> rings;
     vec3 u, v;
     vec3 prev_t = glm::normalize(path[1] - path[0]);

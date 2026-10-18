@@ -11,7 +11,8 @@ namespace gk::audio {
 // low-pass, plus tyre squeal while drifting, spark shimmer per mini-turbo
 // tier and off-road rumble. Parameters glide so changes never click.
 struct Mixer::EngineSynth {
-    Osc a, b, shimmer, trem;
+    Osc a, b, c, shimmer, trem;
+    Svf body;
     Noise noise{0xabcdefu};
     OnePole tone, squeal_lp, squeal_hp, rumble;
     float level = 0.0f, speed = 0.0f, throttle = 0.0f, drift = 0.0f, rough = 0.0f, spark = 0.0f, air = 0.0f;
@@ -33,8 +34,10 @@ struct Mixer::EngineSynth {
             return;
         }
         const float f = 48.0f + 105.0f * speed + 22.0f * throttle + 18.0f * air;
-        const float raw = 0.6f * a.pulse(f, 0.3f, rate) + 0.4f * b.pulse(f * 0.5f, 0.5f, rate);
-        const float engine = tone.low(raw, 0.05f + 0.08f * throttle) * (0.35f + 0.65f * throttle);
+        // A band-limited saw for the cylinders over a sine an octave down,
+        // filtered warmer at low throttle.
+        const float raw = 0.55f * a.saw_bl(f, rate) + 0.6f * b.sine(f * 0.5f, rate) + 0.15f * c.square_bl(f * 2.0f, 0.3f, rate);
+        const float engine = body.lp(raw, 300.0f + 900.0f * throttle + 600.0f * speed, 0.3f, rate) * (0.35f + 0.65f * throttle);
         const float squeal = squeal_hp.high(squeal_lp.low(noise.next(), 0.6f), 0.15f) * drift * std::min(1.0f, speed * 2.0f);
         const float sparks = shimmer.sine(spark_freq, rate) * (0.6f + 0.4f * trem.sine(13.0f, rate)) * spark;
         const float grit = rumble.low(noise.next(), 0.03f) * rough * std::min(1.0f, speed * 1.5f);

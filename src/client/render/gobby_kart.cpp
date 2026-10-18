@@ -16,7 +16,7 @@ struct Section {
     float round = 0.5f;
     float x = 0.0f;
 };
-constexpr int kRing = 32;
+constexpr int kRing = 20;
 
 std::vector<vec3> ring_of(const Section& s) {
     std::vector<vec3> r;
@@ -331,7 +331,7 @@ PaintedModel make_gobby_tire(const sim::PartLook& look) {
 
     // Knobbly blocks round the tread, in two staggered rows.
     if (block > 0.0f) {
-        const int n = chunky ? 18 : 26;
+        const int n = chunky ? 14 : 18;
         for (int row = 0; row < (chunky ? 2 : 1); ++row)
             for (int i = 0; i < n; ++i) {
                 const float a = 2.0f * kPi * (float(i) + (row ? 0.5f : 0.0f)) / float(n);
@@ -339,7 +339,7 @@ PaintedModel make_gobby_tire(const sim::PartLook& look) {
                 const float bw = chunky ? hw * 0.5f : hw * 0.8f;
                 MeshBuilder blk;
                 region(blk, r_block);
-                blk.rounded_box({x, body_r + block * 0.45f, 0.0f}, {bw, block * 0.75f, chunky ? 0.07f : 0.03f}, chunky ? 0.022f : 0.01f, kWhite, 10, 6);
+                blk.box_painted({x, body_r + block * 0.45f, 0.0f}, {bw, block * 0.75f, chunky ? 0.07f : 0.03f}, kWhite);
                 b.append(blk.data(), glm::rotate(mat4(1.0f), a, vec3(1, 0, 0)));
             }
         t.gradient_v(r_block, shade(rubber, 1.25f), shade(rubber, 0.7f));

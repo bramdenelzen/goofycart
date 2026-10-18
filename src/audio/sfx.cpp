@@ -28,24 +28,34 @@ std::vector<float> render(int rate, float seconds, float peak, F&& f) {
     return out;
 }
 
-// A sequence of square-ish notes: (frequency, length in seconds) pairs.
+// A sequence of chimes: (frequency, length in seconds) pairs, each an FM
+// bell that rings on under the next, with a short room tail. `duty` picks
+// the timbre (brighter for larger values).
 std::vector<float> notes(int rate, std::initializer_list<std::pair<float, float>> seq, float duty, float decay,
                          float peak) {
     float total = 0.0f;
     for (auto& n : seq) total += n.second;
     std::vector<std::pair<float, float>> v(seq);
-    Osc osc;
-    return render(rate, total + 0.05f, peak, [&, rate](float t) {
-        float start = 0.0f;
+    std::vector<Fm> fm(v.size());
+    std::vector<Osc> body(v.size());
+    Reverb room(rate, 0.6f);
+    room.feedback = 0.7f;
+    const float ring = std::min(decay, 9.0f);
+    return render(rate, total + 0.45f, peak, [&, rate](float t) {
+        float start = 0.0f, dry = 0.0f;
         for (size_t k = 0; k < v.size(); ++k) {
             const auto [f, len] = v[k];
-            if (t < start + len || k + 1 == v.size()) {
+            if (t >= start) {
                 const float lt = t - start;
-                return osc.pulse(f, duty, rate) * std::exp(-lt * decay) * (lt < len + 0.04f ? 1.0f : 0.0f);
+                const float env = std::min(1.0f, lt * 600.0f) * std::exp(-lt * ring);
+                const float index = (0.8f + 2.5f * duty) * std::exp(-lt * 12.0f);
+                dry += (fm[k].sample(f, 2.0f, index, rate) + 0.3f * body[k].sine(f * 0.5f, rate)) * env;
             }
             start += len;
         }
-        return 0.0f;
+        float rl = 0.0f, rr = 0.0f;
+        room.process(dry, rl, rr);
+        return dry + 0.5f * (rl + rr);
     });
 }
 
@@ -62,32 +72,32 @@ std::vector<float> make_sfx(Sfx s, int rate) {
     case Sfx::MenuBack: return notes(rate, {{698.5f, 0.06f}, {466.2f, 0.1f}}, 0.25f, 16.0f, 0.35f);
     case Sfx::CountBeep:
         return render(rate, 0.3f, 0.5f, [&](float t) {
-            return (a.sine(554.4f, sr) + 0.3f * b.pulse(554.4f, 0.5f, sr)) * (t < 0.22f ? 1.0f : std::exp(-(t - 0.22f) * 60));
+            return (a.sine(554.4f, sr) + 0.25f * b.sine(1108.7f, sr) + 0.1f * c.sine(1663.2f, sr)) * std::min(1.0f, t * 300.0f) * (t < 0.22f ? 1.0f : std::exp(-(t - 0.22f) * 40));
         });
     case Sfx::CountGo:
         return render(rate, 0.8f, 0.55f, [&](float t) {
-            return (a.sine(1108.7f, sr) + 0.3f * b.pulse(1108.7f, 0.5f, sr)) * (t < 0.55f ? 1.0f : std::exp(-(t - 0.55f) * 30));
+            return (a.sine(1108.7f, sr) + 0.25f * b.sine(2217.5f, sr) + 0.1f * c.sine(3326.0f, sr)) * std::min(1.0f, t * 300.0f) * (t < 0.55f ? 1.0f : std::exp(-(t - 0.55f) * 20));
         });
     case Sfx::Boost:
         return render(rate, 0.7f, 0.6f, [&](float t) {
             const float f = 180.0f + 520.0f * std::min(1.0f, t / 0.25f);
             const float whoosh = lp.low(noise.next(), 0.05f + 0.25f * std::min(1.0f, t * 4.0f));
-            return (0.5f * a.saw(f, sr) + 1.4f * whoosh) * std::exp(-t * 4.0f);
+            return (0.5f * a.saw_bl(f, sr) + 1.4f * whoosh) * std::exp(-t * 4.0f);
         });
     case Sfx::MiniTurbo:
         return render(rate, 0.45f, 0.5f, [&](float t) {
             const float f = 300.0f + 900.0f * std::min(1.0f, t / 0.12f);
-            return (0.6f * a.pulse(f, 0.3f, sr) + 0.8f * lp.low(noise.next(), 0.3f)) * std::exp(-t * 7.0f);
+            return (0.6f * a.square_bl(f, 0.3f, sr) + 0.8f * lp.low(noise.next(), 0.3f)) * std::exp(-t * 7.0f);
         });
     case Sfx::RocketStart:
         return render(rate, 0.9f, 0.6f, [&](float t) {
             const float f = 120.0f + 700.0f * std::min(1.0f, t / 0.3f);
-            return (0.6f * a.saw(f, sr) + 0.4f * b.saw(f * 1.01f, sr) + 0.8f * lp.low(noise.next(), 0.2f)) *
+            return (0.6f * a.saw_bl(f, sr) + 0.4f * b.saw_bl(f * 1.01f, sr) + 0.8f * lp.low(noise.next(), 0.2f)) *
                    std::exp(-t * 3.0f);
         });
     case Sfx::Trick:
         return render(rate, 0.16f, 0.4f, [&](float t) {
-            return a.pulse(600.0f + 9000.0f * t, 0.25f, sr) * std::exp(-t * 18.0f);
+            return a.square_bl(600.0f + 9000.0f * t, 0.25f, sr) * std::exp(-t * 18.0f);
         });
     case Sfx::Land:
         return render(rate, 0.22f, 0.6f, [&](float t) {
@@ -95,7 +105,7 @@ std::vector<float> make_sfx(Sfx s, int rate) {
         });
     case Sfx::WallHit:
         return render(rate, 0.25f, 0.65f, [&](float t) {
-            return (0.7f * lp.low(noise.next(), 0.25f) + 0.5f * a.pulse(110.0f, 0.5f, sr)) * std::exp(-t * 20.0f);
+            return (0.7f * lp.low(noise.next(), 0.25f) + 0.5f * a.square_bl(110.0f, 0.5f, sr)) * std::exp(-t * 20.0f);
         });
     case Sfx::Bump:
         return render(rate, 0.18f, 0.5f, [&](float t) {
@@ -103,8 +113,8 @@ std::vector<float> make_sfx(Sfx s, int rate) {
         });
     case Sfx::Respawn:
         return render(rate, 0.7f, 0.4f, [&](float t) {
-            const float f = 400.0f * std::pow(2.0f, std::floor(t * 16.0f) / 6.0f);
-            return a.triangle(f, sr) * std::exp(-t * 3.0f);
+            const float f = 400.0f * std::pow(2.0f, t * 2.6f);
+            return (a.sine(f, sr) + 0.4f * b.sine(f * 1.5f, sr)) * std::exp(-t * 3.0f) * std::min(1.0f, t * 50.0f);
         });
     case Sfx::GliderOpen:
         return render(rate, 0.5f, 0.45f, [&](float t) {
@@ -126,11 +136,11 @@ std::vector<float> make_sfx(Sfx s, int rate) {
     case Sfx::Hit:
         return render(rate, 0.7f, 0.65f, [&](float t) {
             return (0.8f * lp.low(noise.next(), 0.3f) * std::exp(-t * 14.0f) +
-                    0.5f * a.pulse(700.0f * std::exp(-t * 3.0f), 0.5f, sr) * std::exp(-t * 3.0f));
+                    0.5f * a.square_bl(700.0f * std::exp(-t * 3.0f), 0.5f, sr) * std::exp(-t * 3.0f));
         });
     case Sfx::Shrink:
         return render(rate, 0.8f, 0.45f, [&](float t) {
-            return a.pulse(900.0f * std::exp(-t * 2.0f) * (1.0f + 0.1f * std::sin(t * 70.0f)), 0.5f, sr) *
+            return a.square_bl(900.0f * std::exp(-t * 2.0f) * (1.0f + 0.1f * std::sin(t * 70.0f)), 0.5f, sr) *
                    std::exp(-t * 2.5f);
         });
     case Sfx::Explosion:
@@ -146,12 +156,12 @@ std::vector<float> make_sfx(Sfx s, int rate) {
         return render(rate, 1.0f, 0.75f, [&](float t) {
             const float crackle = (noise.next() > 0.6f ? 1.0f : 0.0f) * noise.next();
             return 0.7f * crackle * std::exp(-t * 2.5f) + 0.5f * lp.low(noise.next(), 0.05f) * std::exp(-t * 2.0f) +
-                   0.4f * a.saw(1500.0f * std::exp(-t * 4.0f), sr) * std::exp(-t * 6.0f);
+                   0.4f * a.saw_bl(1500.0f * std::exp(-t * 4.0f), sr) * std::exp(-t * 6.0f);
         });
     case Sfx::Horn:
         return render(rate, 0.6f, 0.7f, [&](float t) {
             const float env = std::min(1.0f, t * 40.0f) * (t < 0.45f ? 1.0f : std::exp(-(t - 0.45f) * 25.0f));
-            return (a.saw(311.1f, sr) + b.saw(370.0f, sr) + 0.5f * c.pulse(155.6f, 0.5f, sr)) * env;
+            return (a.saw_bl(311.1f, sr) + b.saw_bl(370.0f, sr) + 0.5f * c.square_bl(155.6f, 0.5f, sr)) * env;
         });
     case Sfx::Coin: return notes(rate, {{1174.7f, 0.06f}, {1760.0f, 0.22f}}, 0.5f, 9.0f, 0.4f);
     case Sfx::Ink:
@@ -161,7 +171,9 @@ std::vector<float> make_sfx(Sfx s, int rate) {
     case Sfx::Star:
         return render(rate, 0.9f, 0.4f, [&](float t) {
             static constexpr float k[] = {1046.5f, 1318.5f, 1568.0f, 2093.0f, 1568.0f, 2093.0f, 2637.0f, 2093.0f};
-            return a.pulse(k[int(t * 12.0f) % 8], 0.25f, sr) * std::exp(-t * 1.5f);
+            const float lt = std::fmod(t, 1.0f / 12.0f);
+            return a.sine(k[int(t * 12.0f) % 8], sr) * (0.6f + 0.4f * std::exp(-lt * 30.0f)) * std::exp(-t * 1.5f) +
+                   0.2f * b.sine(k[int(t * 12.0f) % 8] * 2.0f, sr) * std::exp(-t * 3.0f);
         });
     case Sfx::Ghost:
         return render(rate, 0.8f, 0.4f, [&](float t) {

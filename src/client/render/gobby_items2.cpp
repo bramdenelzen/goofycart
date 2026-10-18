@@ -106,14 +106,14 @@ PaintedModel make_glass_item_box() {
                     half[ua] = 0.105f;
                     half[va] = 0.105f;
                     region(frame, r_plate);
-                    frame.rounded_box(c, half, 0.02f, kWhite, 14, 8);
+                    frame.box_painted(c, half, kWhite);
                     region(frame, r_rivet);
                     for (int k = 0; k < 2; ++k) { // two rivets per plate, along the edges
                         vec3 p = corner + n * (bar * 0.65f + 0.024f);
                         const int along = k == 0 ? ua : va, off = k == 0 ? va : ua;
                         p[along] -= (corner[along] > 0 ? 1.0f : -1.0f) * 0.12f;
                         p[off] -= (corner[off] > 0 ? 1.0f : -1.0f) * 0.035f;
-                        frame.sphere(p, vec3(0.022f), kWhite, 10, 6);
+                        frame.sphere(p, vec3(0.022f), kWhite, 6, 4);
                     }
                 }
             }
@@ -224,7 +224,7 @@ PaintedModel make_tnt_bundle() {
     const UvRect r_top = span(0, 0, 4, 2), r_stick = span(0, 2, 4, 3), r_band = span(0, 3, 2, 4), r_rope = span(2, 3, 3, 4),
                  r_spark = span(3, 3, 4, 4);
     const float rad = 0.14f, len = 0.7f;
-    const int body_rows = 20;
+    const int body_rows = 6;
 
     // A stick: a tube along X with crimped, rounded ends. The body rows are
     // evenly spaced so the texture's v runs evenly along it.
@@ -363,7 +363,7 @@ PaintedModel make_turtle_shell(vec4 color, bool spiked) {
     // Dome: a quarter ellipse revolved, v from the rim (0) to the top (1).
     region(b, r_dome);
     std::vector<vec2> prof;
-    const int rings = 20;
+    const int rings = 10;
     for (int i = 0; i <= rings; ++i) {
         const float phi = 0.5f * kPi * float(i) / float(rings);
         prof.push_back({R * std::cos(phi), H * std::sin(phi)});

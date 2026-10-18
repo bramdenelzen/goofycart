@@ -75,7 +75,7 @@ Mood mood_for_theme(const std::string& theme) {
     return Mood::Bright;
 }
 
-Mixer::Song::Song(uint32_t seed, Mood mood, int rate) : rate_(rate) {
+Mixer::Song::Song(uint32_t seed, Mood mood, int rate) : rate_(rate), reverb_(rate, 1.15f) {
     Rng rng{seed * 2654435761u + uint32_t(mood) * 40503u + 1u};
     for (int i = 0; i < 4; ++i) rng.next();
     const MoodStyle st = style(mood);
@@ -152,6 +152,12 @@ Mixer::Song::Song(uint32_t seed, Mood mood, int rate) : rate_(rate) {
         while (n < 4 && lead[size_t((s + n) % kSteps)] < 0) ++n;
         lead_len[size_t(s)] = uint8_t(n);
     }
+    // Echo on the lead: a dotted eighth on the left, a quarter on the right.
+    const float step_s = 60.0f / bpm / 4.0f;
+    echo_l_ = Delay(size_t(3.0f * step_s * float(rate_)));
+    echo_r_ = Delay(size_t(4.0f * step_s * float(rate_)));
+    for (int k = 0; k < 3; ++k) pad_freq_[size_t(k)] = pad_target_[size_t(k)] = midi_hz(float(chords[0][size_t(k)]));
+    reverb_.feedback = mood == Mood::Airy || mood == Mood::Frosty || mood == Mood::Night ? 0.84f : 0.78f;
 }
 
 void Mixer::Song::trigger_step(int step) {
@@ -159,22 +165,26 @@ void Mixer::Song::trigger_step(int step) {
     if (const int8_t n = lead[size_t(step)]; n >= 0) {
         lead_v_.freq = midi_hz(n);
         lead_v_.t = 0.0f;
-        lead_v_.len = float(lead_len[size_t(step)]) * step_s * 0.9f;
+        lead_v_.len = float(lead_len[size_t(step)]) * step_s * 0.92f;
         lead_v_.on = true;
     }
     if (const int8_t n = bass[size_t(step)]; n >= 0) {
         bass_v_.freq = midi_hz(n);
         bass_v_.t = 0.0f;
-        bass_v_.len = step_s * 1.6f;
+        bass_v_.len = step_s * 1.7f;
         bass_v_.on = true;
     }
-    if (arp) {
+    if (arp && step % 2 == 0) {
         const auto& c = chords[size_t(step / 16)];
-        arp_v_.freq = midi_hz(float(c[size_t(step % 3)] + 12));
+        static constexpr int kOrder[4] = {0, 1, 2, 1};
+        const int k = kOrder[arp_count_++ % 4];
+        arp_v_.freq = midi_hz(float(c[size_t(k)] + 12));
         arp_v_.t = 0.0f;
-        arp_v_.len = step_s * 0.5f;
+        arp_v_.len = step_s * 1.5f;
         arp_v_.on = true;
     }
+    if (step % 16 == 0) // the pad moves to the bar's chord
+        for (int k = 0; k < 3; ++k) pad_target_[size_t(k)] = midi_hz(float(chords[size_t(step / 16)][size_t(k)]));
     const int bar = step / 16, s = step % 16;
     const int v = bar == kBars - 1 ? 1 : 0;
     if (kick[size_t(v)] >> s & 1) kick_t_ = 0.0f;
@@ -193,46 +203,80 @@ void Mixer::Song::sample(float speed, float& l, float& r) {
     if (clock_ >= double(kSteps)) clock_ -= double(kSteps);
     const float dt = 1.0f / float(rate_);
 
-    float lead = 0.0f, bass = 0.0f, arp = 0.0f, drums = 0.0f;
+    float lead = 0.0f, bass = 0.0f, arp = 0.0f, pad = 0.0f, kick = 0.0f, snare = 0.0f, hat = 0.0f;
     if (lead_v_.on) {
         Tone& v = lead_v_;
-        const float vib = v.t > 0.15f ? 1.0f + 0.012f * vib_.sine(5.5f, rate_) : 1.0f;
+        const float vib = 1.0f + 0.006f * std::min(1.0f, std::max(0.0f, v.t - 0.12f) * 4.0f) * vib_.sine(5.2f, rate_);
         const float f = v.freq * vib;
-        const float w = lead_wave == 1 ? v.osc.triangle(f, rate_) : lead_wave == 2 ? v.osc.saw(f, rate_) : v.osc.pulse(f, lead_duty, rate_);
-        const float env = std::min(1.0f, v.t * 200.0f) * (0.6f + 0.4f * std::exp(-v.t * 10.0f)) *
-                          (v.t < v.len ? 1.0f : std::exp(-(v.t - v.len) * 40.0f));
-        lead = lead_lp_.low(w, lead_wave == 2 ? 0.25f : 0.6f) * env;
+        const float release = v.t < v.len ? 1.0f : std::exp(-(v.t - v.len) * 14.0f);
+        const float env = std::min(1.0f, v.t * 120.0f) * (0.75f + 0.25f * std::exp(-v.t * 6.0f)) * release;
+        float w;
+        if (lead_wave == 1) { // soft FM flute-bell
+            w = v.fm.sample(f, 1.0f, 1.2f * std::exp(-v.t * 5.0f) + 0.25f, rate_);
+        } else if (lead_wave == 2) { // two detuned saws through a sweeping filter
+            const float raw = 0.5f * (v.osc.saw_bl(f * 1.004f, rate_) + v.osc2.saw_bl(f * 0.996f, rate_));
+            w = v.filter.lp(raw, 900.0f + 3200.0f * std::exp(-v.t * 7.0f), 0.35f, rate_);
+        } else { // warm square with a touch of sub
+            const float raw = 0.7f * v.osc.square_bl(f, std::max(lead_duty, 0.3f), rate_) + 0.3f * v.sub.sine(f * 0.5f, rate_);
+            w = v.filter.lp(raw, 1400.0f + 2400.0f * std::exp(-v.t * 9.0f), 0.25f, rate_);
+        }
+        lead = w * env;
         v.t += dt;
-        if (v.t > v.len + 0.2f) v.on = false;
+        if (v.t > v.len + 0.5f) v.on = false;
     }
     if (bass_v_.on) {
         Tone& v = bass_v_;
-        const float env = std::min(1.0f, v.t * 300.0f) * std::exp(-v.t * 3.0f) * (v.t < v.len ? 1.0f : std::exp(-(v.t - v.len) * 50.0f));
-        bass = (v.osc.triangle(v.freq, rate_)) * env;
+        const float env = std::min(1.0f, v.t * 400.0f) * std::exp(-v.t * 2.5f) * (v.t < v.len ? 1.0f : std::exp(-(v.t - v.len) * 30.0f));
+        const float raw = 0.6f * v.osc.saw_bl(v.freq, rate_) + 0.7f * v.sub.sine(v.freq, rate_);
+        bass = std::tanh(1.4f * v.filter.lp(raw, 220.0f + 1300.0f * std::exp(-v.t * 14.0f), 0.3f, rate_)) * env;
         v.t += dt;
-        if (v.t > v.len + 0.15f) v.on = false;
+        if (v.t > v.len + 0.2f) v.on = false;
     }
-    if (arp_v_.on) {
+    if (arp_v_.on) { // FM pluck
         Tone& v = arp_v_;
-        arp = v.osc.pulse(v.freq, 0.125f, rate_) * std::exp(-v.t * 25.0f);
+        arp = v.fm.sample(v.freq, 2.0f, 2.2f * std::exp(-v.t * 14.0f), rate_) * std::exp(-v.t * 7.0f);
         v.t += dt;
-        if (v.t > 0.3f) v.on = false;
+        if (v.t > 0.8f) v.on = false;
     }
-    if (kick_t_ < 0.4f) {
-        drums += 0.9f * kick_osc_.sine(45.0f + 110.0f * std::exp(-kick_t_ * 30.0f), rate_) * std::exp(-kick_t_ * 14.0f);
+    { // pad: the chord on detuned saws, gliding between chords
+        const float glide = 1.0f - std::exp(-dt / 0.08f);
+        float raw = 0.0f;
+        for (int k = 0; k < 3; ++k) {
+            pad_freq_[size_t(k)] += (pad_target_[size_t(k)] - pad_freq_[size_t(k)]) * glide;
+            raw += pad_osc_[size_t(2 * k)].saw_bl(pad_freq_[size_t(k)] * 1.005f, rate_) + pad_osc_[size_t(2 * k + 1)].saw_bl(pad_freq_[size_t(k)] * 0.995f, rate_);
+        }
+        pad_amp_ = std::min(1.0f, pad_amp_ + dt * 0.6f);
+        const float swell = 0.85f + 0.15f * pad_lfo_.sine(0.13f, rate_);
+        pad = pad_filter_.lp(raw / 6.0f, 750.0f + 350.0f * swell, 0.2f, rate_) * pad_amp_ * swell;
+    }
+    if (kick_t_ < 0.5f) {
+        const float body = kick_osc_.sine(48.0f + 130.0f * std::exp(-kick_t_ * 32.0f), rate_) * std::exp(-kick_t_ * 8.0f);
+        const float click = kick_click_.hp(noise_.next(), 2500.0f, 0.0f, rate_) * std::exp(-kick_t_ * 350.0f);
+        kick = std::tanh(1.6f * body) + 0.25f * click;
         kick_t_ += dt;
     }
-    if (snare_t_ < 0.3f) {
-        drums += (0.5f * snare_hp_.high(noise_.next(), 0.2f) + 0.25f * snare_osc_.sine(190.0f, rate_)) * std::exp(-snare_t_ * 20.0f);
+    if (snare_t_ < 0.4f) {
+        const float body = (0.6f * snare_osc_.sine(185.0f, rate_) + 0.4f * snare_osc2_.sine(330.0f, rate_)) * std::exp(-snare_t_ * 28.0f);
+        const float rattle = snare_bp_.bp(noise_.next(), 2400.0f, 0.3f, rate_) * std::exp(-snare_t_ * 15.0f);
+        snare = 0.55f * body + 1.1f * rattle;
         snare_t_ += dt;
     }
-    if (hat_t_ < 0.1f) {
-        drums += 0.18f * hat_hp_.high(noise_.next(), 0.6f) * std::exp(-hat_t_ * 70.0f);
+    if (hat_t_ < 0.15f) { // six square waves at inharmonic ratios, high-passed: a metallic hat
+        static constexpr float kRatios[6] = {2.0f, 3.0f, 4.16f, 5.43f, 6.79f, 8.21f};
+        float metal = 0.0f;
+        for (int k = 0; k < 6; ++k) metal += hat_osc_[size_t(k)].square_bl(102.0f * kRatios[k], 0.5f, rate_);
+        hat = hat_hp_.hp(metal / 6.0f + 0.4f * noise_.next(), 7500.0f, 0.2f, rate_) * std::exp(-hat_t_ * 55.0f);
         hat_t_ += dt;
     }
-    const float centre = 0.22f * bass + 0.5f * drums;
-    l = centre + 0.16f * lead * 1.1f + 0.05f * arp * 0.7f;
-    r = centre + 0.16f * lead * 0.9f + 0.05f * arp * 1.3f;
+
+    // Echo on the lead, ping-ponged; reverb on everything but kick and bass.
+    const float echo_l = echo_l_.process(lead, 0.32f), echo_r = echo_r_.process(lead, 0.32f);
+    const float arp_pan = (arp_count_ & 1) ? 0.35f : -0.35f;
+    float rev_l = 0.0f, rev_r = 0.0f;
+    reverb_.process(0.35f * lead + 0.5f * arp + 0.45f * pad + 0.22f * snare + 0.08f * hat, rev_l, rev_r);
+    const float centre = 0.25f * bass + 0.36f * kick + 0.22f * snare;
+    l = centre + 0.15f * lead + 0.06f * echo_l + 0.10f * arp * (1.0f - arp_pan) + 0.12f * pad + 0.11f * hat * 0.8f + 0.35f * rev_l;
+    r = centre + 0.15f * lead + 0.06f * echo_r + 0.10f * arp * (1.0f + arp_pan) + 0.12f * pad + 0.11f * hat * 1.2f + 0.35f * rev_r;
 }
 
 } // namespace gk::audio

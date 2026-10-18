@@ -77,6 +77,8 @@ inline void lumpy_sphere(MeshBuilder& b, vec3 c, vec3 radii, float lump, uint32_
         v ^= v >> 15;
         return float(v & 0xffff) / 65535.0f;
     };
+    segments = MeshBuilder::scaled(segments, 8);
+    rings = MeshBuilder::scaled(rings, 5);
     std::vector<vec3> pts;
     for (int r = 0; r <= rings; ++r) {
         const float phi = kPi * float(r) / float(rings);

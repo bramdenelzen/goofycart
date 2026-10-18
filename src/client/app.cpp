@@ -137,6 +137,9 @@ bool App::init() {
     if (!renderer_.init(window_, ro)) return false;
     // The game's own painted items, then an optional model pack beside the
     // data folder (not in the repository) that may override them.
+    // Low-poly: half the segments of the smooth shapes; the painted textures
+    // carry the detail.
+    render::MeshBuilder::detail = 0.5f;
     for (const auto& [name, model] : render::make_gobby_items()) assets_.add_builtin_item(name, model, renderer_);
     for (const auto& tire : parts_.tires) assets_.add_builtin_tire(tire.id, render::make_gobby_tire(tire.look), renderer_);
     // Map props: kept on the CPU to merge per track, with one texture each.

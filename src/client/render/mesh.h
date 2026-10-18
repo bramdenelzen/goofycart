@@ -1,6 +1,8 @@
 #pragma once
 #include "gk/core/math.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -32,6 +34,12 @@ struct MeshData {
 // vertices along a surface so the lighting rounds over it.
 class MeshBuilder {
 public:
+    // Scales the segment and ring counts of the smooth primitives (sphere,
+    // lathe, capsule, tube, rounded_box, torus, sweep): 1 = as asked, 0.5 =
+    // half as many around. Applies to every builder; set before building.
+    static inline float detail = 1.0f;
+    static int scaled(int n, int min_n) { return std::max(min_n, int(std::lround(float(n) * detail))); }
+
     // Texture for the faces added from now on, mapped from the face's
     // position (seen along its most facing axis), one tile per `tile` metres.
     void texture(uint32_t layer, float tile = 2.0f) {
