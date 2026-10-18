@@ -31,6 +31,7 @@ struct AppOptions {
     int max_frames = -1;          // quit after this many frames (CI smoke tests)
     std::string screenshot_path;  // saved on the last frame when max_frames is set
     bool autodrive = false;       // the player kart drives itself (demos, screenshots)
+    bool pixel_look = false;      // --pixel: the low-res look regardless of settings (screenshots)
     int spawn_obstacle = -1;      // testing: start lined up 14 m before this obstacle and drive straight at it
     int karts = 12;
     sim::EngineClass engine = sim::EngineClass::cc150;

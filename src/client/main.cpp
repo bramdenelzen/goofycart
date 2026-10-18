@@ -15,6 +15,7 @@ int main(int argc, char** argv) {
         if (std::strcmp(a, "--frames") == 0) opt.max_frames = std::atoi(next());
         else if (std::strcmp(a, "--screenshot") == 0) opt.screenshot_path = next();
         else if (std::strcmp(a, "--fullres") == 0) opt.full_resolution = true;
+        else if (std::strcmp(a, "--pixel") == 0) opt.pixel_look = true;
         else if (std::strcmp(a, "--validation") == 0) opt.validation = true;
         else if (std::strcmp(a, "--width") == 0) opt.window_width = std::atoi(next());
         else if (std::strcmp(a, "--height") == 0) opt.window_height = std::atoi(next());

@@ -356,12 +356,17 @@ bool Renderer::create_offscreen() {
                                     VK_IMAGE_ASPECT_COLOR_BIT);
     offscreen_depth_ = create_image(offscreen_extent_, depth_format_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                                     VK_IMAGE_ASPECT_DEPTH_BIT);
-    return offscreen_color_.image && offscreen_depth_.image;
+    composite_extent_ = win;
+    composite_ = create_image(composite_extent_, color_format_,
+                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                              VK_IMAGE_ASPECT_COLOR_BIT);
+    return offscreen_color_.image && offscreen_depth_.image && composite_.image;
 }
 
 void Renderer::destroy_offscreen() {
     destroy_image(offscreen_color_);
     destroy_image(offscreen_depth_);
+    destroy_image(composite_);
 }
 
 void Renderer::set_full_resolution(bool on) {
@@ -526,6 +531,13 @@ bool Renderer::create_shadow_pipeline() {
 namespace {
 SdfFont g_font; // shared: ui_text_width is static
 constexpr float kSdfPerEm = (128.0f / 8.0f) * 56.0f / 255.0f; // field units per em (font.cpp's bake)
+vec4 unpack_rgba(uint32_t c) {
+    return vec4(float(c & 255u), float((c >> 8) & 255u), float((c >> 16) & 255u), float(c >> 24)) / 255.0f;
+}
+uint32_t pack_rgba(vec4 v) {
+    const glm::uvec4 u(glm::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f);
+    return u.r | u.g << 8 | u.b << 16 | u.a << 24;
+}
 UiVertex flat_vertex(vec2 p, uint32_t c) {
     UiVertex v;
     v.pos = p;
@@ -599,7 +611,7 @@ bool Renderer::create_ui_pipeline() {
     VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachmentFormats = &color_format_;
-    rendering.depthAttachmentFormat = depth_format_;
+    rendering.depthAttachmentFormat = VK_FORMAT_UNDEFINED; // drawn on the composite, which has no depth
     VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
     gp.pNext = &rendering;
     gp.stageCount = 2;
@@ -653,8 +665,31 @@ void Renderer::ui_round_rect(float x, float y, float w, float h, float radius, u
     ui_vertices_.insert(ui_vertices_.end(), {a, b, cc, a, cc, d});
 }
 
-void Renderer::ui_glyphs(float x, float y, const char* text, uint32_t color, float em, float edge, float soft) {
+void Renderer::ui_slant_rect(float x, float y, float w, float h, float slant, uint32_t top, uint32_t bottom, float feather) {
+    if (!frame_active_ || w <= 0.0f || h <= 0.0f) return;
+    const float g = feather;
+    const vec2 c(x + 0.5f * w, y + 0.5f * h);
+    const vec4 params(0.5f * w, 0.5f * h, 0.0f, feather);
+    // Corners in the unslanted rectangle; positions lean, the shape test
+    // (uv) does not, so edges stay crisp along the slant.
+    auto v = [&](float px, float py, uint32_t col) {
+        UiVertex u;
+        u.pos = {px + slant * (c.y - py), py};
+        u.uv = vec2(px, py) - c;
+        u.color = col;
+        u.mode = 2;
+        u.params = params;
+        return u;
+    };
+    const UiVertex a = v(x - g, y - g, top), b = v(x + w + g, y - g, top), cc = v(x + w + g, y + h + g, bottom), d = v(x - g, y + h + g, bottom);
+    ui_vertices_.insert(ui_vertices_.end(), {a, b, cc, a, cc, d});
+}
+
+void Renderer::ui_glyphs(float x, float y, const char* text, uint32_t color, float em, float edge, float soft, uint32_t color_bottom,
+                         float slant, float tracking) {
     const float baseline = y + g_font.cap_height() * em;
+    const float cap_top = y;
+    if (!color_bottom) color_bottom = color;
     float pen = x;
     for (const char* p = text; *p; ++p) {
         const SdfFont::Glyph& g = g_font.glyph(*p);
@@ -662,9 +697,12 @@ void Renderer::ui_glyphs(float x, float y, const char* text, uint32_t color, flo
             const float x0 = pen + g.x0 * em, x1 = pen + g.x1 * em, y0 = baseline + g.y0 * em, y1 = baseline + g.y1 * em;
             auto v = [&](float px, float py, float u, float vv) {
                 UiVertex o;
-                o.pos = {px, py};
+                o.pos = {px + slant * (baseline - py), py};
                 o.uv = {u, vv};
-                o.color = color;
+                // Gradient from the cap top to the baseline.
+                const float t = std::clamp((py - cap_top) / std::max(baseline - cap_top, 1e-3f), 0.0f, 1.0f);
+                const vec4 ca = unpack_rgba(color), cb = unpack_rgba(color_bottom);
+                o.color = pack_rgba(glm::mix(ca, cb, t));
                 o.mode = 1;
                 o.params = vec4(edge, soft, 0.0f, 0.0f);
                 return o;
@@ -672,14 +710,32 @@ void Renderer::ui_glyphs(float x, float y, const char* text, uint32_t color, flo
             const UiVertex a = v(x0, y0, g.u0, g.v0), b = v(x1, y0, g.u1, g.v0), c = v(x1, y1, g.u1, g.v1), d = v(x0, y1, g.u0, g.v1);
             ui_vertices_.insert(ui_vertices_.end(), {a, b, c, a, c, d});
         }
-        pen += (g.advance + (p[1] ? g_font.kern(p[0], p[1]) : 0.0f)) * em;
+        pen += (g.advance + tracking + (p[1] ? g_font.kern(p[0], p[1]) : 0.0f)) * em;
     }
 }
 
-namespace {
-uint32_t with_alpha(uint32_t c, float a) { return (c & 0x00ffffffu) | (uint32_t(std::clamp(a, 0.0f, 1.0f) * 255.0f + 0.5f) << 24); }
-float em_for(float scale) { return 7.0f * scale / std::max(g_font.cap_height(), 0.1f); }
-} // namespace
+void Renderer::ui_text_styled(float x, float y, const char* text, const TextStyle& st) {
+    if (!frame_active_ || !text) return;
+    if (!g_font.loaded()) {
+        ui_text_ex(x, y, text, st.color, st.scale, st.outline, st.outline_px, st.shadow != 0, st.weight);
+        return;
+    }
+    const float em = 7.0f * st.scale / std::max(g_font.cap_height(), 0.1f);
+    const float fill_edge = 0.5f - kSdfPerEm * 0.02f * st.weight;
+    const float out_t = std::min(st.outline_px / em, 0.11f);
+    const float outer = st.outline_px > 0.0f ? fill_edge - kSdfPerEm * out_t : fill_edge;
+    if (st.shadow) ui_glyphs(x + st.shadow_offset.x, y + st.shadow_offset.y, text, st.shadow, em, outer, 0.0f, 0, st.slant, st.tracking);
+    if (st.outline_px > 0.0f) ui_glyphs(x, y, text, st.outline, em, outer, 0.0f, 0, st.slant, st.tracking);
+    ui_glyphs(x, y, text, st.color, em, fill_edge, 0.0f, st.color_bottom, st.slant, st.tracking);
+}
+
+float Renderer::ui_text_width(const char* text, float scale, float tracking) {
+    if (!g_font.loaded()) return float(stb_easy_font_width(const_cast<char*>(text))) * scale;
+    const float em = 7.0f * scale / std::max(g_font.cap_height(), 0.1f);
+    float w = 0.0f;
+    for (const char* p = text; *p; ++p) w += (g_font.glyph(*p).advance + tracking + (p[1] ? g_font.kern(p[0], p[1]) : 0.0f)) * em;
+    return w;
+}
 
 void Renderer::ui_text_ex(float x, float y, const char* text, uint32_t color, float scale, uint32_t outline, float outline_px,
                           bool shadow, float weight) {
@@ -701,34 +757,39 @@ void Renderer::ui_text_ex(float x, float y, const char* text, uint32_t color, fl
         }
         return;
     }
-    const float em = em_for(scale);
-    const float alpha = float(color >> 24) / 255.0f;
-    const float fill_edge = 0.5f - kSdfPerEm * (0.012f + 0.03f * weight); // the face is light: thicken it
+    TextStyle st;
+    st.color = color;
+    st.scale = scale;
+    st.outline = outline;
+    st.outline_px = outline_px;
+    st.weight = weight;
+    st.slant = kItalic;
+    st.tracking = kTracking;
     if (shadow) {
-        const float off = std::max(1.0f, em * 0.07f);
-        ui_glyphs(x + off * 0.4f, y + off, text, with_alpha(0x000000u, 0.45f * alpha), em,
-                  fill_edge - kSdfPerEm * std::min(outline_px / em, 0.1f), 0.08f);
+        st.shadow = rgba(0, 0, 0, uint8_t((color >> 24) * 6 / 10));
+        st.shadow_offset = vec2(std::max(1.0f, scale * 0.7f));
     }
-    if (outline_px > 0.0f) {
-        const float t = std::min(outline_px / em, 0.11f);
-        ui_glyphs(x, y, text, with_alpha(outline, float(outline >> 24) / 255.0f * alpha), em, fill_edge - kSdfPerEm * t, 0.0f);
-    }
-    ui_glyphs(x, y, text, color, em, fill_edge, 0.0f);
+    ui_text_styled(x, y, text, st);
 }
 
 void Renderer::ui_text(float x, float y, const char* text, uint32_t color, float scale, bool shadow) {
-    const float em = em_for(scale);
-    ui_text_ex(x, y, text, color, scale, rgba(10, 12, 30, 230), shadow ? std::clamp(em * 0.075f, 0.7f, 3.0f) : 0.0f, shadow,
-               scale >= 2.0f ? 0.9f : 0.6f);
+    // The house style: italic, slightly spaced, a thin black outline and a
+    // hard drop shadow, like an arcade racer's HUD.
+    TextStyle st;
+    st.color = color;
+    st.scale = scale;
+    st.slant = kItalic;
+    st.tracking = kTracking;
+    if (shadow) {
+        st.outline = rgba(0, 0, 0, uint8_t(std::min(255u, (color >> 24) * 9 / 10)));
+        st.outline_px = std::clamp(scale * 0.5f, 0.6f, 2.2f);
+        st.shadow = rgba(0, 0, 0, uint8_t((color >> 24) * 6 / 10));
+        st.shadow_offset = vec2(std::max(1.0f, scale * 0.7f), std::max(1.0f, scale * 0.7f));
+    }
+    ui_text_styled(x, y, text, st);
 }
 
-float Renderer::ui_text_width(const char* text, float scale) {
-    if (!g_font.loaded()) return float(stb_easy_font_width(const_cast<char*>(text))) * scale;
-    const float em = em_for(scale);
-    float w = 0.0f;
-    for (const char* p = text; *p; ++p) w += (g_font.glyph(*p).advance + (p[1] ? g_font.kern(p[0], p[1]) : 0.0f)) * em;
-    return w;
-}
+float Renderer::ui_text_width(const char* text, float scale) { return ui_text_width(text, scale, kTracking); }
 
 Renderer::Buffer Renderer::create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible) {
     Buffer b;
@@ -1208,7 +1269,58 @@ void Renderer::end_frame() {
         vkCmdPushConstants(cmd, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
         vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
     }
+    vkCmdEndRendering(cmd);
+
+    // Scale the (possibly low-res) scene up into the full-size composite
+    // with nearest filtering: the pixel look is for the game only.
+    image_barrier(cmd, offscreen_color_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                  VK_ACCESS_2_TRANSFER_READ_BIT);
+    image_barrier(cmd, composite_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                  VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    VkClearColorValue black{{0.0f, 0.0f, 0.0f, 1.0f}};
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdClearColorImage(cmd, composite_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
+    image_barrier(cmd, composite_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                  VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+    const VkExtent2D win = composite_extent_;
+    {
+        const int32_t dw = int32_t(offscreen_extent_.width * pixel_scale_), dh = int32_t(offscreen_extent_.height * pixel_scale_);
+        const int32_t ox = (int32_t(win.width) - dw) / 2, oy = (int32_t(win.height) - dh) / 2;
+        VkImageBlit blit{};
+        blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        blit.srcOffsets[1] = {int32_t(offscreen_extent_.width), int32_t(offscreen_extent_.height), 1};
+        blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        blit.dstOffsets[0] = {ox, oy, 0};
+        blit.dstOffsets[1] = {ox + dw, oy + dh, 1};
+        vkCmdBlitImage(cmd, offscreen_color_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, composite_.image,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+    }
+
+    // The UI, at full resolution.
+    image_barrier(cmd, composite_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                  VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT);
     if (!ui_vertices_.empty()) {
+        VkRenderingAttachmentInfo ui_color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        ui_color.imageView = composite_.view;
+        ui_color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        ui_color.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        ui_color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        VkRenderingInfo uri{VK_STRUCTURE_TYPE_RENDERING_INFO};
+        uri.renderArea = {{0, 0}, win};
+        uri.layerCount = 1;
+        uri.colorAttachmentCount = 1;
+        uri.pColorAttachments = &ui_color;
+        vkCmdBeginRendering(cmd, &uri);
+        VkViewport uvp{0, 0, float(win.width), float(win.height), 0.0f, 1.0f};
+        VkRect2D usc{{0, 0}, win};
+        vkCmdSetViewport(cmd, 0, 1, &uvp);
+        vkCmdSetScissor(cmd, 0, 1, &usc);
         const size_t count = std::min<size_t>(ui_vertices_.size(), kMaxUiVertices);
         std::memcpy(f.ui.mapped, ui_vertices_.data(), count * sizeof(UiVertex));
         vmaFlushAllocation(allocator_, f.ui.alloc, 0, VK_WHOLE_SIZE);
@@ -1220,49 +1332,37 @@ void Renderer::end_frame() {
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &f.ui.buffer, &offset);
         vkCmdDraw(cmd, uint32_t(count), 1, 0, 0);
+        vkCmdEndRendering(cmd);
     }
-    vkCmdEndRendering(cmd);
 
-    // Upscale the low-res image to the swapchain with nearest filtering.
-    image_barrier(cmd, offscreen_color_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+    // Composite to the swapchain, one to one.
+    image_barrier(cmd, composite_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                  VK_ACCESS_2_TRANSFER_READ_BIT);
+                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
     image_barrier(cmd, swap, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                   VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
                   VK_ACCESS_2_TRANSFER_WRITE_BIT);
-    VkClearColorValue black{{0.0f, 0.0f, 0.0f, 1.0f}};
-    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    vkCmdClearColorImage(cmd, swap, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &range);
-    image_barrier(cmd, swap, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                  VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-
-    const VkExtent2D win = vkb_swapchain_.extent;
-    const int32_t dw = int32_t(offscreen_extent_.width * pixel_scale_), dh = int32_t(offscreen_extent_.height * pixel_scale_);
-    const int32_t ox = (int32_t(win.width) - dw) / 2, oy = (int32_t(win.height) - dh) / 2;
-    VkImageBlit blit{};
-    blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    blit.srcOffsets[1] = {int32_t(offscreen_extent_.width), int32_t(offscreen_extent_.height), 1};
-    blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    blit.dstOffsets[0] = {ox, oy, 0};
-    blit.dstOffsets[1] = {ox + dw, oy + dh, 1};
-    vkCmdBlitImage(cmd, offscreen_color_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swap,
-                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+    {
+        VkImageBlit blit{};
+        blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        blit.srcOffsets[1] = {int32_t(win.width), int32_t(win.height), 1};
+        blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        blit.dstOffsets[1] = {int32_t(win.width), int32_t(win.height), 1};
+        vkCmdBlitImage(cmd, composite_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, swap, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
+                       VK_FILTER_NEAREST);
+    }
 
     if (!screenshot_path_.empty()) {
-        const VkDeviceSize bytes = VkDeviceSize(offscreen_extent_.width) * offscreen_extent_.height * 4;
-        if (f.readback.buffer && (f.readback_extent.width != offscreen_extent_.width ||
-                                  f.readback_extent.height != offscreen_extent_.height))
+        const VkDeviceSize bytes = VkDeviceSize(win.width) * win.height * 4;
+        if (f.readback.buffer && (f.readback_extent.width != win.width || f.readback_extent.height != win.height))
             destroy_buffer(f.readback);
         if (!f.readback.buffer) f.readback = create_buffer(bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true);
         if (f.readback.buffer) {
             VkBufferImageCopy copy{};
             copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            copy.imageExtent = {offscreen_extent_.width, offscreen_extent_.height, 1};
-            vkCmdCopyImageToBuffer(cmd, offscreen_color_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, f.readback.buffer,
-                                   1, &copy);
-            f.readback_extent = offscreen_extent_;
+            copy.imageExtent = {win.width, win.height, 1};
+            vkCmdCopyImageToBuffer(cmd, composite_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, f.readback.buffer, 1, &copy);
+            f.readback_extent = win;
             f.readback_path = std::move(screenshot_path_);
         }
         screenshot_path_.clear();

@@ -68,12 +68,15 @@ void draw_title(render::Renderer& r, const TitleState& s) {
     const float s1 = 5.2f;
     const float w1 = ui::text_w("GOBBY", s1), w2 = ui::text_w("KART", s1), gap = 10.0f;
     const float x0 = W * 0.5f - (w1 + gap + w2) * 0.5f;
-    r.ui_round_rect(x0 - 18.0f, y - 10.0f, w1 + gap + w2 + 36.0f, 7.0f * s1 + 20.0f, 18.0f, rgba(0, 0, 20, 90), rgba(0, 0, 20, 90), 12.0f);
-    r.ui_text_ex(x0, y, "GOBBY", ui::kGold, s1, ui::kInk, 4.0f, true, 1.0f);
-    r.ui_text_ex(x0 + w1 + gap, y, "KART", rgba(255, 90, 70), s1, ui::kInk, 4.0f, true, 1.0f);
-    ui::text_c(r, W * 0.5f, y + 7.0f * s1 + 16.0f, "RACE  -  DRIFT  -  SMASH", rgba(255, 255, 255, 230), 1.2f);
+    // Speed stripes behind the logo, then the words in chrome gold and red.
+    for (int i = 0; i < 3; ++i)
+        r.ui_slant_rect(x0 - 40.0f + 14.0f * float(i), y + 7.0f * s1 + 6.0f + 5.0f * float(i), w1 + gap + w2 + 60.0f - 28.0f * float(i), 3.0f,
+                        ui::kBarSlant, i == 0 ? ui::kRed : i == 1 ? ui::kGold : rgba(255, 255, 255, 200), i == 0 ? ui::kRed : i == 1 ? ui::kGold : rgba(255, 255, 255, 200));
+    ui::heading(r, x0, y, "GOBBY", s1);
+    ui::heading(r, x0 + w1 + gap, y, "KART", s1, rgba(255, 120, 100), rgba(200, 0, 10));
+    ui::text_c(r, W * 0.5f, y + 7.0f * s1 + 26.0f, "RACE   DRIFT   SMASH", rgba(255, 255, 255, 230), 1.2f);
     // The menu on the left third, so the kart on the right stays in view.
-    const float bw = 180.0f, top = y + 7.0f * s1 + 46.0f, cx = std::max(W * 0.3f, bw * 0.5f + 30.0f);
+    const float bw = 180.0f, top = y + 7.0f * s1 + 62.0f, cx = std::max(W * 0.3f, bw * 0.5f + 30.0f);
     ui::panel(r, cx - bw * 0.5f - 14.0f, top - 12.0f, bw + 28.0f, 27.0f * kTitleCount + 18.0f, 14.0f);
     ui::button_list(r, cx, top, bw, kTitleItems, kTitleCount, s.row);
     footer(r, "UP/DOWN  CHOOSE      ENTER / A  OK      ESC  QUIT");
@@ -121,8 +124,8 @@ void draw_join(render::Renderer& r, const std::string& address, const std::strin
     ui::panel(r, x, y, pw, 128.0f, 14.0f);
     ui::title(r, W * 0.5f, y + 12.0f, "JOIN A GAME", 2.4f);
     ui::text_c(r, W * 0.5f, y + 42.0f, "Server address (the host's screen shows it)", ui::kSubtle, 1.1f);
-    r.ui_round_rect(x + 20.0f, y + 58.0f, pw - 40.0f, 28.0f, 9.0f, rgba(5, 8, 25, 220), rgba(20, 26, 60, 220));
-    r.ui_round_rect(x + 20.0f, y + 58.0f, pw - 40.0f, 28.0f, 9.0f, rgba(255, 214, 48, 0), rgba(255, 214, 48, 0));
+    r.ui_slant_rect(x + 22.0f, y + 58.0f, pw - 44.0f, 28.0f, ui::kSlant, rgba(0, 0, 0, 230), rgba(20, 20, 26, 230));
+    r.ui_slant_rect(x + 22.0f, y + 84.0f, pw - 44.0f, 2.0f, 0.0f, ui::kGold, ui::kGold);
     const std::string shown = address + (caret ? "|" : " ");
     ui::text_c(r, W * 0.5f, y + 65.0f, shown.c_str(), ui::kText, 2.0f);
     ui::text_c(r, W * 0.5f, y + 100.0f, hint.c_str(), ui::kWarn, 1.1f);
@@ -196,7 +199,8 @@ void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st
             const int v = i == 0 ? st.master : i == 1 ? st.music : st.sfx;
             for (int b = 0; b < 10; ++b) {
                 const float bx = rx + rw - 12.0f - float(10 - b) * 11.0f;
-                r.ui_round_rect(bx, ry + 4.0f, 8.0f, 8.0f, 2.5f, b < v ? (sel ? ui::kInk : ui::kSky) : rgba(255, 255, 255, sel ? 90 : 40));
+                r.ui_slant_rect(bx, ry + 4.0f, 7.0f, 8.0f, ui::kBarSlant, b < v ? ui::kGold : rgba(255, 255, 255, sel ? 90 : 40),
+                                b < v ? ui::kGoldDeep : rgba(255, 255, 255, sel ? 90 : 40));
             }
         } else if (i < kOptionCount - 1) {
             const bool on = i == 3 ? st.low_res : i == 4 ? st.fullscreen : i == 5 ? st.show_help : i == 6 ? st.rumble : st.crash_reports;
@@ -254,7 +258,7 @@ void draw_course(render::Renderer& r, const CourseState& s, const sim::TrackCata
     const int ntracks = gp && !tracks.cups.empty() ? int(tracks.cups[size_t(s.cup % int(tracks.cups.size()))].tracks.size()) : 0;
     ui::panel(r, x, y, pw, 52.0f + rh * float(rows) + (gp ? 18.0f + 14.0f * float(ntracks) : 0.0f), 14.0f);
     const char* heading = gp ? "GRAND PRIX" : s.mode == GameMode::Versus ? "VS RACE" : "TIME TRIALS";
-    r.ui_text_ex(x + 14.0f, y + 12.0f, heading, ui::kGold, 2.6f, ui::kInk, 2.0f, true, 1.0f);
+    ui::heading(r, x + 14.0f, y + 12.0f, heading, 2.6f);
     y += 44.0f;
     auto row = [&](int i, const char* label, const std::string& value) {
         std::snprintf(buf, sizeof buf, "<  %s  >", value.c_str());
@@ -275,9 +279,8 @@ void draw_course(render::Renderer& r, const CourseState& s, const sim::TrackCata
         const auto& cup = tracks.cups[size_t(s.cup % int(tracks.cups.size()))];
         for (size_t i = 0; i < cup.tracks.size(); ++i) {
             const int ti = tracks.find(cup.tracks[i]);
-            r.ui_round_rect(x + 18.0f, y - 1.0f, 15.0f, 12.0f, 4.0f, ui::kGold);
             std::snprintf(buf, sizeof buf, "%zu", i + 1);
-            ui::ink_c(r, x + 25.5f, y + 1.5f, buf, 1.0f);
+            ui::badge(r, x + 18.0f, y - 1.0f, 16.0f, 12.0f, ui::kRed, buf, ui::kText, 1.0f);
             r.ui_text(x + 40.0f, y + 1.0f, ti >= 0 ? tracks.tracks[size_t(ti)].name.c_str() : "?", ui::kText, 1.1f);
             y += 14.0f;
         }

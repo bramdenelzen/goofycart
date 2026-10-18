@@ -56,7 +56,7 @@ void draw_select(render::Renderer& r, const SelectState& s, const sim::PartsCata
     const float x = 16.0f, pw = 270.0f, rh = 19.0f;
     float y = 16.0f;
     ui::panel(r, x, y, pw, 206.0f, 14.0f);
-    r.ui_text_ex(x + 14.0f, y + 12.0f, "CHOOSE YOUR KART", ui::kGold, 2.2f, ui::kInk, 1.8f, true, 1.0f);
+    ui::heading(r, x + 14.0f, y + 12.0f, "CHOOSE YOUR KART", 2.2f);
     y += 40.0f;
     static const char* kLabels[4] = {"DRIVER", "BODY", "TIRES", "GLIDER"};
     for (int row = 0; row < 4; ++row) {
@@ -85,8 +85,11 @@ void draw_select(render::Renderer& r, const SelectState& s, const sim::PartsCata
         const float v = sim::menu_value(lv[size_t(bar.stat)]);
         r.ui_text(x + 22.0f, y, bar.name, ui::kSubtle, 1.0f);
         const float bx = x + 104.0f, bw = 140.0f;
-        r.ui_round_rect(bx, y, bw, 8.0f, 4.0f, rgba(255, 255, 255, 30));
-        r.ui_round_rect(bx, y, std::max(8.0f, bw * std::clamp(v / 5.75f, 0.0f, 1.0f)), 8.0f, 4.0f, bar.color, (bar.color & 0x00ffffffu) | 0xb0000000u);
+        // Segmented gauge, a block per quarter level.
+        const int segs = 23, lit = int(std::round(float(segs) * std::clamp(v / 5.75f, 0.0f, 1.0f)));
+        for (int sgm = 0; sgm < segs; ++sgm)
+            r.ui_slant_rect(bx + float(sgm) * (bw / float(segs)), y, bw / float(segs) - 1.5f, 8.0f, ui::kBarSlant,
+                            sgm < lit ? bar.color : rgba(255, 255, 255, 25), sgm < lit ? (bar.color & 0x00ffffffu) | 0xa0000000u : rgba(255, 255, 255, 25));
         y += 13.0f;
     }
 
@@ -96,7 +99,7 @@ void draw_select(render::Renderer& r, const SelectState& s, const sim::PartsCata
         float ly = 16.0f;
         ui::panel(r, lx, ly, lw, 58.0f + float(lobby->players.size()) * 15.0f, 14.0f);
         std::snprintf(buf, sizeof buf, "RACE %d OF %d", lobby->race_number, lobby->races_per_gp);
-        r.ui_text_ex(lx + 14.0f, ly + 12.0f, buf, ui::kGold, 1.8f, ui::kInk, 1.5f, true, 1.0f);
+        ui::heading(r, lx + 14.0f, ly + 12.0f, buf, 1.8f);
         ly += 32.0f;
         if (lobby->seconds_left > 0) std::snprintf(buf, sizeof buf, "Starts in %d", lobby->seconds_left);
         else std::snprintf(buf, sizeof buf, "Waiting for players");
@@ -104,13 +107,11 @@ void draw_select(render::Renderer& r, const SelectState& s, const sim::PartsCata
         ly += 16.0f;
         for (const auto& p : lobby->players) {
             if (p.you) ui::pill(r, lx + 8.0f, ly - 3.0f, lw - 16.0f, 14.0f, true);
-            const uint32_t c = p.you ? ui::kInk : ui::kText;
-            r.ui_text_ex(lx + 16.0f, ly, p.name.substr(0, 14).c_str(), c, 1.05f, 0, 0.0f, false, p.you ? 0.9f : 0.5f);
+            r.ui_text(lx + 16.0f, ly, p.name.substr(0, 14).c_str(), ui::kText, 1.05f);
             std::snprintf(buf, sizeof buf, "%d PTS", p.points);
-            r.ui_text_ex(lx + 120.0f, ly, buf, c, 1.05f, 0, 0.0f, false, 0.6f);
-            r.ui_round_rect(lx + lw - 58.0f, ly - 1.0f, 44.0f, 10.0f, 5.0f, p.ready ? render::rgba(90, 220, 120) : render::rgba(255, 255, 255, 40));
-            r.ui_text_ex(lx + lw - 36.0f - ui::text_w(p.ready ? "READY" : "...", 0.8f) * 0.5f, ly + 1.0f, p.ready ? "READY" : "...", ui::kInk,
-                         0.8f, 0, 0.0f, false, 0.9f);
+            r.ui_text(lx + 120.0f, ly, buf, p.you ? ui::kGold : ui::kSubtle, 1.05f);
+            ui::badge(r, lx + lw - 60.0f, ly - 1.5f, 46.0f, 11.0f, p.ready ? render::rgba(30, 190, 70) : render::rgba(255, 255, 255, 40),
+                      p.ready ? "READY" : "...", ui::kText, 0.8f);
             ly += 15.0f;
         }
     }

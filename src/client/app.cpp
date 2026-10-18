@@ -145,7 +145,7 @@ bool App::init() {
     ro.full_resolution = options_.full_resolution;
     ro.validation = options_.validation;
     if (!renderer_.init(window_, ro)) return false;
-    if (!renderer_.load_font(sim::data_path("fonts/Nunito.ttf"))) log_warn("UI font missing: using the pixel font");
+    if (!renderer_.load_font(sim::data_path("fonts/RussoOne-Regular.ttf"))) log_warn("UI font missing: using the pixel font");
     // The game's own painted items, then an optional model pack beside the
     // data folder (not in the repository) that may override them.
     // Low-poly: half the segments of the smooth shapes; the painted textures
@@ -175,6 +175,7 @@ bool App::init() {
     }
     if (const std::string sp = settings_path(); !sp.empty()) settings_.load(sp);
     if (options_.full_resolution) settings_.low_res = false;
+    if (options_.pixel_look) settings_.low_res = true;
     apply_settings();
     if (const std::string url = !options_.master_url.empty() ? options_.master_url : settings_.master_url;
         settings_.crash_reports && !url.empty() && !pref_dir_.empty())
@@ -1350,7 +1351,7 @@ void App::render(float alpha, float dt) {
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
         if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
-        draw_hud(renderer_, *w, player_, kart_names(), message_, show_help_ && !server_results && !paused_, !server_results);
+        draw_hud(renderer_, *w, player_, kart_names(), paused_ ? HudMessage{} : message_, show_help_ && !server_results && !paused_, !server_results);
         if (server_results) draw_online_results();
         if (ghost_) {
             char buf[64];
@@ -1725,9 +1726,9 @@ void App::draw_net_status() {
     std::snprintf(buf, sizeof(buf), "%s%d ms%s", host_process_ ? "HOSTING   " : "", ping, online_->data_mismatch() ? "  DATA MISMATCH" : "");
     const float tw = render::Renderer::ui_text_width(buf, 1.0f), pw = tw + 26.0f;
     const float px = float(ext.width) - pw - 12.0f, py = screen_ == Screen::Race ? 64.0f : H - 88.0f;
-    renderer_.ui_round_rect(px, py, pw, 15.0f, 7.5f, render::rgba(10, 14, 40, 170));
-    renderer_.ui_round_rect(px + 6.0f, py + 4.0f, 7.0f, 7.0f, 3.5f,
-                            ping < 80 ? render::rgba(90, 230, 120) : ping < 160 ? render::rgba(255, 210, 60) : render::rgba(255, 90, 80));
+    renderer_.ui_slant_rect(px, py, pw, 15.0f, ui::kBarSlant, render::rgba(0, 0, 0, 170), render::rgba(0, 0, 0, 170));
+    const uint32_t dot = ping < 80 ? render::rgba(90, 230, 120) : ping < 160 ? render::rgba(255, 210, 60) : render::rgba(255, 90, 80);
+    renderer_.ui_slant_rect(px + 6.0f, py + 4.0f, 6.0f, 7.0f, ui::kBarSlant, dot, dot);
     renderer_.ui_text(px + 18.0f, py + 4.0f, buf, ui::kSubtle, 1.0f);
 }
 

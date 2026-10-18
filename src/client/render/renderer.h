@@ -84,6 +84,9 @@ public:
     // edge (soft shadows and glows).
     void ui_round_rect(float x, float y, float w, float h, float radius, uint32_t top, uint32_t bottom, float feather = 0.0f);
     void ui_round_rect(float x, float y, float w, float h, float radius, uint32_t color) { ui_round_rect(x, y, w, h, radius, color, color); }
+    // A parallelogram leaning right by `slant` (x shift per unit of height),
+    // with crisp anti-aliased edges; `feather` softens it into a shadow.
+    void ui_slant_rect(float x, float y, float w, float h, float slant, uint32_t top, uint32_t bottom, float feather = 0.0f);
     // Text, its cap height about 7 * scale pixels, `y` the top of the capitals.
     // `shadow` gives it a dark outline and a soft drop shadow.
     void ui_text(float x, float y, const char* text, uint32_t color, float scale = 1.0f, bool shadow = true);
@@ -91,6 +94,25 @@ public:
     // shadow, and weight (0 regular, 1 heavy).
     void ui_text_ex(float x, float y, const char* text, uint32_t color, float scale, uint32_t outline, float outline_px,
                     bool shadow, float weight = 0.5f);
+    // Everything text can do: a vertical gradient (color_bottom), italic
+    // slant, letter spacing (em), outline, and a hard drop shadow.
+    struct TextStyle {
+        uint32_t color = 0xffffffffu;
+        uint32_t color_bottom = 0; // 0: same as color
+        float scale = 1.0f;
+        uint32_t outline = 0xff0c0808u;
+        float outline_px = 0.0f;
+        uint32_t shadow = 0;       // 0: none
+        vec2 shadow_offset{0.0f};  // pixels
+        float weight = 0.5f;
+        float slant = 0.0f;
+        float tracking = 0.0f;
+    };
+    void ui_text_styled(float x, float y, const char* text, const TextStyle& style);
+    static float ui_text_width(const char* text, float scale, float tracking);
+    // The house style's italic, used by ui_text.
+    static constexpr float kItalic = 0.16f;
+    static constexpr float kTracking = 0.03f;
     static float ui_text_width(const char* text, float scale = 1.0f);
     // The rounded UI face; without it text falls back to the built-in pixel font.
     bool load_font(const std::string& ttf_path);
@@ -106,8 +128,8 @@ public:
     // keeps its size whatever the resolution.
     static constexpr uint32_t kUiHeight = 360;
     VkExtent2D ui_extent() const {
-        const float h = float(std::max<uint32_t>(offscreen_extent_.height, 1));
-        return {uint32_t(std::lround(float(offscreen_extent_.width) * float(kUiHeight) / h)), kUiHeight};
+        const float h = float(std::max<uint32_t>(composite_extent_.height, 1));
+        return {uint32_t(std::lround(float(composite_extent_.width) * float(kUiHeight) / h)), kUiHeight};
     }
     const std::string& device_name() const { return device_name_; }
 
@@ -204,6 +226,10 @@ private:
     VkFormat depth_format_ = VK_FORMAT_D32_SFLOAT;
     Image offscreen_color_, offscreen_depth_;
     VkExtent2D offscreen_extent_{};
+    // Full window size: the (possibly low-res) scene scaled up, then the UI
+    // drawn over it sharp, then copied to the swapchain.
+    Image composite_;
+    VkExtent2D composite_extent_{};
     uint32_t pixel_scale_ = 1;
     bool anisotropy_ = false;
 
@@ -226,7 +252,8 @@ private:
     static constexpr uint32_t kMaxTextures = 1024;
     std::vector<UiVertex> ui_vertices_;
     TextureId font_texture_ = 0;
-    void ui_glyphs(float x, float y, const char* text, uint32_t color, float em, float edge, float soft);
+    void ui_glyphs(float x, float y, const char* text, uint32_t color, float em, float edge, float soft, uint32_t color_bottom = 0,
+                   float slant = 0.0f, float tracking = 0.0f);
 
     std::array<Frame, kFramesInFlight> frames_{};
     uint32_t frame_index_ = 0;

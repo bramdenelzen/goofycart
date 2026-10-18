@@ -163,24 +163,23 @@ ItemLook item_look(sim::Item item) {
 }
 
 void item_slot(render::Renderer& r, float x, float y, float size, sim::Item item, int uses, bool spinning, uint64_t tick) {
-    const float rad = size * 0.28f;
-    r.ui_round_rect(x + 1.0f, y + 4.0f, size, size, rad, rgba(0, 0, 20, 120), rgba(0, 0, 20, 120), 6.0f);
-    r.ui_round_rect(x - 2.5f, y - 2.5f, size + 5.0f, size + 5.0f, rad + 2.5f, rgba(255, 255, 255, 235), rgba(200, 210, 235, 235));
-    r.ui_round_rect(x, y, size, size, rad, rgba(40, 52, 110, 235), rgba(14, 18, 50, 245));
+    // A hard-edged frame: black shadow, white rim, a black window.
+    r.ui_rect(x + 3.0f, y + 3.0f, size, size, rgba(0, 0, 0, 140));
+    r.ui_rect(x - 2.5f, y - 2.5f, size + 5.0f, size + 5.0f, rgba(240, 240, 245));
+    r.ui_round_rect(x, y, size, size, 0.0f, rgba(30, 30, 38, 240), rgba(6, 6, 10, 245));
+    r.ui_rect(x - 2.5f, y - 2.5f, size + 5.0f, 2.5f, ui::kRed);
     if (spinning) item = sim::Item(1 + (tick / 4) % uint64_t(sim::kItemCount));
     if (item == sim::Item::None) return;
     const ItemLook look = item_look(item);
     const uint32_t c = look.color & 0x00ffffffu;
-    r.ui_round_rect(x + 3.0f, y + 3.0f, size - 6.0f, size - 6.0f, rad - 2.0f, c | 0xf0000000u, (c | 0xf0000000u));
-    r.ui_round_rect(x + 5.0f, y + 4.0f, size - 10.0f, (size - 8.0f) * 0.4f, rad - 3.0f, rgba(255, 255, 255, 90), rgba(255, 255, 255, 0));
-    const float scale = size > 40 ? 1.05f : 0.8f;
+    r.ui_round_rect(x + 3.0f, y + 3.0f, size - 6.0f, size - 6.0f, 0.0f, c | 0xf0000000u, c | 0xa0000000u);
+    r.ui_rect(x + 3.0f, y + 3.0f, size - 6.0f, (size - 6.0f) * 0.35f, rgba(255, 255, 255, 50));
+    const float scale = size > 40 ? 1.0f : 0.75f;
     centered(r, x + size * 0.5f, y + size * 0.5f - 3.5f * scale, look.label, rgba(255, 255, 255), scale);
     if (uses > 1 && !spinning) {
         char buf[8];
         std::snprintf(buf, sizeof buf, "x%d", uses);
-        const float bw = render::Renderer::ui_text_width(buf, 1.1f) + 8.0f;
-        r.ui_round_rect(x + size - bw + 4.0f, y + size - 9.0f, bw, 13.0f, 6.5f, ui::kGold, ui::kGoldDeep);
-        r.ui_text_ex(x + size - bw + 8.0f, y + size - 6.0f, buf, ui::kInk, 1.1f, 0, 0.0f, false, 0.9f);
+        ui::badge(r, x + size - 22.0f, y + size - 8.0f, 26.0f, 12.0f, ui::kRed, buf, ui::kText, 1.0f);
     }
 }
 } // namespace
@@ -201,17 +200,12 @@ void draw_results(render::Renderer& r, const std::string& title, const std::vect
         const std::string time = row.finish_ticks > 0 ? format_race_time(row.finish_ticks) : std::string("--:--.---");
         const std::string name = row.name.substr(0, 14);
         if (row.highlight) ui::pill(r, x - 4.0f, y - 2.5f, tw + 8.0f, rh - 1.0f, true);
-        else if (i % 2) r.ui_round_rect(x - 4.0f, y - 2.5f, tw + 8.0f, rh - 1.0f, 6.0f, rgba(255, 255, 255, 14));
-        auto put = [&](float px, const char* t, uint32_t c) {
-            if (row.highlight) r.ui_text_ex(px, y, t, ui::kInk, 1.1f, 0, 0.0f, false, 0.9f);
-            else r.ui_text(px, y, t, c, 1.1f);
-        };
+        else if (i % 2) r.ui_slant_rect(x - 4.0f, y - 2.5f, tw + 8.0f, rh - 1.0f, ui::kBarSlant, rgba(255, 255, 255, 14), rgba(255, 255, 255, 14));
+        auto put = [&](float px, const char* t, uint32_t c) { r.ui_text(px, y, t, row.highlight ? ui::kText : c, 1.1f); };
         // Place badges: gold, silver, bronze.
         const uint32_t medal = i == 0 ? ui::kGold : i == 1 ? rgba(215, 225, 240) : i == 2 ? rgba(230, 150, 90) : rgba(255, 255, 255, 60);
-        r.ui_round_rect(x, y - 1.5f, 24.0f, 11.0f, 5.5f, medal);
         std::snprintf(buf, sizeof buf, "%zu%s", i + 1, ordinal_suffix(int(i) + 1));
-        r.ui_text_ex(x + 12.0f - render::Renderer::ui_text_width(buf, 0.95f) * 0.5f, y + 0.5f, buf, i < 3 ? ui::kInk : ui::kText, 0.95f, 0,
-                     0.0f, false, 0.9f);
+        ui::badge(r, x, y - 1.5f, 26.0f, 11.0f, medal, buf, i < 3 ? ui::kInk : ui::kText, 0.9f);
         put(x + 32.0f, name.c_str(), ui::kText);
         put(x + 130.0f, time.c_str(), ui::kSubtle);
         if (row.points >= 0) {
@@ -238,29 +232,29 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
     // Lap and time, top left
     const int lap = std::min(k.lap, w.config().laps);
     {
-        ui::panel(r, 8, 8, 112, 38, 10);
-        r.ui_text(14, 12, "LAP", ui::kSubtle, 0.9f);
-        std::snprintf(buf, sizeof buf, "%d", lap);
-        r.ui_text_ex(16, 25, buf, ui::kGold, 2.1f, ui::kInk, 1.6f, true, 1.0f);
-        std::snprintf(buf, sizeof buf, "/%d", w.config().laps);
-        r.ui_text(18 + render::Renderer::ui_text_width(std::to_string(lap).c_str(), 2.3f), 30, buf, ui::kText, 1.3f);
+        // Arcade style: labels in yellow, figures big and white, no boxes.
         const int ticks = k.finished ? k.finish_tick : w.race_ticks();
-        const std::string t = format_race_time(ticks);
-        r.ui_text(114 - render::Renderer::ui_text_width(t.c_str(), 1.3f), 16, t.c_str(), ui::kText, 1.3f);
+        r.ui_slant_rect(4, 8, 150, 44, ui::kSlant, rgba(0, 0, 0, 110), rgba(0, 0, 0, 0));
+        r.ui_text(12, 12, "TIME", ui::kGold, 1.0f);
+        r.ui_text(46, 10, format_race_time(ticks).c_str(), ui::kText, 1.6f);
+        r.ui_text(12, 32, "LAP", ui::kGold, 1.0f);
+        std::snprintf(buf, sizeof buf, "%d", lap);
+        ui::heading(r, 44, 28, buf, 2.2f, ui::kText, rgba(200, 205, 215));
+        std::snprintf(buf, sizeof buf, "/%d", w.config().laps);
+        r.ui_text(46 + render::Renderer::ui_text_width(std::to_string(lap).c_str(), 2.2f), 35, buf, ui::kSubtle, 1.3f);
     }
-
     // Place, top right
     const int place = w.place_of(player);
     std::snprintf(buf, sizeof buf, "%d%s", place, ordinal_suffix(place));
     {
         // Gold, silver and bronze for the podium; the suffix rides small.
-        const uint32_t pc = place == 1 ? ui::kGold : place == 2 ? rgba(220, 230, 245) : place == 3 ? rgba(235, 150, 85) : rgba(150, 215, 255);
+        const uint32_t pc = place == 1 ? ui::kGoldDeep : place == 2 ? rgba(150, 165, 185) : place == 3 ? rgba(200, 105, 50) : rgba(225, 20, 30);
         char num[8];
         std::snprintf(num, sizeof num, "%d", place);
         const float nw = render::Renderer::ui_text_width(num, 6.0f), sw = render::Renderer::ui_text_width(ordinal_suffix(place), 2.6f);
         const float px = W - nw - sw - 14.0f;
-        r.ui_text_ex(px, 8, num, pc, 6.0f, ui::kInk, 3.0f, true, 1.0f);
-        r.ui_text_ex(px + nw + 2.0f, 12, ordinal_suffix(place), pc, 2.6f, ui::kInk, 2.5f, true, 1.0f);
+        ui::heading(r, px - 6.0f, 14, num, 6.0f, place == 1 ? rgba(255, 245, 140) : rgba(255, 255, 255), pc);
+        ui::heading(r, px + nw - 2.0f, 18, ordinal_suffix(place), 2.4f, rgba(255, 255, 255), pc);
     }
 
     // Item slots, top centre: the item in hand and the reserve.
@@ -291,25 +285,26 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
     // Speed and coins, bottom left
     const float kmh = std::abs(glm::length(k.velocity())) * 3.6f;
     {
-        ui::panel(r, 8, H - 46, 100, 38, 10);
-        // A coin: gold disc with a rim and a shine.
-        r.ui_round_rect(15, H - 39, 16, 16, 8, rgba(255, 236, 120), rgba(230, 160, 20));
-        r.ui_round_rect(18, H - 36, 10, 10, 5, rgba(255, 210, 60), rgba(255, 190, 40));
-        std::snprintf(buf, sizeof buf, "%d", k.coins);
-        r.ui_text_ex(36, H - 37, buf, k.coins >= 10 ? ui::kGold : ui::kText, 1.7f, ui::kInk, 1.3f, true, 1.0f);
-        std::snprintf(buf, sizeof buf, "%.0f", double(kmh));
-        r.ui_text_ex(104 - render::Renderer::ui_text_width(buf, 1.7f) - 0.0f, H - 37, buf, ui::kText, 1.7f, ui::kInk, 1.3f, true, 1.0f);
-        r.ui_text(104 - render::Renderer::ui_text_width("KM/H", 0.85f), H - 20, "KM/H", ui::kSubtle, 0.85f);
+        // Speed in big italic figures, coins beside it.
+        r.ui_slant_rect(4, H - 46, 170, 40, ui::kSlant, rgba(0, 0, 0, 0), rgba(0, 0, 0, 120));
+        std::snprintf(buf, sizeof buf, "%03.0f", double(kmh));
+        ui::heading(r, 12, H - 40, buf, 3.0f, ui::kText, rgba(200, 205, 215));
+        r.ui_text(14 + render::Renderer::ui_text_width(buf, 3.0f), H - 25, "KM/H", ui::kGold, 1.0f);
+        r.ui_round_rect(112, H - 39, 14, 14, 7, rgba(255, 236, 120), rgba(230, 150, 10));
+        std::snprintf(buf, sizeof buf, "x%d", k.coins);
+        r.ui_text(130, H - 37, buf, k.coins >= 10 ? ui::kGold : ui::kText, 1.5f);
     }
-
     // Mini-turbo charge bar, bottom centre
     if (k.drift == sim::DriftState::Drifting) {
         const float bw = 140.0f, bh = 8.0f, bx = W * 0.5f - bw * 0.5f, by = H - 64.0f;
         const float full = kc.mt_thresholds[2];
-        r.ui_round_rect(bx - 2, by - 2, bw + 4, bh + 4, 6, rgba(10, 14, 40, 200));
+        r.ui_slant_rect(bx - 3, by - 2, bw + 6, bh + 4, ui::kBarSlant, rgba(0, 0, 0, 200), rgba(0, 0, 0, 200));
         const float fill = std::min(1.0f, k.mt_charge / full);
         const uint32_t tc = tier_color(k.mt_tier(kc));
-        if (fill > 0.02f) r.ui_round_rect(bx, by, bw * fill, bh, 4, tc | 0xff000000u, (tc & 0x00ffffffu) | 0xc0000000u);
+        const int segs = 28, lit = int(float(segs) * fill);
+        for (int sgm = 0; sgm < lit; ++sgm)
+            r.ui_slant_rect(bx + float(sgm) * (bw / float(segs)), by, bw / float(segs) - 1.0f, bh, ui::kBarSlant, tc | 0xff000000u,
+                            (tc & 0x00ffffffu) | 0xb0000000u);
         for (int i = 0; i < 2; ++i) r.ui_rect(bx + bw * kc.mt_thresholds[size_t(i)] / full, by, 1, bh, rgba(255, 255, 255, 200));
     }
     if (k.boost_frames > 0) {
@@ -369,10 +364,10 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
         };
         float lw = 0.0f;
         for (const char* l : lines) lw = std::max(lw, render::Renderer::ui_text_width(l, 0.9f));
-        r.ui_round_rect(W - lw - 22.0f, H - 50.0f, lw + 14.0f, 42.0f, 10.0f, rgba(10, 14, 40, 120), rgba(10, 14, 40, 150));
+        r.ui_slant_rect(W - lw - 26.0f, H - 50.0f, lw + 22.0f, 42.0f, ui::kSlant, rgba(0, 0, 0, 110), rgba(0, 0, 0, 150));
         float y = H - 44.0f;
         for (const char* l : lines) {
-            r.ui_text_ex(W - lw - 15.0f, y, l, rgba(230, 236, 255, 230), 0.9f, 0, 0.0f, false, 0.4f);
+            r.ui_text(W - lw - 16.0f, y, l, rgba(230, 232, 240, 230), 0.9f, false);
             y += 11.5f;
         }
     }
