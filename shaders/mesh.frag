@@ -107,6 +107,34 @@ void main() {
         out_color = vec4(grade(mix(t.rgb, haze(dir, l, sun), clamp(f, 0.0, 1.0))), t.a);
         return;
     }
+    if (draw.flags.w == 4) { // cartoon flame: hard colour bands over scrolling noise, a ragged tip
+        float time = frame.shadow.w;
+        float ph = draw.tint.a * 10.0;
+        vec2 uv = v_uv;
+        float nz = vnoise(vec2(uv.x * 4.0 + ph, uv.y * 3.0 - time * 7.0)) * 0.65 + vnoise(vec2(uv.x * 9.0 + 7.0 + ph, uv.y * 7.0 - time * 12.0)) * 0.35;
+        float edge = uv.y + (nz - 0.5) * 0.55;
+        if (edge > 0.82) discard;
+        vec3 mid = draw.tint.rgb;
+        vec3 hot = mix(mid, vec3(1.0, 1.0, 0.92), 0.7);
+        vec3 dark = mid * vec3(0.8, 0.5, 0.4);
+        float band = uv.y * 0.95 + (nz - 0.5) * 0.45;
+        vec3 c = band < 0.16 ? vec3(1.0) : band < 0.4 ? hot : band < 0.64 ? mid : dark;
+        float d = length(v_world - frame.camera_pos.xyz);
+        float f = 1.0 - exp(-d * frame.fog_color.a);
+        vec3 dir = (v_world - frame.camera_pos.xyz) / max(d, 1e-3);
+        out_color = vec4(grade(mix(c, haze(dir, l, sun), clamp(f, 0.0, 1.0) * 0.6)), 1.0);
+        return;
+    }
+    if (draw.flags.w == 5) { // fireball: a ball of noise that burns away from the outside in
+        float p = clamp(draw.tint.a, 0.0, 1.0);
+        vec3 d = normalize(v_world - draw.model[3].xyz + vec3(0.001));
+        float nz = vnoise(d.xy * 3.0 + vec2(p * 2.0, 0.0)) * 0.5 + vnoise(d.yz * 5.0 + 11.0 - p * 3.0) * 0.3 + vnoise(d.xz * 9.0 + 23.0) * 0.2;
+        float k = nz - p * 1.25;
+        if (k < -0.05) discard;
+        vec3 c = k > 0.5 ? vec3(1.0, 1.0, 0.85) : k > 0.3 ? vec3(1.0, 0.85, 0.25) : k > 0.12 ? vec3(1.0, 0.45, 0.1) : vec3(0.32, 0.26, 0.26);
+        out_color = vec4(grade(c * draw.tint.rgb), 1.0);
+        return;
+    }
     vec3 n = normalize(v_normal);
     vec3 v = normalize(frame.camera_pos.xyz - v_world);
     float ambient = frame.light_dir.w;
@@ -172,6 +200,13 @@ void main() {
         lit += sun_col * g * (0.4 + 1.6 * tw) * sun;
     }
     lit = mix(lit, albedo * 1.7, emission); // windows, neon and lamps light themselves
+    if (draw.flags.w == 3) { // glow: a coloured rim and flash (hits, tricks, the Star)
+        float k = clamp(draw.tint.a, 0.0, 1.0);
+        float f = pow(1.0 - max(dot(n, v), 0.0), 2.0);
+        lit = mix(lit, draw.tint.rgb * 1.35, clamp(k * (0.3 + 1.0 * f), 0.0, 1.0));
+        emission = max(emission, 0.6 * k);
+        alpha = 1.0;
+    }
     if (draw.flags.w == 2) { // item box: rainbow sheen that turns with the view, a glint sweeping across
         float t = frame.shadow.w;
         float f = pow(1.0 - max(dot(n, v), 0.0), 1.6);

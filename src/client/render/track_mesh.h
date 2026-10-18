@@ -36,5 +36,7 @@ MeshData make_scenery_mesh(const sim::Track& track, std::vector<PropPlacement>* 
 
 MeshData make_spark_mesh();
 MeshData make_flame_mesh();
+// A unit sphere for the fireball shader (explosions).
+MeshData make_fireball_mesh();
 
 } // namespace gk::render

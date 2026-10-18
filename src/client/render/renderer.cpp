@@ -606,12 +606,14 @@ void Renderer::make_particle_texture() {
     };
     cell(0, true, puff({{-0.3f, 0.2f, 0.42f}, {0.25f, 0.18f, 0.48f}, {0.0f, -0.25f, 0.5f}, {-0.48f, -0.12f, 0.3f}, {0.52f, -0.15f, 0.3f}}));
     cell(11, true, puff({{-0.2f, 0.25f, 0.45f}, {0.35f, 0.1f, 0.42f}, {-0.05f, -0.3f, 0.42f}, {0.4f, -0.4f, 0.25f}, {-0.55f, 0.0f, 0.28f}}));
-    // Star: five chunky points, a lighter upper half.
+    // Swoosh: a crescent motion arc, thick in the middle and tapering to
+    // both tips (spins, tricks, dizzy halos).
     cell(1, true, [](vec2 p) {
-        const float a = std::atan2(p.x, -p.y), r = glm::length(p);
-        const float k = std::pow(0.5f + 0.5f * std::cos(5.0f * a), 1.6f); // 1 at a point
-        const float edge = glm::mix(0.45f, 0.95f, k);
-        return Px{(r - edge) * 0.75f, p.y < -0.05f ? 1.0f : 0.84f};
+        const float a = std::atan2(p.y, p.x), r = glm::length(p);
+        const float k = std::clamp(std::abs(a) / 1.35f, 0.0f, 1.0f); // 0 in the middle, 1 at a tip
+        const float thick = 0.17f * (1.0f - k * k) + 0.01f;
+        const float d = std::max(std::abs(r - 0.7f) - thick, std::abs(a) - 1.35f);
+        return Px{d, r > 0.7f ? 0.82f : 1.0f};
     });
     // Sparkle: a four-pointed glint with a round bright centre.
     cell(2, true, [](vec2 p) {
@@ -1451,7 +1453,7 @@ void Renderer::end_frame() {
         } sp{};
         for (const auto& d : draws_) {
             const GpuMesh& m = meshes_[d.mesh];
-            if (!m.index_count || m.unlit || m.blended || d.tint.a < 0.99f) continue;
+            if (!m.index_count || m.unlit || m.blended || d.fx >= 4 || (d.tint.a < 0.99f && d.fx != 3)) continue;
             sp.model = d.model;
             VkDeviceSize offset = 0;
             vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
@@ -1536,7 +1538,7 @@ void Renderer::end_frame() {
     for (const auto& d : draws_) {
         const GpuMesh& m = meshes_[d.mesh];
         if (!m.index_count) continue;
-        const bool see_through = m.blended || d.tint.a < 0.99f;
+        const bool see_through = m.blended || (d.tint.a < 0.99f && d.fx < 3);
         if (see_through != (pass == 1)) continue;
         const VkPipeline want = see_through ? mesh_pipeline_blend_ : m.two_sided ? mesh_pipeline_two_sided_ : mesh_pipeline_;
         if (want != bound_pipeline) {

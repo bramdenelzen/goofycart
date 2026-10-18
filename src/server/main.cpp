@@ -70,7 +70,6 @@ private:
 
 int main(int argc, char** argv) {
     bool upnp = false;
-    bool local_courses = false;
     long parent_pid = 0;
     std::string info_file, workdir;
     long max_ticks = -1; // run forever by default
@@ -99,8 +98,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--public-host") == 0) self.host = next();
         else if (std::strcmp(argv[i], "--crash") == 0) crash = next(); // test the crash reporter
         else if (std::strcmp(argv[i], "--bots") == 0) cfg.idle_without_humans = false; // race even when empty
-        else if (std::strcmp(argv[i], "--upnp") == 0) upnp = true;
-        else if (std::strcmp(argv[i], "--local-courses") == 0) local_courses = true; // race assets/courses packs too         // ask the router to forward the port
+        else if (std::strcmp(argv[i], "--upnp") == 0) upnp = true; // ask the router to forward the port
         else if (std::strcmp(argv[i], "--info-file") == 0) info_file = next(); // write the addresses to share here
         else if (std::strcmp(argv[i], "--workdir") == 0) workdir = next();     // where crash reports go
         else if (std::strcmp(argv[i], "--parent-pid") == 0) parent_pid = std::atol(next()); // quit when this process ends
@@ -129,15 +127,6 @@ int main(int argc, char** argv) {
     if (!cfg.tracks.load(gk::sim::data_path("tracks/tracks.json"), &err)) {
         gk::log_error("Could not load tracks: {}", err);
         return EXIT_FAILURE;
-    }
-    // Local course packs (assets/courses) for --track; they join the rotation
-    // only with --local-courses, since every player needs the same files.
-    {
-        gk::sim::TrackCatalog local = cfg.tracks;
-        if (local.load_local(gk::sim::data_path("../assets/courses")) > 0) {
-            if (local_courses) cfg.tracks = local;
-            else if (!cfg.track.empty() && cfg.tracks.find(cfg.track) < 0 && local.find(cfg.track) >= 0) cfg.tracks = local;
-        }
     }
     if (!cfg.track.empty() && cfg.tracks.find(cfg.track) < 0) {
         gk::log_error("Unknown track '{}'", cfg.track);

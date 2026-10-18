@@ -17,6 +17,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(a, "--fullres") == 0) opt.full_resolution = true;
         else if (std::strcmp(a, "--pixel") == 0) opt.pixel_look = true;
         else if (std::strcmp(a, "--give-item") == 0) opt.give_item = std::atoi(next());
+        else if (std::strcmp(a, "--demo-fx") == 0) opt.demo_fx = next(); // explosion, hit, tumble or trick on the player at frame 250 (screenshots)
         else if (std::strcmp(a, "--validation") == 0) opt.validation = true;
         else if (std::strcmp(a, "--width") == 0) opt.window_width = std::atoi(next());
         else if (std::strcmp(a, "--height") == 0) opt.window_height = std::atoi(next());

@@ -52,20 +52,6 @@ struct TrackDef {
     std::vector<vec4> points;     // w = half-width, 0 for the default
     std::vector<TrackFeature> features;
 
-    // A course from a model file (a local course pack, never in the repository):
-    // the road you drive on is the model's own surfaces, by material; the
-    // spline above still gives the centre line, checkpoints, start grid and
-    // (invisible) rails along the edges.
-    struct MeshCourse {
-        std::string file;          // .obj, absolute or resolved by the loader
-        float scale = 1.0f;
-        vec3 offset{0.0f};
-        std::vector<std::string> road, walls, boost, ramps; // material names by role
-        std::vector<std::string> hidden;                     // not drawn
-        std::vector<std::pair<std::string, std::string>> glow; // material -> emission map file
-        std::string dir;           // the course folder, for textures
-    };
-    std::optional<MeshCourse> mesh;
 };
 
 Track build_track(const TrackDef& def);
@@ -81,9 +67,6 @@ struct TrackCatalog {
     std::vector<TrackDef> tracks;
     std::vector<Cup> cups;
     bool load(const std::string& index_path, std::string* error = nullptr);
-    // Adds the course packs in <dir>/*/course.json (local, not in the
-    // repository) as a "Local Cup". Returns how many were added.
-    int load_local(const std::string& dir);
     int find(const std::string& id) const;
 };
 

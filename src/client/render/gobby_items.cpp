@@ -1,6 +1,9 @@
 #include "gobby_assets.h"
 #include "gobby_util.h"
 
+#include <atomic>
+#include <thread>
+
 #include <stb_image_write.h>
 
 #include <algorithm>
@@ -322,26 +325,45 @@ PaintedModel fireball() {
 
 } // namespace
 
-std::map<std::string, PaintedModel> make_gobby_items() {
+void parallel_for(int n, const std::function<void(int)>& job) {
+    const int workers = std::max(1, std::min(n, int(std::thread::hardware_concurrency())));
+    std::atomic<int> next{0};
+    std::vector<std::thread> pool;
+    for (int w = 0; w < workers; ++w)
+        pool.emplace_back([&] {
+            for (int i = next.fetch_add(1); i < n; i = next.fetch_add(1)) job(i);
+        });
+    for (std::thread& t : pool) t.join();
+}
+
+std::map<std::string, PaintedModel> build_models_parallel(std::vector<ModelJob> jobs) {
+    std::vector<PaintedModel> built(jobs.size());
+    parallel_for(int(jobs.size()), [&](int i) { built[size_t(i)] = jobs[size_t(i)].second(); });
     std::map<std::string, PaintedModel> out;
-    out["banana"] = make_banana_peel();
-    out["green_shell"] = make_turtle_shell(col(52, 150, 52), false);
-    out["red_shell"] = make_turtle_shell(col(178, 32, 38), false);
-    out["spiked_shell"] = make_turtle_shell(col(32, 58, 170), true);
-    out["bomb"] = make_tnt_bundle();
-    out["item_box"] = make_glass_item_box();
-    out["bullet"] = bullet();
-    out["chomper"] = chomper();
-    out["boomerang"] = boomerang();
-    out["mushroom"] = mushroom(col(230, 50, 50), col(255, 255, 255), true, false);
-    out["golden_mushroom"] = mushroom(col(250, 200, 60), col(255, 255, 255), true, true);
-    out["star"] = star();
-    out["lightning"] = lightning();
-    out["blooper"] = blooper();
-    out["horn"] = horn();
-    out["coin"] = coin();
-    out["fireball"] = fireball();
+    for (size_t i = 0; i < jobs.size(); ++i) out[jobs[i].first] = std::move(built[i]);
     return out;
+}
+
+std::map<std::string, PaintedModel> make_gobby_items() {
+    std::vector<ModelJob> jobs;
+    jobs.emplace_back("banana", [] { return make_banana_peel(); });
+    jobs.emplace_back("green_shell", [] { return make_turtle_shell(col(52, 150, 52), false); });
+    jobs.emplace_back("red_shell", [] { return make_turtle_shell(col(178, 32, 38), false); });
+    jobs.emplace_back("spiked_shell", [] { return make_turtle_shell(col(32, 58, 170), true); });
+    jobs.emplace_back("bomb", [] { return make_tnt_bundle(); });
+    jobs.emplace_back("item_box", [] { return make_glass_item_box(); });
+    jobs.emplace_back("bullet", [] { return bullet(); });
+    jobs.emplace_back("chomper", [] { return chomper(); });
+    jobs.emplace_back("boomerang", [] { return boomerang(); });
+    jobs.emplace_back("mushroom", [] { return mushroom(col(230, 50, 50), col(255, 255, 255), true, false); });
+    jobs.emplace_back("golden_mushroom", [] { return mushroom(col(250, 200, 60), col(255, 255, 255), true, true); });
+    jobs.emplace_back("star", [] { return star(); });
+    jobs.emplace_back("lightning", [] { return lightning(); });
+    jobs.emplace_back("blooper", [] { return blooper(); });
+    jobs.emplace_back("horn", [] { return horn(); });
+    jobs.emplace_back("coin", [] { return coin(); });
+    jobs.emplace_back("fireball", [] { return fireball(); });
+    return build_models_parallel(std::move(jobs));
 }
 
 bool export_painted_model(const PaintedModel& model, const std::string& dir, const std::string& name, std::string* error) {

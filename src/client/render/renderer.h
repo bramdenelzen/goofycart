@@ -77,7 +77,12 @@ public:
     // frame must be skipped (minimised window, swapchain being rebuilt).
     bool begin_frame(const Camera& camera, const SceneLighting& lighting);
     void draw(MeshId mesh, const mat4& model, vec4 tint = vec4(1.0f));
-    // A special shader for the draws that follow: 0 none, 2 item box (iridescent glass).
+    // A special shader for the draws that follow: 0 none, 2 item box
+    // (iridescent glass), 3 glow (tint = colour, tint.a = strength: a
+    // coloured rim and flash over the lit surface), 4 cartoon flame (tint =
+    // the flame's colour, tint.a a phase; mesh v runs root to tip), 5
+    // fireball (tint.a = 0 fresh .. 1 burnt away). 3, 4 and 5 always draw
+    // in the opaque pass, so tint.a is free to carry their parameter.
     void set_fx(int fx) { fx_ = fx; }
     void end_frame();
 
@@ -86,7 +91,7 @@ public:
     // otherwise it is blended by alpha (smoke, dust). `stretch` > 0 drags it
     // along `velocity` into a streak.
     // Shapes in the particle atlas: hard-edged, cartoon style.
-    enum class Sprite : uint8_t { Puff, Star, Sparkle, Flame, Solid, Ring, Dot, Confetti, Burst, Streak, Rock, Puff2, Drop, Tread, Spark6, Spark8 };
+    enum class Sprite : uint8_t { Puff, Swoosh, Sparkle, Flame, Solid, Ring, Dot, Confetti, Burst, Streak, Rock, Puff2, Drop, Tread, Spark6, Spark8 };
     void particle(vec3 pos, float size, vec4 color, bool additive, vec3 velocity = vec3(0.0f), float stretch = 0.0f,
                   Sprite sprite = Sprite::Puff, float angle = 0.0f);
     // A flat quad lying in the world (skid marks): corners in order, drawn

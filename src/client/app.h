@@ -34,6 +34,7 @@ struct AppOptions {
     bool autodrive = false;       // the player kart drives itself (demos, screenshots)
     bool pixel_look = false;      // --pixel: the low-res look regardless of settings (screenshots)
     int spawn_obstacle = -1;
+    std::string demo_fx;          // testing: "explosion", "hit", "tumble" or "trick" on the player at frame 250
     int give_item = 0;            // testing: hand the player this item (sim::Item value) at the start      // testing: start lined up 14 m before this obstacle and drive straight at it
     int karts = 12;
     sim::EngineClass engine = sim::EngineClass::cc150;
@@ -123,7 +124,6 @@ private:
     std::map<std::string, std::vector<render::MeshId>> mover_meshes_; // per track, one per mover
     std::map<std::string, std::pair<render::TextureId, std::pair<vec3, vec3>>> sky_textures_; // theme -> sky, zenith, horizon
     render::MeshId single_prop(const std::string& name);
-    std::vector<render::MeshId> load_course_meshes(const sim::TrackDef::MeshCourse& mc);
     mat4 fit_prop(const std::string& name, const mat4& transform) const;
     void draw_held_item(sim::Item item, int uses, const mat4& kart, bool trailing);
     render::MeshId item_mesh(sim::Item item) const;
@@ -214,7 +214,19 @@ private:
     std::map<std::string, std::pair<render::MeshId, render::MeshId>> track_meshes_;
     render::SceneLighting light_;
 
-    render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0, shadow_mesh_ = 0;
+    render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0, shadow_mesh_ = 0, fireball_mesh_ = 0;
+    // Hit flash per kart: seconds left of the white-to-red glow.
+    std::array<float, 12> hit_flash_{};
+    // Explosions seen this second, so each one bursts once.
+    struct Blast {
+        vec3 pos;
+        float age;
+    };
+    std::vector<Blast> blasts_;
+    void explosion_burst(vec3 pos, float radius);
+    // A flame from the flame shader: at `pos` (model space of `m`), pointing
+    // along `dir`, `width` across and `length` long, in `color`.
+    void draw_flame(const mat4& m, vec3 pos, vec3 dir, float width, float length, vec3 color, float phase);
     render::MeshId box_mesh_ = 0, banana_mesh_ = 0, green_mesh_ = 0, red_mesh_ = 0, spiked_mesh_ = 0, bomb_mesh_ = 0,
                    ball_mesh_ = 0, boomerang_mesh_ = 0, bullet_mesh_ = 0, chomper_mesh_ = 0;
     float flash_ = 0.0f; // white screen flash (lightning)
@@ -227,6 +239,7 @@ private:
         const GpuModel* tire_model = nullptr;
         const GpuModel* glider_model = nullptr;
         render::KartLayout layout;
+        bool gobby = false; // the painted standard kart: twin exhausts
     };
     AssetLibrary assets_;
     std::map<uint32_t, GpuModel> gobby_karts_;         // the painted standard kart, by paint colour
@@ -254,6 +267,13 @@ private:
     std::vector<KartVisual> kart_visuals_;              // per kart in the race
     std::map<uint64_t, KartVisual> build_visuals_;      // (build, colour) -> visual
     std::array<float, 12> wheel_angle_{};               // tyre spin per kart, radians
+    // Smoothed body motion per kart, so drifts swing in and out instead of
+    // snapping: a critically damped spring on the nose yaw and the roll.
+    struct KartPose {
+        float yaw = 0.0f, yaw_v = 0.0f, roll = 0.0f, roll_v = 0.0f, pitch = 0.0f, pitch_v = 0.0f;
+    };
+    std::array<KartPose, 12> poses_{};
+    static void spring(float& x, float& v, float target, float omega, float dt);
     float frame_dt_ = 1.0f / 60.0f;
     const KartVisual& build_visual(const sim::Build& b, int slot);
     void draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle);

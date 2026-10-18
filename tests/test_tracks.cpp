@@ -142,34 +142,3 @@ TEST_CASE("obstacles are solid from every side") {
     }
 }
 
-TEST_CASE("local course packs (assets/courses), when present, are raceable") {
-    TrackCatalog c = catalog();
-    const int n = c.load_local(gk::sim::data_path("../assets/courses"));
-    if (n == 0) return; // nothing on this machine (CI never has them)
-    const auto tables = test::tables();
-    const auto parts = test::parts();
-    for (const Cup& cup : c.cups) {
-        if (cup.name != "Local Cup") continue;
-        for (const std::string& id : cup.tracks) {
-            CAPTURE(id);
-            World w(make_track(c, id), tables, RaceConfig{.laps = 1, .countdown_frames = 180, .seed = 3});
-            for (int i = 0; i < 8; ++i) {
-                KartParams p = test::default_params(tables, parts, {i % 4, i % 4, (i / 2) % 4, i % 2});
-                p.rubber_band = cpu_rubber_band(CpuLevel::Normal);
-                w.add_kart(p);
-            }
-            std::vector<KartInput> in(8);
-            int frames = 0, respawns = 0;
-            auto done = [&] { return std::all_of(w.karts().begin(), w.karts().end(), [](const KartState& k) { return k.finished; }); };
-            while (!done() && frames < 60 * 60 * 3) {
-                for (int i = 0; i < 8; ++i) in[size_t(i)] = cpu_input(w, i, cpu_skill(CpuLevel::Normal, i));
-                w.tick(in);
-                ++frames;
-                for (const auto& e : w.events())
-                    if (e.type == KartEventType::Respawn) ++respawns;
-            }
-            MESSAGE(id << ": race " << frames / 60.0f << " s, " << respawns << " respawns");
-            CHECK(done());
-        }
-    }
-}

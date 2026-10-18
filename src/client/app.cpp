@@ -110,7 +110,6 @@ bool App::init() {
         return false;
     }
     // Course packs built from model files on this computer (assets/, not shipped).
-    if (const int n = tracks_.load_local(sim::data_path("../assets/courses"))) log_info("{} local course(s) loaded", n);
     course_.engine = options_.engine;
     course_.cpu = options_.cpu_level;
 #ifdef __APPLE__
@@ -145,26 +144,44 @@ bool App::init() {
         log_error("SDL_CreateWindow failed: {}", SDL_GetError());
         return false;
     }
+    // Where the start-up time goes, for the log.
+    const uint64_t t_freq = SDL_GetPerformanceFrequency();
+    uint64_t t_last = SDL_GetPerformanceCounter();
+    auto lap = [&] {
+        const uint64_t now = SDL_GetPerformanceCounter();
+        const double ms = double(now - t_last) * 1000.0 / double(t_freq);
+        t_last = now;
+        return int(ms);
+    };
     render::RendererOptions ro;
     ro.full_resolution = options_.full_resolution;
     ro.validation = options_.validation;
     if (!renderer_.init(window_, ro)) return false;
+    const int ms_renderer = lap();
     renderer_.make_particle_texture();
     if (!renderer_.load_font(sim::data_path("fonts/RussoOne-Regular.ttf"))) log_warn("UI font missing: using the pixel font");
     else renderer_.set_ui_icons(render::paint_item_icons(512), 512, render::kIconGrid);
+    const int ms_ui = lap();
     // The game's own painted items, then an optional model pack beside the
     // data folder (not in the repository) that may override them.
     // Low-poly: half the segments of the smooth shapes; the painted textures
     // carry the detail.
     render::MeshBuilder::detail = 0.5f;
     for (const auto& [name, model] : render::make_gobby_items()) assets_.add_builtin_item(name, model, renderer_);
-    for (const auto& tire : parts_.tires) assets_.add_builtin_tire(tire.id, render::make_gobby_tire(tire.look), renderer_);
+    {
+        std::vector<render::PaintedModel> tires(parts_.tires.size());
+        render::parallel_for(int(tires.size()), [&](int i) { tires[size_t(i)] = render::make_gobby_tire(parts_.tires[size_t(i)].look); });
+        for (size_t i = 0; i < tires.size(); ++i) assets_.add_builtin_tire(parts_.tires[i].id, tires[i], renderer_);
+    }
+    const int ms_items = lap();
     // Map props: kept on the CPU to merge per track, with one texture each.
     for (auto& [name, model] : render::make_gobby_props()) {
         const render::TextureId tex = renderer_.upload_texture(model.texture.size(), model.texture.size(), model.texture.rgba().data());
         props_.emplace(name, PropModel{std::move(model.mesh), tex, model.two_sided, model.blended, model.bounds_min, model.bounds_max, model.glow, model.unlit});
     }
+    const int ms_props = lap();
     if (assets_.load(sim::data_path("../assets/models"), renderer_)) log_info("Model pack loaded from assets/models");
+    log_info("Start-up: renderer {} ms, ui {} ms, items {} ms, props {} ms, pack {} ms", ms_renderer, ms_ui, ms_items, ms_props, lap());
     if (!options_.export_assets.empty()) {
         int written = 0;
         std::string err;
@@ -229,6 +246,7 @@ bool App::init() {
     }
     spark_mesh_ = renderer_.upload_mesh(render::make_spark_mesh());
     flame_mesh_ = renderer_.upload_mesh(render::make_flame_mesh());
+    fireball_mesh_ = renderer_.upload_mesh(render::make_fireball_mesh());
     box_mesh_ = renderer_.upload_mesh(render::make_item_box_mesh());
     banana_mesh_ = renderer_.upload_mesh(render::make_banana_mesh());
     green_mesh_ = renderer_.upload_mesh(render::make_shell_mesh(render::rgba(60, 200, 70), false));
@@ -241,8 +259,8 @@ bool App::init() {
     chomper_mesh_ = renderer_.upload_mesh(render::make_chomper_mesh());
     set_kart_meshes({});
     if (!options_.crash.empty()) crash_now(options_.crash);
-    log_info("Renderer ready, internal resolution {}x{}", renderer_.internal_extent().width,
-             renderer_.internal_extent().height);
+    log_info("Renderer ready, internal resolution {}x{} ({} ms for the first track and karts)", renderer_.internal_extent().width,
+             renderer_.internal_extent().height, lap());
     return true;
 }
 
@@ -288,6 +306,7 @@ const App::KartVisual& App::build_visual(const sim::Build& b, int slot) {
             }
             if (spec->has_seat) v.layout.seat = spec->seat;
         }
+    v.gobby = gobby_kart;
     if (gobby_kart) {
         // Its wheels sit wider, and the rear ones are bigger.
         const float rf = 0.24f * look.tires.size, rr = 0.27f * look.tires.size;
@@ -327,6 +346,14 @@ void App::draw_glider_visual(const KartVisual& v, const mat4& m, vec4 tint) {
 
 void App::set_kart_meshes(const std::vector<sim::Build>& builds) {
     kart_visuals_.clear();
+    {   // Paint the standard kart in every colour not painted yet, on all cores at once.
+        std::vector<uint32_t> paints;
+        for (int i = 0; i < 12; ++i)
+            if (const uint32_t c = kart_color(i); !gobby_karts_.count(c) && std::find(paints.begin(), paints.end(), c) == paints.end()) paints.push_back(c);
+        std::vector<render::PaintedModel> painted(paints.size());
+        render::parallel_for(int(paints.size()), [&](int i) { painted[size_t(i)] = render::make_gobby_kart(paints[size_t(i)]); });
+        for (size_t i = 0; i < paints.size(); ++i) gobby_karts_.emplace(paints[i], AssetLibrary::upload_painted(painted[i], renderer_));
+    }
     for (int i = 0; i < 12; ++i) {
         const sim::Build b = size_t(i) < builds.size() ? builds[size_t(i)] : sim::Build{i % int(parts_.drivers.size()), 0, 0, 0};
         kart_visuals_.push_back(build_visual(b, i));
@@ -347,15 +374,14 @@ void App::show_track(const std::string& id) {
     if (shown_track_ && shown_track_->id == (id.empty() ? "greybox" : id)) return;
     shown_track_ = std::make_unique<sim::Track>(sim::make_track(tracks_, id));
     auto it = track_meshes_.find(shown_track_->id);
-    if (const int di = tracks_.find(shown_track_->id); it == track_meshes_.end() && di >= 0 && tracks_.tracks[size_t(di)].mesh) {
-        // A model course: draw the model itself, no generated road or scenery.
-        track_props_[shown_track_->id] = load_course_meshes(*tracks_.tracks[size_t(di)].mesh);
-        it = track_meshes_.emplace(shown_track_->id, std::pair(render::MeshId(0), render::MeshId(0))).first;
-    }
     if (it == track_meshes_.end()) {
+        const uint64_t t0 = SDL_GetPerformanceCounter();
+        auto ms = [&] { return int(double(SDL_GetPerformanceCounter() - t0) * 1000.0 / double(SDL_GetPerformanceFrequency())); };
         const render::MeshId track = renderer_.upload_mesh(render::make_track_mesh(*shown_track_, true));
+        const int ms_road = ms();
         std::vector<render::PropPlacement> placements;
         const render::MeshId scenery = renderer_.upload_mesh(render::make_scenery_mesh(*shown_track_, &placements));
+        const int ms_scenery = ms();
         // One mesh per kind of prop, all its copies merged.
         std::map<std::string, render::MeshBuilder> merged;
         for (const auto& p : placements) {
@@ -379,7 +405,8 @@ void App::show_track(const std::string& id) {
             const render::TextureId tex = renderer_.upload_texture(side.texture.size(), side.texture.size(), side.texture.rgba().data());
             ids.push_back(renderer_.upload_mesh(side.mesh, tex, false));
         }
-        log_info("Track {}: {} props in {} meshes", shown_track_->id, placements.size(), ids.size());
+        log_info("Track {}: {} props in {} meshes; {} ms (road {}, scenery {}, props and trackside {})", shown_track_->id, placements.size(), ids.size(),
+                 ms(), ms_road, ms_scenery - ms_road, ms() - ms_scenery);
         it = track_meshes_.emplace(shown_track_->id, std::pair(track, scenery)).first;
     }
     track_mesh_ = it->second.first;
@@ -535,6 +562,13 @@ void App::draw_standings() {
 }
 
 void App::update() {
+    if (!options_.demo_fx.empty() && world_ && frame_ == 250 && size_t(player_) < world_->karts().size()) {
+        sim::KartState& k = world_->karts_mut()[size_t(player_)];
+        if (options_.demo_fx == "explosion") world_->spawn_explosion(k.pos + k.forward() * 5.0f, player_);
+        else if (options_.demo_fx == "hit") world_->apply_hit(player_, sim::HitKind::Spin, -1);
+        else if (options_.demo_fx == "tumble") world_->apply_hit(player_, sim::HitKind::Tumble, -1);
+        else if (options_.demo_fx == "trick") k.trick_anim = 1.0f, event_particles({sim::KartEventType::Trick, player_, 0});
+    }
     if (online_) {
         const sim::World* w = online_->world();
         if (online_->race_id_changed(online_race_)) {
@@ -1007,6 +1041,17 @@ void App::update_camera(float alpha, float dt) {
     cam_fov_ += (target_fov - cam_fov_) * (1.0f - std::exp(-5.0f * dt));
 }
 
+void App::spring(float& x, float& v, float target, float omega, float dt) {
+    // Critically damped: no overshoot, smooth in and out.
+    dt = std::min(dt, 0.05f);
+    const float f = 1.0f + omega * dt;
+    const float oo = omega * omega;
+    const float det = 1.0f / (f * f + dt * dt * oo);
+    const float nx = (f * x + dt * v + dt * dt * oo * target) * det;
+    v = (v + dt * oo * (target - x)) * det;
+    x = nx;
+}
+
 void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     const sim::KartState& p = prev_.size() > size_t(index) ? prev_[size_t(index)] : s;
     vec3 pos = glm::mix(p.pos, s.pos, alpha);
@@ -1019,7 +1064,20 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         pos.y += 0.09f * std::abs(std::sin(along / 1.2f * kPi));
     }
     mat4 m = glm::translate(mat4(1.0f), pos) * glm::mat4_cast(rot);
-    m = glm::rotate(m, -s.visual_drift_yaw, vec3(0, 1, 0));
+    // The body's swing: the sim's nose angle and the drift roll, eased by a
+    // spring so going into and out of a drift is one smooth motion.
+    KartPose& pose = poses_[size_t(index % 12)];
+    {
+        const float dt = paused_ ? 0.0f : frame_dt_;
+        const float slide = glm::dot(s.slide, s.right());
+        const float roll_target = (s.drift == sim::DriftState::Drifting ? float(s.drift_dir) * 0.085f : 0.0f) + std::clamp(slide * 0.012f, -0.06f, 0.06f);
+        spring(pose.yaw, pose.yaw_v, s.visual_drift_yaw, 14.0f, dt);
+        spring(pose.roll, pose.roll_v, s.grounded ? roll_target : 0.0f, 11.0f, dt);
+        // A nod when a boost kicks in and when the kart lands.
+        const float pitch_target = s.boost_frames > 0 ? -0.025f : 0.0f;
+        spring(pose.pitch, pose.pitch_v, pitch_target, 9.0f, dt);
+    }
+    m = glm::rotate(m, -pose.yaw, vec3(0, 1, 0));
     if (s.gliding) { // bank into the turn, nose up or down with the stick
         const float bank = glm::mix(p.glide_bank, s.glide_bank, alpha), pitch = glm::mix(p.glide_pitch, s.glide_pitch, alpha);
         m = glm::translate(m, vec3(0, 0.6f, 0));
@@ -1027,31 +1085,65 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         m = glm::rotate(m, -pitch, vec3(1, 0, 0));
         m = glm::translate(m, vec3(0, -0.6f, 0));
     }
-    if (s.trick_anim > 0.0f) m = glm::rotate(m, (1.0f - s.trick_anim) * 2.0f * kPi, vec3(0, 0, 1));
-    if (s.drift == sim::DriftState::Drifting) m = glm::rotate(m, float(s.drift_dir) * 0.08f, vec3(0, 0, 1));
+    auto ease_out = [](float t) { t = std::clamp(t, 0.0f, 1.0f); return 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t); };
+    auto smooth = [](float t) { t = std::clamp(t, 0.0f, 1.0f); return t * t * (3.0f - 2.0f * t); };
+    if (s.trick_anim > 0.0f) { // a barrel roll that whips round and settles, with a little hop
+        const float t = 1.0f - s.trick_anim;
+        m = glm::translate(m, vec3(0, std::sin(t * kPi) * 0.25f, 0));
+        m = glm::rotate(m, smooth(t) * 2.0f * kPi, vec3(0, 0, 1));
+    }
+    m = glm::rotate(m, pose.roll, vec3(0, 0, 1));
+    m = glm::rotate(m, pose.pitch, vec3(1, 0, 0));
     if (s.wall_bump > 0.0f) m = glm::rotate(m, std::sin(float(frame_) * 1.7f) * 0.08f * s.wall_bump, vec3(0, 1, 0));
     const mat4 base = m; // before hit animations, for held items
-    if (s.spin_frames > 0) m = glm::rotate(m, float(s.spin_frames) * 0.42f, vec3(0, 1, 0));
-    if (s.tumble_frames > 0) {
-        const float t = 1.0f - float(s.tumble_frames) / float(world()->item_tuning().tumble_frames);
-        m = glm::translate(m, vec3(0, std::sin(t * kPi) * 1.2f, 0));
-        m = glm::rotate(m, t * 2.0f * kPi, vec3(1, 0, 0));
+    if (s.spin_frames > 0) { // spun out: two fast turns that wind down, bouncing on the wheels
+        const float t = 1.0f - float(s.spin_frames) / float(std::max(1, world()->item_tuning().spin_frames));
+        const float e = ease_out(t);
+        const float bounce = std::abs(std::sin(t * kPi * 3.0f)) * (1.0f - t) * 0.22f;
+        m = glm::translate(m, vec3(0, bounce, 0));
+        m = glm::rotate(m, e * 4.0f * kPi, vec3(0, 1, 0));
+        const float squash = (1.0f - t) * 0.12f * std::max(0.0f, std::cos(t * kPi * 3.0f));
+        m = glm::scale(m, vec3(1.0f + squash, 1.0f - squash * 1.4f, 1.0f + squash));
+    }
+    if (s.tumble_frames > 0) { // blown up: thrown high, flipping over, landing with a thump
+        const float t = 1.0f - float(s.tumble_frames) / float(std::max(1, world()->item_tuning().tumble_frames));
+        m = glm::translate(m, vec3(0, std::sin(t * kPi) * 1.6f, 0));
+        m = glm::rotate(m, smooth(t) * 2.0f * kPi, vec3(1, 0, 0));
+        m = glm::rotate(m, std::sin(t * kPi) * 0.6f, vec3(0, 1, 0));
     }
     if (s.shrink_frames > 0) m = glm::scale(m, vec3(0.55f));
     vec4 tint(1.0f);
     if (s.respawn_frames > 0 || (s.invincible_frames > 0 && (frame_ / 4) % 2)) tint = vec4(1, 1, 1, 1) * 0.6f + 0.4f;
+    // The glow shader: a white-to-red flash when hit, gold while tricking,
+    // rainbow under a Star.
+    int fx = 0;
+    vec4 glow(0.0f);
     if (s.star_frames > 0) {
         const float h = float(frame_) * 0.3f;
-        tint = vec4(1.0f + 0.6f * std::sin(h), 1.0f + 0.6f * std::sin(h + 2.1f), 1.0f + 0.6f * std::sin(h + 4.2f), 1.0f);
+        fx = 3, glow = vec4(0.5f + 0.5f * std::sin(h), 0.5f + 0.5f * std::sin(h + 2.1f), 0.5f + 0.5f * std::sin(h + 4.2f), 0.7f);
     }
-    if (s.ghost_frames > 0) tint = vec4(index == player_ ? 0.45f : 0.12f);
+    if (s.trick_anim > 0.0f) fx = 3, glow = vec4(1.0f, 0.85f, 0.3f, 0.35f * std::sin((1.0f - s.trick_anim) * kPi));
+    if (index < 12 && hit_flash_[size_t(index)] > 0.0f) {
+        const float k = hit_flash_[size_t(index)] / 0.45f;
+        fx = 3, glow = vec4(glm::mix(vec3(1.0f, 0.25f, 0.2f), vec3(1.0f), k * k), k);
+    }
+    if (s.ghost_frames > 0) tint = vec4(index == player_ ? 0.45f : 0.12f), fx = 0;
+    if (fx == 3) tint = glow;
     const KartVisual& visual = kart_visuals_[size_t(index % 12)];
     if (s.grounded && s.respawn_frames == 0)
         renderer_.draw(shadow_mesh_, glm::scale(glm::translate(base, vec3(0, 0.03f, -0.02f)), vec3(1.15f, 1.0f, 1.55f)));
     if (!visual.layout.wheels.empty() && index < 12)
         wheel_angle_[size_t(index)] += s.speed / visual.layout.wheels[0].radius * frame_dt_;
-    if (s.bullet_frames > 0) draw_item_mesh(bullet_mesh_, "bullet", base);
-    else draw_kart_visual(visual, m, tint, index < 12 ? wheel_angle_[size_t(index)] : 0.0f);
+    if (s.bullet_frames > 0) {
+        draw_item_mesh(bullet_mesh_, "bullet", base);
+        // The Bullet's rocket plume: a big blue-white jet from its tail.
+        const float flicker = 0.9f + 0.1f * std::sin(float(frame_) * 2.3f + float(index));
+        draw_flame(base, vec3(0, 0.8f, -1.3f), vec3(0, 0, -1), 0.8f, 1.9f * flicker, vec3(0.4f, 0.7f, 1.0f), float(index) * 0.137f);
+    } else {
+        renderer_.set_fx(fx);
+        draw_kart_visual(visual, m, tint, index < 12 ? wheel_angle_[size_t(index)] : 0.0f);
+        renderer_.set_fx(0);
+    }
     if (s.chomper_frames > 0) {
         const float lunge = s.chomper_cooldown > world()->item_tuning().chomper_cooldown - 10 ? 0.8f : 0.0f;
         draw_item_mesh(chomper_mesh_, "chomper", glm::translate(base, vec3(0, 0.3f, 1.1f + lunge)));
@@ -1062,14 +1154,38 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
 
     const auto& kc = world()->tables().constants;
     emit_kart_particles(index, s, m);
-    if (s.boost_frames > 0) {
-        const float flicker = 0.8f + 0.2f * std::sin(float(frame_) * 1.9f + float(index));
-        vec4 c = to_tint(render::rgba(255, 170, 40));
-        if (s.boost == sim::BoostKind::MiniTurbo) c = to_tint(tier_color(1));
-        if (s.boost == sim::BoostKind::SuperMiniTurbo) c = to_tint(tier_color(2));
-        if (s.boost == sim::BoostKind::UltraMiniTurbo) c = to_tint(tier_color(3));
-        renderer_.draw(flame_mesh_, glm::scale(glm::translate(m, vec3(0, 0.28f, -0.95f)), vec3(1.0f, 1.0f, flicker)), c * 1.4f);
+    if (s.boost_frames > 0 && s.bullet_frames == 0) {
+        // Jets of cartoon flame from the exhausts, in the boost's colour.
+        const float flicker = 0.85f + 0.15f * std::sin(float(frame_) * 2.1f + float(index) * 1.7f);
+        vec3 c(1.0f, 0.55f, 0.12f);
+        if (s.boost == sim::BoostKind::MiniTurbo) c = vec3(to_tint(tier_color(1)));
+        if (s.boost == sim::BoostKind::SuperMiniTurbo) c = vec3(to_tint(tier_color(2)));
+        if (s.boost == sim::BoostKind::UltraMiniTurbo) c = vec3(to_tint(tier_color(3)));
+        if (s.boost == sim::BoostKind::Slipstream) c = vec3(0.45f, 0.8f, 1.0f);
+        const float strength = std::min(1.0f, float(s.boost_frames) / 20.0f); // dies down at the end
+        const float phase = float(index) * 0.137f;
+        if (visual.gobby) {
+            for (float side : {-1.0f, 1.0f}) {
+                const vec3 d = glm::normalize(vec3(side * 0.22f, 0.2f, -1.0f));
+                const vec3 pipe = vec3(side * 0.26f, 0.7f, -1.02f) + glm::normalize(vec3(side * 0.25f, 0.55f, -1.0f)) * 0.3f;
+                draw_flame(m, pipe, d, 0.32f, (0.9f + 0.5f * strength) * flicker, c, phase + (side > 0 ? 0.3f : 0.0f));
+            }
+        } else {
+            draw_flame(m, vec3(0, 0.3f, -0.95f), vec3(0, 0, -1), 0.42f, (1.1f + 0.5f * strength) * flicker, c, phase);
+        }
     }
+}
+
+void App::draw_flame(const mat4& m, vec3 pos, vec3 dir, float width, float length, vec3 color, float phase) {
+    // The flame mesh points down -Z: build a frame whose -Z is `dir`.
+    const vec3 f = -glm::normalize(dir);
+    const vec3 ref = std::abs(f.y) < 0.9f ? vec3(0, 1, 0) : vec3(1, 0, 0);
+    const vec3 r = glm::normalize(glm::cross(ref, f));
+    const vec3 u = glm::cross(f, r);
+    const mat4 frame(vec4(r, 0.0f), vec4(u, 0.0f), vec4(f, 0.0f), vec4(pos, 1.0f));
+    renderer_.set_fx(4);
+    renderer_.draw(flame_mesh_, m * frame * glm::scale(mat4(1.0f), vec3(width, width, length)), vec4(color, std::fmod(phase, 0.98f)));
+    renderer_.set_fx(0);
 }
 
 void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m) {
@@ -1176,15 +1292,57 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
         if (s.boost == sim::BoostKind::SuperMiniTurbo) tier(2);
         if (s.boost == sim::BoostKind::UltraMiniTurbo) tier(3);
         if (s.boost == sim::BoostKind::Slipstream) hot = vec3(0.9f, 1.0f, 1.0f), cool = vec3(0.4f, 0.8f, 1.0f);
-        for (int i = 0, n = count(near ? 40.0f : 12.0f); i < n; ++i) {
+        // Embers that break off the jets and trail behind.
+        for (int i = 0, n = count(near ? 16.0f : 5.0f); i < n; ++i) {
             Particle p;
-            p.pos = at({(R() - 0.5f) * 0.3f, 0.32f, -1.0f});
+            p.pos = at({(R() - 0.5f) * 0.5f, 0.45f + 0.3f * R(), -1.3f});
             p.carry = vel;
-            p.vel = vel + dir({(R() - 0.5f) * 0.4f, 0.3f, -1.0f}) * (4.0f + 2.0f * R());
-            p.life = 0.1f + 0.06f * R();
-            p.size0 = 0.22f, p.size1 = 0.09f;
-            p.sprite = Sp::Flame, p.stretch = 0.045f;
-            p.color0 = vec4(hot, 1.0f), p.color1 = vec4(cool, 1.0f);
+            p.vel = vel + dir({(R() - 0.5f) * 0.6f, 0.4f + 0.4f * R(), -1.0f}) * (3.0f + 2.0f * R());
+            p.life = 0.18f + 0.12f * R();
+            p.size0 = 0.1f, p.size1 = 0.03f;
+            p.sprite = Sp::Dot;
+            p.additive = true;
+            p.color0 = vec4(hot, 1.0f), p.color1 = vec4(cool, 0.0f);
+            p.drag = 1.0f;
+            particles_.emit(p);
+        }
+    }
+    // Spun out: a dizzy halo of arcs circling the head.
+    if (s.spin_frames > 0 || s.tumble_frames > 0) {
+        const float t = float(double(SDL_GetTicks()) / 1000.0) * 7.0f + float(index);
+        for (int i = 0; i < 3; ++i) {
+            const float a = t + float(i) * 2.094f;
+            renderer_.particle(at({0, 1.35f, -0.15f}) + vec3(std::cos(a), 0.0f, std::sin(a)) * 0.55f, 0.24f, vec4(1.0f, 1.0f, 1.0f, 0.95f), false,
+                               vec3(0.0f), 0.0f, Sp::Swoosh, a + 1.57f);
+        }
+    }
+    // The Bullet: smoke rings and wind lines streaming off the rocket's tail.
+    if (s.bullet_frames > 0 && near) {
+        for (int i = 0, n = count(18.0f); i < n; ++i) {
+            Particle p;
+            p.pos = at({(R() - 0.5f) * 0.3f, 0.8f + (R() - 0.5f) * 0.3f, -2.2f - R() * 1.5f});
+            p.carry = vel;
+            p.vel = vel * 0.15f + dir({0, 0, -1}) * 2.0f;
+            p.life = 0.45f + 0.25f * R();
+            p.size0 = 0.3f, p.size1 = 1.1f;
+            p.sprite = R() < 0.4f ? Sp::Ring : Sp::Puff2;
+            p.pop = 0.1f;
+            p.spin = (R() - 0.5f) * 3.0f;
+            p.color0 = vec4(0.85f, 0.92f, 1.0f, 0.9f), p.color1 = vec4(1.0f, 1.0f, 1.0f, 0.0f);
+            p.drag = 2.0f;
+            particles_.emit(p);
+        }
+        for (int i = 0, n = count(30.0f); i < n; ++i) {
+            Particle p;
+            const float a = R() * 6.28f;
+            p.pos = at({std::cos(a) * 0.8f, 0.8f + std::sin(a) * 0.8f, 1.2f});
+            p.carry = vel;
+            p.vel = vel - dir({0, 0, 1}) * 14.0f;
+            p.life = 0.2f;
+            p.size0 = p.size1 = 0.04f;
+            p.sprite = Sp::Streak, p.stretch = 0.08f;
+            p.additive = true;
+            p.color0 = vec4(0.8f, 0.95f, 1.0f, 0.7f), p.color1 = vec4(0.6f, 0.9f, 1.0f, 0.0f);
             particles_.emit(p);
         }
     }
@@ -1300,42 +1458,106 @@ void App::event_particles(const sim::KartEvent& e) {
     const sim::KartState& k = w->karts()[size_t(e.kart)];
     const vec3 base = k.pos + k.up() * 0.2f;
     const vec3 front = base + k.forward() * 0.9f + k.up() * 0.3f;
+    auto R = [&] { return particles_.rnd(); };
+    // A shock ring: pops out flat and fades, the cartoon stand-in for an impact.
+    auto ring = [&](vec3 pos, float size, vec3 color, float life, bool additive = true) {
+        Particle p;
+        p.pos = pos;
+        p.life = life;
+        p.size0 = size * 0.3f, p.size1 = size;
+        p.sprite = Sp::Ring;
+        p.additive = additive;
+        p.color0 = vec4(color, 0.9f), p.color1 = vec4(color, 0.0f);
+        particles_.emit(p);
+    };
+    // Motion arcs whirling round a point: tricks, spins, impacts.
+    auto swooshes = [&](vec3 pos, int n, float radius, float size, vec3 color, float life, float rise) {
+        for (int i = 0; i < n; ++i) {
+            const float a = 2.0f * kPi * (float(i) + R() * 0.5f) / float(n);
+            const vec3 side = glm::normalize(glm::cross(k.up(), vec3(std::cos(a), 0.0f, std::sin(a)) + vec3(1e-3f)));
+            Particle p;
+            p.pos = pos + side * radius;
+            p.vel = side * (radius * 1.5f) + k.up() * rise;
+            p.life = life * (0.7f + 0.5f * R());
+            p.size0 = size, p.size1 = size * 0.5f;
+            p.sprite = Sp::Swoosh;
+            p.angle = a + kPi * 0.5f, p.spin = 4.0f;
+            p.pop = 0.15f;
+            p.color0 = vec4(color, 1.0f), p.color1 = vec4(color, 1.0f);
+            p.drag = 2.0f;
+            particles_.emit(p);
+        }
+    };
+    // Little round sparks that fly out and fall: debris of a knock.
+    auto sparks = [&](vec3 pos, int n, vec3 color, float speed, float life) {
+        for (int i = 0; i < n; ++i) {
+            Particle p;
+            p.pos = pos;
+            vec3 d = particles_.rnd_dir();
+            d.y = std::abs(d.y) * 0.9f + 0.3f;
+            p.vel = d * speed * (0.5f + 0.5f * R());
+            p.life = life * (0.6f + 0.5f * R());
+            p.size0 = p.size1 = 0.05f + 0.03f * R();
+            p.sprite = Sp::Streak, p.stretch = 0.05f;
+            p.additive = true;
+            p.color0 = vec4(color, 1.0f), p.color1 = vec4(color, 0.0f);
+            p.gravity = 14.0f, p.drag = 0.5f;
+            particles_.emit(p);
+        }
+    };
     switch (e.type) {
-    case sim::KartEventType::Land: burst(base, 6, vec3(1.0f, 1.0f, 1.0f), 3.5f, 0.18f, Sp::Puff2, 0.0f, 0.45f); break;
+    case sim::KartEventType::Land:
+        burst(base, 7, vec3(1.0f, 1.0f, 1.0f), 3.5f, 0.2f, Sp::Puff2, 0.0f, 0.45f);
+        ring(base + k.up() * 0.1f, 1.6f, vec3(1.0f, 1.0f, 1.0f), 0.3f, false);
+        break;
     case sim::KartEventType::WallHit:
-        burst(front, 1, vec3(1.0f, 0.86f, 0.3f), 0.0f, 0.35f, Sp::Burst, 0.0f, 0.18f);
-        burst(front, 6, vec3(1.0f, 0.8f, 0.25f), 5.0f, 0.06f, Sp::Sparkle, 8.0f, 0.35f);
+        ring(front, 1.4f, vec3(1.0f, 0.9f, 0.6f), 0.25f);
+        burst(front, 5, vec3(0.9f, 0.9f, 0.92f), 3.0f, 0.16f, Sp::Puff, 0.0f, 0.4f);
+        sparks(front, 8, vec3(1.0f, 0.85f, 0.35f), 6.0f, 0.4f);
         break;
     case sim::KartEventType::Bump:
-        burst(base + k.up() * 0.6f, 1, vec3(1.0f, 0.92f, 0.4f), 0.0f, 0.25f, Sp::Burst, 0.0f, 0.15f);
-        burst(base + k.up() * 0.8f, 4, vec3(1.0f, 0.9f, 0.3f), 3.0f, 0.08f, Sp::Sparkle, 0.0f, 0.45f);
+        ring(base + k.up() * 0.7f, 1.2f, vec3(1.0f, 1.0f, 0.8f), 0.22f);
+        burst(base + k.up() * 0.8f, 4, vec3(1.0f, 1.0f, 1.0f), 2.5f, 0.14f, Sp::Puff2, 0.0f, 0.35f);
         break;
     case sim::KartEventType::ItemBox: {
         const vec3 cs[5] = {{1.0f, 0.35f, 0.4f}, {0.3f, 0.65f, 1.0f}, {1.0f, 0.85f, 0.2f}, {0.4f, 0.95f, 0.5f}, {0.85f, 0.45f, 1.0f}};
         for (const vec3& c : cs) {
             burst(base + k.up() * 0.9f, 3, c, 5.5f, 0.06f, Sp::Confetti, 7.0f, 0.9f);
-            burst(base + k.up() * 0.9f, 1, c, 4.0f, 0.08f, Sp::Sparkle, 0.0f, 0.5f);
+            burst(base + k.up() * 0.9f, 2, c, 4.0f, 0.07f, Sp::Dot, 0.0f, 0.5f);
         }
+        ring(base + k.up() * 0.9f, 2.2f, vec3(0.7f, 0.9f, 1.0f), 0.35f);
         break;
     }
     case sim::KartEventType::Hit:
-        burst(base + k.up() * 0.5f, 1, vec3(1.0f, 0.9f, 0.35f), 0.0f, 0.5f, Sp::Burst, 0.0f, 0.2f);
-        burst(base + k.up() * 0.9f, 5, vec3(1.0f, 0.88f, 0.25f), 3.0f, 0.1f, Sp::Sparkle, -1.0f, 0.7f);
+        if (e.kart < 12) hit_flash_[size_t(e.kart)] = 0.45f;
+        ring(base + k.up() * 0.6f, 3.0f, vec3(1.0f, 0.95f, 0.85f), 0.3f);
+        burst(base + k.up() * 0.5f, 10, vec3(1.0f, 1.0f, 1.0f), 4.0f, 0.3f, Sp::Puff, 0.0f, 0.5f);
+        swooshes(base + k.up() * 0.8f, 6, 1.0f, 0.55f, vec3(1.0f, 1.0f, 1.0f), 0.45f, 1.5f);
         break;
     case sim::KartEventType::Explosion:
-        burst(base + k.up() * 0.5f, 1, vec3(1.0f, 0.85f, 0.3f), 0.0f, 1.2f, Sp::Burst, 0.0f, 0.22f);
-        burst(base, 8, vec3(1.0f, 0.55f, 0.15f), 6.0f, 0.22f, Sp::Flame, 0.0f, 0.35f);
-        burst(base, 10, vec3(0.32f, 0.3f, 0.34f), 4.0f, 0.45f, Sp::Puff, -1.5f, 1.0f);
+        if (e.kart < 12) hit_flash_[size_t(e.kart)] = 0.45f;
+        burst(base, 6, vec3(0.25f, 0.22f, 0.22f), 3.0f, 0.4f, Sp::Puff, -1.5f, 0.9f); // soot off the kart
         break;
-    case sim::KartEventType::Respawn: burst(base + k.up() * 0.5f, 10, vec3(0.75f, 0.92f, 1.0f), 2.5f, 0.09f, Sp::Sparkle, -2.0f, 0.8f); break;
-    case sim::KartEventType::Trick: burst(base + k.up() * 0.5f, 6, vec3(1.0f, 0.95f, 0.45f), 4.0f, 0.09f, Sp::Sparkle, 0.0f, 0.5f); break;
+    case sim::KartEventType::Respawn:
+        ring(base + k.up() * 0.3f, 2.6f, vec3(0.6f, 0.9f, 1.0f), 0.5f);
+        burst(base + k.up() * 0.5f, 10, vec3(0.75f, 0.92f, 1.0f), 2.5f, 0.1f, Sp::Dot, -2.0f, 0.8f);
+        break;
+    case sim::KartEventType::Trick:
+        ring(base + k.up() * 0.6f, 2.4f, vec3(1.0f, 0.9f, 0.5f), 0.3f);
+        swooshes(base + k.up() * 0.6f, 8, 1.1f, 0.45f, vec3(1.0f, 0.95f, 0.75f), 0.4f, 0.6f);
+        sparks(base + k.up() * 0.6f, 6, vec3(1.0f, 0.85f, 0.4f), 4.0f, 0.4f);
+        break;
     case sim::KartEventType::Smash:
         burst(front, 5, vec3(0.92f, 0.82f, 0.62f), 3.0f, 0.2f, Sp::Puff, 0.0f, 0.55f);
         burst(front, 5, vec3(0.6f, 0.45f, 0.3f), 5.0f, 0.06f, Sp::Rock, 14.0f, 0.7f);
+        ring(front, 1.6f, vec3(1.0f, 0.95f, 0.8f), 0.22f);
         break;
     case sim::KartEventType::TireKnock: burst(front, 4, vec3(0.8f, 0.8f, 0.82f), 2.5f, 0.18f, Sp::Puff2, 0.0f, 0.45f); break;
-    case sim::KartEventType::TireBounce: burst(base, 4, vec3(1.0f, 0.95f, 0.5f), 3.5f, 0.08f, Sp::Sparkle, 3.0f, 0.5f); break;
-    case sim::KartEventType::Boost: {
+    case sim::KartEventType::TireBounce:
+        ring(base, 1.4f, vec3(1.0f, 1.0f, 0.8f), 0.22f);
+        burst(base, 4, vec3(1.0f, 1.0f, 1.0f), 2.5f, 0.14f, Sp::Puff2, 0.0f, 0.4f);
+        break;
+    case sim::KartEventType::Boost: { // the drift's pay-off keeps its spark star
         const int t = e.value == int(sim::BoostKind::MiniTurbo) ? 1 : e.value == int(sim::BoostKind::SuperMiniTurbo) ? 2
                     : e.value == int(sim::BoostKind::UltraMiniTurbo) ? 3 : 0;
         const vec3 back = base - k.forward() * 1.0f + k.up() * 0.3f;
@@ -1343,11 +1565,83 @@ void App::event_particles(const sim::KartEvent& e) {
             const vec3 c = vec3(to_tint(tier_color(t)));
             burst(back, 1, glm::mix(c, vec3(1.0f), 0.4f), 0.0f, 0.6f, Sp::Burst, 0.0f, 0.18f);
             burst(back, 8, c, 5.0f, 0.13f, Sp::Sparkle, 3.0f, 0.45f);
+            ring(back, 1.8f, c, 0.25f);
         }
-        if (e.value == int(sim::BoostKind::Slipstream)) burst(base + k.up() * 0.5f, 6, vec3(0.85f, 0.97f, 1.0f), 4.0f, 0.1f, Sp::Sparkle, 0.0f, 0.4f);
+        if (e.value == int(sim::BoostKind::Slipstream)) {
+            ring(base + k.up() * 0.5f, 2.0f, vec3(0.7f, 0.9f, 1.0f), 0.3f);
+            sparks(base + k.up() * 0.5f, 6, vec3(0.85f, 0.97f, 1.0f), 3.0f, 0.4f);
+        }
         break;
     }
     default: break;
+    }
+}
+
+void App::explosion_burst(vec3 pos, float radius) {
+    using Sp = render::Renderer::Sprite;
+    auto R = [&] { return particles_.rnd(); };
+    const float sz = radius / 6.5f; // tuned at the default radius
+    // A flat shock ring on the ground and a flash in the air.
+    for (int i = 0; i < 2; ++i) {
+        Particle p;
+        p.pos = pos + vec3(0, 0.3f + 0.5f * float(i), 0);
+        p.life = 0.35f + 0.1f * float(i);
+        p.size0 = 1.0f * sz, p.size1 = (7.0f + 2.0f * float(i)) * sz;
+        p.sprite = Sp::Ring;
+        p.additive = true;
+        p.color0 = vec4(1.0f, 0.95f, 0.8f, 1.0f), p.color1 = vec4(1.0f, 0.5f, 0.2f, 0.0f);
+        particles_.emit(p);
+    }
+    // Tongues of flame thrown outward.
+    for (int i = 0; i < 16; ++i) {
+        Particle p;
+        p.pos = pos + vec3(0, 0.4f, 0);
+        vec3 d = particles_.rnd_dir();
+        d.y = std::abs(d.y) * 0.8f + 0.25f;
+        p.vel = d * (7.0f + 5.0f * R()) * sz;
+        p.carry = vec3(0.0f);
+        p.life = 0.3f + 0.25f * R();
+        p.size0 = 0.9f * sz, p.size1 = 0.2f * sz;
+        p.sprite = Sp::Flame, p.stretch = 0.03f;
+        p.additive = true;
+        p.color0 = vec4(1.0f, 0.9f, 0.4f, 1.0f), p.color1 = vec4(1.0f, 0.35f, 0.1f, 0.6f);
+        p.drag = 2.5f;
+        particles_.emit(p);
+    }
+    // Thick dark smoke that billows up and pales as it thins.
+    for (int i = 0; i < 22; ++i) {
+        Particle p;
+        vec3 d = particles_.rnd_dir();
+        d.y = std::abs(d.y);
+        p.pos = pos + d * 0.8f * sz + vec3(0, 0.3f, 0);
+        p.vel = d * (2.0f + 3.0f * R()) * sz + vec3(0, 2.0f + 2.0f * R(), 0);
+        p.life = 1.1f + 0.9f * R();
+        p.size0 = (0.6f + 0.4f * R()) * sz, p.size1 = (1.8f + 0.8f * R()) * sz;
+        p.sprite = R() < 0.5f ? Sp::Puff : Sp::Puff2;
+        p.pop = 0.12f;
+        p.angle = R() * 6.28f, p.spin = (R() - 0.5f) * 2.0f;
+        p.color0 = vec4(0.22f, 0.2f, 0.21f, 1.0f), p.color1 = vec4(0.6f, 0.58f, 0.58f, 0.0f);
+        p.gravity = -1.5f, p.drag = 1.8f;
+        particles_.emit(p);
+    }
+    // Sparks and chunks of debris arcing out.
+    for (int i = 0; i < 18; ++i) {
+        Particle p;
+        p.pos = pos + vec3(0, 0.5f, 0);
+        vec3 d = particles_.rnd_dir();
+        d.y = std::abs(d.y) * 1.2f + 0.3f;
+        const bool rock = R() < 0.4f;
+        p.vel = glm::normalize(d) * (6.0f + 7.0f * R()) * sz;
+        p.life = 0.6f + 0.6f * R();
+        p.size0 = p.size1 = rock ? 0.08f + 0.08f * R() : 0.06f;
+        p.sprite = rock ? Sp::Rock : Sp::Streak;
+        p.stretch = rock ? 0.0f : 0.06f;
+        p.additive = !rock;
+        p.spin = rock ? (R() - 0.5f) * 16.0f : 0.0f;
+        p.color0 = rock ? vec4(0.3f, 0.26f, 0.24f, 1.0f) : vec4(1.0f, 0.85f, 0.4f, 1.0f);
+        p.color1 = rock ? vec4(0.3f, 0.26f, 0.24f, 1.0f) : vec4(1.0f, 0.4f, 0.1f, 0.0f);
+        p.gravity = 16.0f, p.drag = 0.4f;
+        particles_.emit(p);
     }
 }
 
@@ -1462,67 +1756,6 @@ void App::draw_movers(const sim::World& w, float alpha) {
         if (m.kind == sim::Track::Mover::Kind::Platform)
             renderer_.draw(shadow_mesh_, glm::scale(glm::translate(model, vec3(0, 0.02f, 0)), vec3(m.half.x * 0.9f, 1.0f, m.half.z * 0.7f)));
     }
-}
-
-std::vector<render::MeshId> App::load_course_meshes(const sim::TrackDef::MeshCourse& mc) {
-    std::vector<render::MeshId> ids;
-    std::string err;
-    auto model = render::load_model(mc.file, &err);
-    if (!model) {
-        log_warn("Course model {}: {}", mc.file, err);
-        return ids;
-    }
-    render::transform_model(*model, glm::translate(mat4(1.0f), mc.offset) * glm::scale(mat4(1.0f), vec3(mc.scale)));
-    const std::string dir = std::filesystem::path(mc.file).parent_path().string() + "/";
-    // Big textures are halved until 1024 at most: plenty at kart height, and light on memory.
-    auto shrink = [](render::ImageData& img) {
-        while (img.width > 1024 || img.height > 1024) {
-            const int w = std::max(1, img.width / 2), h = std::max(1, img.height / 2);
-            std::vector<uint8_t> out(size_t(w) * size_t(h) * 4);
-            for (int y = 0; y < h; ++y)
-                for (int x = 0; x < w; ++x)
-                    for (int c = 0; c < 4; ++c) {
-                        int sum = 0;
-                        for (int dy = 0; dy < 2; ++dy)
-                            for (int dx = 0; dx < 2; ++dx)
-                                sum += img.rgba[(size_t(std::min(img.height - 1, 2 * y + dy)) * size_t(img.width) + size_t(std::min(img.width - 1, 2 * x + dx))) * 4 + size_t(c)];
-                        out[(size_t(y) * size_t(w) + size_t(x)) * 4 + size_t(c)] = uint8_t(sum / 4);
-                    }
-            img = {w, h, std::move(out)};
-        }
-    };
-    std::map<std::string, render::TextureId> textures;
-    for (auto& part : model->parts) {
-        if (std::find(mc.hidden.begin(), mc.hidden.end(), part.material) != mc.hidden.end()) continue;
-        std::string glow_file;
-        for (const auto& [m, f] : mc.glow)
-            if (m == part.material) glow_file = dir + f;
-        const std::string key = part.texture + "|" + glow_file;
-        render::TextureId tex = 0;
-        if (auto t = textures.find(key); t != textures.end()) tex = t->second;
-        else if (!part.texture.empty()) {
-            if (auto img = render::load_image(part.texture)) {
-                shrink(*img);
-                if (!glow_file.empty())
-                    if (auto em = render::load_image(glow_file)) {
-                        shrink(*em);
-                        // Glow textures: alpha 1 = lit normally, 0 = shines by itself.
-                        for (int y = 0; y < img->height; ++y)
-                            for (int x = 0; x < img->width; ++x) {
-                                const int ex = x * em->width / img->width, ey = y * em->height / img->height;
-                                const uint8_t* e = &em->rgba[(size_t(ey) * size_t(em->width) + size_t(ex)) * 4];
-                                const float lum = (0.3f * e[0] + 0.59f * e[1] + 0.11f * e[2]) / 255.0f;
-                                img->rgba[(size_t(y) * size_t(img->width) + size_t(x)) * 4 + 3] = uint8_t(255.0f * (1.0f - std::min(1.0f, lum * 0.9f)));
-                            }
-                    }
-                tex = renderer_.upload_texture(img->width, img->height, img->rgba.data());
-            }
-            textures[key] = tex;
-        }
-        ids.push_back(renderer_.upload_mesh(part.mesh, tex, part.two_sided, false, false, !glow_file.empty()));
-    }
-    log_info("Course model: {} parts, {} textures", ids.size(), textures.size());
-    return ids;
 }
 
 render::MeshId App::single_prop(const std::string& name) {
@@ -1686,10 +1919,44 @@ void App::draw_items(const sim::World& w) {
             draw_item_mesh(boomerang_mesh_, "boomerang", glm::rotate(glm::translate(m, vec3(0, 0.3f, 0)), float(e.age) * 0.6f, vec3(0, 1, 0)));
             break;
         case sim::EntityType::Explosion: {
-            const float t = 1.0f - float(e.life) / 30.0f;
-            const float r = w.item_tuning().explosion_radius * (0.3f + 0.7f * t) / 0.3f;
-            renderer_.draw(ball_mesh_, glm::scale(glm::translate(m, vec3(0, 0.3f, 0)), vec3(r)),
-                           vec4(1.8f, 1.0f - 0.5f * t, 0.3f, 1.0f));
+            const float t = std::clamp(1.0f - float(e.life) / 30.0f, 0.0f, 1.0f);
+            const float R = w.item_tuning().explosion_radius;
+            if (e.age <= 2) { // new: burst once
+                bool seen = false;
+                for (const Blast& bl : blasts_) seen |= glm::distance(bl.pos, e.pos) < 1.5f;
+                if (!seen) {
+                    blasts_.push_back({e.pos, 0.0f});
+                    explosion_burst(e.pos, R);
+                }
+            }
+            // A cloud of fireballs that swell and burn away from the outside in.
+            const float grow = 1.0f - (1.0f - t) * (1.0f - t);
+            renderer_.set_fx(5);
+            const vec3 offs[3] = {vec3(0.0f), vec3(0.45f, 0.55f, 0.2f), vec3(-0.4f, 0.75f, -0.3f)};
+            for (int i = 0; i < 3; ++i) {
+                const float p = std::clamp(t * 1.15f - 0.1f * float(i), 0.0f, 1.0f);
+                const float r = R * (0.3f + 0.5f * grow) * (i == 0 ? 0.85f : 0.55f);
+                renderer_.draw(fireball_mesh_, glm::scale(glm::translate(m, vec3(0, 0.3f + 0.6f * t, 0) + offs[i] * R * grow), vec3(r)), vec4(1.0f, 1.0f, 1.0f, p));
+            }
+            renderer_.set_fx(0);
+            // Smoke keeps rolling out while it burns.
+            if (!paused_ && t < 0.6f) {
+                const float n = 30.0f * frame_dt_;
+                for (int i = 0, c = int(n) + (particles_.rnd() < n - std::floor(n) ? 1 : 0); i < c; ++i) {
+                    Particle p;
+                    const vec3 d = particles_.rnd_dir();
+                    p.pos = e.pos + vec3(0, 0.6f, 0) + d * 0.4f;
+                    p.vel = vec3(d.x, std::abs(d.y) + 1.5f, d.z) * 2.5f;
+                    p.life = 0.9f + 0.6f * particles_.rnd();
+                    p.size0 = 0.5f, p.size1 = 1.5f;
+                    p.sprite = particles_.rnd() < 0.5f ? render::Renderer::Sprite::Puff : render::Renderer::Sprite::Puff2;
+                    p.pop = 0.15f;
+                    p.spin = (particles_.rnd() - 0.5f) * 2.0f;
+                    p.color0 = vec4(0.3f, 0.27f, 0.27f, 1.0f), p.color1 = vec4(0.65f, 0.62f, 0.62f, 0.0f);
+                    p.gravity = -1.5f, p.drag = 1.5f;
+                    particles_.emit(p);
+                }
+            }
             break;
         }
         }
@@ -1726,7 +1993,12 @@ void App::render(float alpha, float dt) {
         draw_breakables(*w);
         draw_movers(*w, alpha);
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
-        if (!paused_) particles_.update(frame_dt_);
+        if (!paused_) {
+            particles_.update(frame_dt_);
+            for (float& f : hit_flash_) f = std::max(0.0f, f - frame_dt_);
+            for (Blast& bl : blasts_) bl.age += frame_dt_;
+            std::erase_if(blasts_, [](const Blast& bl) { return bl.age > 1.0f; });
+        }
         // Skid marks fade over eight seconds.
         for (Skid& k : skids_) k.age += paused_ ? 0.0f : frame_dt_;
         std::erase_if(skids_, [](const Skid& k) { return k.age > 10.0f; });

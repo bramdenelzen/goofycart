@@ -1049,17 +1049,26 @@ MeshData make_spark_mesh() {
 }
 
 MeshData make_flame_mesh() {
+    // A teardrop pointing backwards (-Z), unit long and unit wide, with
+    // texture v from the root (0) to the tip (1) for the flame shader.
     MeshBuilder b;
-    // Cone pointing backwards (-Z) from the exhaust.
-    const int sides = 5;
-    const float r = 0.16f, len = 0.9f;
-    const vec3 tip(0, 0, -len);
-    for (int i = 0; i < sides; ++i) {
-        const float a0 = 2.0f * kPi * float(i) / float(sides), a1 = 2.0f * kPi * float(i + 1) / float(sides);
-        const vec3 p0(std::cos(a0) * r, std::sin(a0) * r, 0), p1(std::cos(a1) * r, std::sin(a1) * r, 0);
-        b.tri(p1, p0, tip, rgba(255, 255, 255));
-        b.tri(vec3(0), p0, p1, rgba(255, 255, 255));
+    const int rows = 16, cols = 14;
+    std::vector<vec3> pts;
+    for (int r = 0; r < rows; ++r) {
+        const float s = float(r) / float(rows - 1);
+        const float rad = 0.5f * std::pow(std::sin(kPi * std::pow(s, 0.7f)), 0.8f) * (r == rows - 1 ? 0.0f : 1.0f);
+        for (int c = 0; c < cols; ++c) {
+            const float a = 2.0f * kPi * float(c) / float(cols);
+            pts.push_back({std::cos(a) * rad, std::sin(a) * rad, -s});
+        }
     }
+    b.grid(pts, rows, cols, true, rgba(255, 255, 255), 1.0f, 1.0f);
+    return b.take();
+}
+
+MeshData make_fireball_mesh() {
+    MeshBuilder b;
+    b.sphere({0, 0, 0}, 1.0f, rgba(255, 255, 255), 22, 14);
     return b.take();
 }
 

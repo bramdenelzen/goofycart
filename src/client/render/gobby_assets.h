@@ -8,8 +8,11 @@
 
 #include "gk/sim/stats.h"
 
+#include <functional>
 #include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace gk::render {
 
@@ -47,6 +50,13 @@ PaintedModel make_glass_item_box();
 PaintedModel make_banana_peel();
 PaintedModel make_tnt_bundle();
 PaintedModel make_turtle_shell(vec4 color, bool spiked_and_winged);
+
+// Builds named models on every core at once (painting is pure CPU work and
+// the models are independent), returning them by name.
+using ModelJob = std::pair<std::string, std::function<PaintedModel()>>;
+std::map<std::string, PaintedModel> build_models_parallel(std::vector<ModelJob> jobs);
+// Runs `n` independent jobs across the cores and waits for them all.
+void parallel_for(int n, const std::function<void(int)>& job);
 
 // Writes <dir>/<name>/<name>.obj, .mtl and .png.
 bool export_painted_model(const PaintedModel& model, const std::string& dir, const std::string& name, std::string* error = nullptr);
