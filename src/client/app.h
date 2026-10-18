@@ -34,6 +34,7 @@ struct AppOptions {
     bool autodrive = false;       // the player kart drives itself (demos, screenshots)
     bool pixel_look = false;      // --pixel: the low-res look regardless of settings (screenshots)
     bool volumetric = false;      // --volumetric: sun shafts and mist on regardless of settings (screenshots)
+    bool checkpoints = false;     // --checkpoints: checkpoint lines on the minimap regardless of settings (screenshots)
     int spawn_obstacle = -1;
     int spawn_sample = -1; // screenshots: start the player on this road sample (side roads too)
     int start_lap = 0;     // screenshots: everyone starts on this lap, for the track's lap gates

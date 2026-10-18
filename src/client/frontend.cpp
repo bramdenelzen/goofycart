@@ -161,8 +161,8 @@ void draw_online_status(render::Renderer& r, const std::string& text, bool faile
 // ---------------------------------------------------------------- options
 
 namespace {
-constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "VOLUMETRIC LIGHT", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "CRASH REPORTS", "CONTROLS", "BACK"};
-constexpr int kOptionCount = 11;
+constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "VOLUMETRIC LIGHT", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "CRASH REPORTS", "MAP CHECKPOINTS", "CONTROLS", "BACK"};
+constexpr int kOptionCount = 12;
 } // namespace
 
 OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions& act) {
@@ -183,6 +183,7 @@ OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions&
     case 6: st.show_help = !st.show_help; break;
     case 7: st.rumble = !st.rumble; break;
     case 8: st.crash_reports = !st.crash_reports; break;
+    case 9: st.show_checkpoints = !st.show_checkpoints; break;
     default: return OptionsAction::None;
     }
     return OptionsAction::Changed;
@@ -206,7 +207,7 @@ void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st
                                 b < v ? ui::kGoldDeep : rgba(255, 255, 255, sel ? 90 : 40));
             }
         } else if (i < kOptionCount - 2) {
-            const bool on = i == 3 ? st.low_res : i == 4 ? st.volumetric : i == 5 ? st.fullscreen : i == 6 ? st.show_help : i == 7 ? st.rumble : st.crash_reports;
+            const bool on = i == 3 ? st.low_res : i == 4 ? st.volumetric : i == 5 ? st.fullscreen : i == 6 ? st.show_help : i == 7 ? st.rumble : i == 8 ? st.crash_reports : st.show_checkpoints;
             ui::option_row(r, rx, ry, rw, kOptionRows[i], on ? "<  ON  >" : "<  OFF  >", sel);
         } else {
             ui::option_row(r, rx, ry, rw, kOptionRows[i], nullptr, sel);
