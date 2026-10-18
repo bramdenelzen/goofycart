@@ -219,10 +219,15 @@ TEST_CASE("kart state survives the wire within quantisation") {
     s.coins = 7;
     s.finished = true;
     s.finish_tick = 5555;
+    s.susp_y = 0.083f;
+    s.susp_vy = -1.7f;
+    s.susp_pitch = -0.06f;
+    s.susp_roll_v = 0.9f;
+    s.susp_wobble = 4;
 
     Writer w;
     write_kart(w, s);
-    CHECK(w.data().size() < 72);
+    CHECK(w.data().size() < 86);
     Reader r(w.data());
     const sim::KartState d = read_kart(r);
     CHECK(r.ok());
@@ -242,6 +247,11 @@ TEST_CASE("kart state survives the wire within quantisation") {
     CHECK(d.coins == 7);
     CHECK(d.finished);
     CHECK(d.finish_tick == 5555);
+    CHECK(d.susp_y == doctest::Approx(0.083f).epsilon(0.001));
+    CHECK(d.susp_vy == doctest::Approx(-1.7f).epsilon(0.001));
+    CHECK(d.susp_pitch == doctest::Approx(-0.06f).epsilon(0.001));
+    CHECK(d.susp_roll_v == doctest::Approx(0.9f).epsilon(0.001));
+    CHECK(d.susp_wobble == 4);
 }
 
 TEST_CASE("messages round-trip and reject garbage") {

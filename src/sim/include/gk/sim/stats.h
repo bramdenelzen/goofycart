@@ -83,6 +83,7 @@ struct KartParams {
     float slip_traction = 0.5f;     // 0 = slides most on sand/ice, 1 = least
     float mt_charge = 1.0f;         // multiplier on mini-turbo charge rate
     float mt_boost = 1.0f;          // multiplier on mini-turbo and trick boost duration
+    float weight01 = 0.5f;          // the weight Level as 0..1: tunes the suspension (heavier settles slower, bounces lower)
     int invincibility_frames = 60;
     DriftType drift = DriftType::Outward;
     bool is_bike = false;
@@ -160,6 +161,24 @@ struct PhysicsConstants {
     int water_hysteresis = 6;           // frames in (or out of) the water before the mode flips
     int trick_window_frames = 18;
     int respawn_frames = 90;
+
+    // Suspension: a sprung body over the kart's ground contact, visual apart
+    // from a short landing wobble. Pairs are (lightest, heaviest) and the
+    // weight Level blends between them. Provisional, tuned by feel.
+    float susp_freq_light = 16.0f, susp_freq_heavy = 12.0f;      // rad/s, bounce
+    float susp_damping_light = 0.38f, susp_damping_heavy = 0.40f; // damping ratio
+    float susp_land_gain_light = 0.35f, susp_land_gain_heavy = 0.2f; // compression speed per m/s of fall
+    float susp_angle_freq = 11.0f;     // rad/s, pitch and roll
+    float susp_angle_damping = 0.35f;
+    float susp_pitch_per_accel = 0.004f; // rad per m/s^2 along the heading (+ nose up)
+    float susp_roll_per_lateral = 0.0022f; // rad per m/s^2 sideways
+    float susp_slope_gain = 0.6f;      // compression speed per (m/s x rad) of slope change
+    float susp_slope_lag = 0.5f;       // the body lags this much of a pitch or roll change in the ground
+    float susp_max_compress = 0.18f, susp_max_extend = 0.12f; // metres
+    float susp_max_pitch = 0.14f, susp_max_roll = 0.12f;      // radians
+    float susp_air_droop = 0.06f;      // metres the body hangs while airborne
+    int susp_wobble_frames = 10;       // after bottoming out on a landing
+    float susp_wobble_steer = 0.45f;   // fraction of steering lost during the wobble
 };
 
 class PhysicsTables {

@@ -214,11 +214,25 @@ void race(const TrackDef& def) {
     }
     std::vector<KartInput> in(12);
     int frames = 0, first_lap = 0, respawns = 0, wall_hits = 0;
+    // Suspension: how hard it works over the race, to tune it by.
+    float max_y = 0.0f, max_pitch = 0.0f, max_roll = 0.0f;
+    long busy = 0, pinned = 0, samples = 0;
+    int wobbles = 0;
     auto done = [&] { return std::all_of(w.karts().begin(), w.karts().end(), [](const KartState& k) { return k.finished; }); };
     while (!done() && frames < 60 * 60 * 4) {
         for (int i = 0; i < 12; ++i) in[size_t(i)] = cpu_input(w, i, cpu_skill(i % 3 == 0 ? CpuLevel::Hard : CpuLevel::Normal, i));
         w.tick(in);
         ++frames;
+        for (const KartState& k : w.karts()) {
+            if (k.finished || !k.grounded) continue;
+            ++samples;
+            max_y = std::max(max_y, k.susp_y);
+            max_pitch = std::max(max_pitch, std::abs(k.susp_pitch));
+            max_roll = std::max(max_roll, std::abs(k.susp_roll));
+            busy += std::abs(k.susp_y) > 0.02f || std::abs(k.susp_pitch) > 0.03f || std::abs(k.susp_roll) > 0.03f;
+            pinned += std::abs(k.susp_pitch) >= tables.constants.susp_max_pitch - 1e-4f || std::abs(k.susp_roll) >= tables.constants.susp_max_roll - 1e-4f;
+            wobbles += k.susp_wobble == uint8_t(tables.constants.susp_wobble_frames - 1);
+        }
         for (const auto& e : w.events()) {
             if (e.type == KartEventType::Respawn && !w.karts()[size_t(e.kart)].finished) {
                 ++respawns;
@@ -234,6 +248,9 @@ void race(const TrackDef& def) {
     }
     std::printf("  race: first lap %.1f s, %s after %.1f s, %d respawns, %d wall hits\n", first_lap / 60.0f,
                 done() ? "finished" : "NOT FINISHED", frames / 60.0f, respawns, wall_hits);
+    std::printf("  suspension: max compression %.2f m, pitch %.2f, roll %.2f rad; moving %.0f%% of the time, at a cap %.1f%%, %d hard landings\n",
+                max_y, max_pitch, max_roll, 100.0 * double(busy) / double(std::max(1L, samples)),
+                100.0 * double(pinned) / double(std::max(1L, samples)), wobbles);
 }
 
 } // namespace

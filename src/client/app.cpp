@@ -334,12 +334,13 @@ void App::draw_model(const GpuModel& model, const mat4& m, vec4 tint) {
     for (render::MeshId id : model.meshes) renderer_.draw(id, m, tint);
 }
 
-void App::draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle) {
-    const mat4 lifted = glm::translate(m, vec3(0, v.layout.lift, 0));
+void App::draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle, const mat4* body) {
+    const mat4& bm = body ? *body : m;
+    const mat4 lifted = glm::translate(bm, vec3(0, v.layout.lift, 0));
     if (v.body_model) draw_model(*v.body_model, lifted, tint);
-    if (v.body) renderer_.draw(v.body, m, tint);
-    if (v.driver_model) draw_model(*v.driver_model, glm::translate(m, v.layout.seat), tint);
-    if (v.driver) renderer_.draw(v.driver, m, tint);
+    if (v.body) renderer_.draw(v.body, bm, tint);
+    if (v.driver_model) draw_model(*v.driver_model, glm::translate(bm, v.layout.seat), tint);
+    if (v.driver) renderer_.draw(v.driver, bm, tint);
     if (v.tire_model) {
         for (const auto& w : v.layout.wheels) {
             const float ref = v.tire_model->bounds_max.y - v.tire_model->bounds_min.y;
@@ -1134,7 +1135,8 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     {
         const float dt = paused_ ? 0.0f : frame_dt_;
         const float slide = glm::dot(s.slide, s.right());
-        const float roll_target = (s.drift == sim::DriftState::Drifting ? float(s.drift_dir) * 0.085f : 0.0f) + std::clamp(slide * 0.012f, -0.06f, 0.06f);
+        // The drift's lean comes from the suspension (sim) now; this is the slide's.
+        const float roll_target = std::clamp(slide * 0.012f, -0.06f, 0.06f);
         spring(pose.yaw, pose.yaw_v, s.visual_drift_yaw, 14.0f, dt);
         spring(pose.roll, pose.roll_v, s.grounded ? roll_target : 0.0f, 11.0f, dt);
         // A nod when a boost kicks in and when the kart lands.
@@ -1176,6 +1178,18 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         m = glm::rotate(m, std::sin(t * kPi) * 0.6f, vec3(0, 1, 0));
     }
     if (s.shrink_frames > 0) m = glm::scale(m, vec3(0.55f));
+    // The sprung body over the wheels: it sinks, pitches and rolls about a
+    // point near the axles while the wheels stay on the ground.
+    mat4 body = m;
+    {
+        const float y = glm::mix(p.susp_y, s.susp_y, alpha);
+        const float pitch = glm::mix(p.susp_pitch, s.susp_pitch, alpha), roll = glm::mix(p.susp_roll, s.susp_roll, alpha);
+        const vec3 pivot(0.0f, 0.35f, 0.0f);
+        body = glm::translate(body, pivot - vec3(0.0f, y, 0.0f));
+        body = glm::rotate(body, -pitch, vec3(1, 0, 0)); // + nose up
+        body = glm::rotate(body, roll, vec3(0, 0, 1));   // + right side down
+        body = glm::translate(body, -pivot);
+    }
     vec4 tint(1.0f);
     if (s.respawn_frames > 0 || (s.invincible_frames > 0 && (frame_ / 4) % 2)) tint = vec4(1, 1, 1, 1) * 0.6f + 0.4f;
     // The glow shader: a white-to-red flash when hit, gold while tricking,
@@ -1205,7 +1219,7 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         draw_flame(base, vec3(0, 0.8f, -1.3f), vec3(0, 0, -1), 0.8f, 1.9f * flicker, vec3(0.4f, 0.7f, 1.0f), float(index) * 0.137f);
     } else {
         renderer_.set_fx(fx);
-        draw_kart_visual(visual, m, tint, index < 12 ? wheel_angle_[size_t(index)] : 0.0f);
+        draw_kart_visual(visual, m, tint, index < 12 ? wheel_angle_[size_t(index)] : 0.0f, &body);
         renderer_.set_fx(0);
     }
     if (s.chomper_frames > 0) {
@@ -1214,7 +1228,7 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     }
     if (s.item != sim::Item::None && s.roulette == 0 && s.bullet_frames == 0)
         draw_held_item(s.item, s.item_uses, base, s.trailing);
-    if (s.gliding) draw_glider_visual(visual, m, tint);
+    if (s.gliding) draw_glider_visual(visual, body, tint);
 
     const auto& kc = world()->tables().constants;
     emit_kart_particles(index, s, m);
@@ -1232,10 +1246,10 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
             for (float side : {-1.0f, 1.0f}) {
                 const vec3 d = glm::normalize(vec3(side * 0.22f, 0.2f, -1.0f));
                 const vec3 pipe = vec3(side * 0.26f, 0.7f, -1.02f) + glm::normalize(vec3(side * 0.25f, 0.55f, -1.0f)) * 0.3f;
-                draw_flame(m, pipe, d, 0.32f, (0.9f + 0.5f * strength) * flicker, c, phase + (side > 0 ? 0.3f : 0.0f));
+                draw_flame(body, pipe, d, 0.32f, (0.9f + 0.5f * strength) * flicker, c, phase + (side > 0 ? 0.3f : 0.0f));
             }
         } else {
-            draw_flame(m, vec3(0, 0.3f, -0.95f), vec3(0, 0, -1), 0.42f, (1.1f + 0.5f * strength) * flicker, c, phase);
+            draw_flame(body, vec3(0, 0.3f, -0.95f), vec3(0, 0, -1), 0.42f, (1.1f + 0.5f * strength) * flicker, c, phase);
         }
     }
 }

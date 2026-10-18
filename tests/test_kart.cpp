@@ -195,3 +195,100 @@ TEST_CASE("ice keeps sideways momentum longer than road") {
     };
     CHECK(slide_after_turn(Surface::Ice) > 3.0f * slide_after_turn(Surface::Road));
 }
+
+namespace {
+// Drops the kart from `height` onto flat road and returns the frames from
+// touch-down, with the largest compression seen.
+struct Drop {
+    int land_frame = -1;
+    float peak = 0.0f;
+    int settle_frames = -1; // after landing, until the body stays within 1 cm and 0.01 rad
+    bool wobbled = false;
+};
+Drop drop(float height, float weight01) {
+    Bench b(test::flat_track(), {0, height, 0});
+    b.params.weight01 = weight01;
+    b.kart.grounded = false;
+    Drop d;
+    int still = 0;
+    for (int f = 0; f < 400; ++f) {
+        b.step(KartInput{});
+        if (d.land_frame < 0) {
+            if (b.kart.grounded) d.land_frame = f;
+            else continue;
+        }
+        d.peak = std::max(d.peak, b.kart.susp_y);
+        d.wobbled = d.wobbled || b.kart.susp_wobble > 0;
+        const bool calm = std::abs(b.kart.susp_y) < 0.01f && std::abs(b.kart.susp_pitch) < 0.01f && std::abs(b.kart.susp_vy) < 0.1f;
+        still = calm ? still + 1 : 0;
+        if (still == 10 && d.settle_frames < 0) d.settle_frames = f - d.land_frame - 9;
+    }
+    return d;
+}
+} // namespace
+
+TEST_CASE("suspension: a landing bounces in proportion to the fall and settles in about half a second") {
+    const Drop low = drop(0.6f, 0.5f), high = drop(2.5f, 0.5f);
+    REQUIRE(low.land_frame >= 0);
+    REQUIRE(high.land_frame >= 0);
+    CHECK(low.peak > 0.02f);          // a hop's landing is visible
+    CHECK(high.peak > low.peak * 1.5f); // a bigger fall squashes harder
+    CHECK(high.peak <= test::tables().constants.susp_max_compress + 1e-4f);
+    CHECK(low.settle_frames > 5);     // it bounces, it doesn't just snap back
+    CHECK(low.settle_frames < 45);    // and is calm again within ~0.75 s
+    CHECK(high.settle_frames < 60);
+    CHECK_FALSE(low.wobbled);
+}
+
+TEST_CASE("suspension: heavier karts bounce lower and settle slower; a hard landing wobbles the steering") {
+    const Drop light = drop(1.5f, 0.0f), heavy = drop(1.5f, 1.0f);
+    CHECK(heavy.peak < light.peak);
+    CHECK(heavy.settle_frames > light.settle_frames);
+    const Drop big = drop(9.0f, 0.5f);
+    CHECK(big.wobbled);
+
+    // While wobbling the kart turns less for the same stick.
+    Bench a(test::flat_track()), w(test::flat_track());
+    a.step(gas(), 120);
+    w.kart = a.kart;
+    w.kart.susp_wobble = 8;
+    a.step(gas(1.0f), 4);
+    w.step(gas(1.0f), 4);
+    const float turned_a = std::acos(std::clamp(a.kart.forward().z, -1.0f, 1.0f));
+    const float turned_w = std::acos(std::clamp(w.kart.forward().z, -1.0f, 1.0f));
+    CHECK(turned_w < turned_a * 0.9f);
+}
+
+TEST_CASE("suspension: pitches under acceleration and braking, rolls out of turns, and is deterministic") {
+    Bench b(test::flat_track());
+    float max_pitch = 0.0f;
+    for (int f = 0; f < 20; ++f) b.step(gas()), max_pitch = std::max(max_pitch, b.kart.susp_pitch);
+    CHECK(max_pitch > 0.02f); // nose up pulling away
+    b.step(gas(), 120);
+    float min_pitch = 0.0f;
+    KartInput brake;
+    brake.brake = true;
+    for (int f = 0; f < 20; ++f) b.step(brake), min_pitch = std::min(min_pitch, b.kart.susp_pitch);
+    CHECK(min_pitch < -0.02f); // nose down braking
+
+    Bench t(test::flat_track());
+    t.step(gas(), 120);
+    float min_roll = 0.0f;
+    for (int f = 0; f < 40; ++f) t.step(gas(1.0f)), min_roll = std::min(min_roll, t.kart.susp_roll);
+    CHECK(min_roll < -0.02f); // a right turn leans the body left (out of the turn)
+
+    // Same inputs, same body motion, bit for bit.
+    auto run = [] {
+        Bench r(test::flat_track(), {0, 1.2f, 0});
+        r.kart.grounded = false;
+        for (int f = 0; f < 300; ++f) r.step(gas(std::sin(float(f) * 0.05f), (f / 40) % 2 == 1));
+        return r.kart;
+    };
+    const KartState x = run(), y = run();
+    CHECK(x.susp_y == y.susp_y);
+    CHECK(x.susp_vy == y.susp_vy);
+    CHECK(x.susp_pitch == y.susp_pitch);
+    CHECK(x.susp_roll == y.susp_roll);
+    CHECK(x.susp_roll_v == y.susp_roll_v);
+    CHECK(x.pos == y.pos);
+}

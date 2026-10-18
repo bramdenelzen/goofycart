@@ -250,6 +250,25 @@ bool PhysicsTables::load(const std::string& path, std::string* error) {
             read_const(c, "water_hysteresis", k.water_hysteresis);
             read_const(c, "trick_window_frames", k.trick_window_frames);
             read_const(c, "respawn_frames", k.respawn_frames);
+            read_const(c, "susp_freq_light", k.susp_freq_light);
+            read_const(c, "susp_freq_heavy", k.susp_freq_heavy);
+            read_const(c, "susp_damping_light", k.susp_damping_light);
+            read_const(c, "susp_damping_heavy", k.susp_damping_heavy);
+            read_const(c, "susp_land_gain_light", k.susp_land_gain_light);
+            read_const(c, "susp_land_gain_heavy", k.susp_land_gain_heavy);
+            read_const(c, "susp_angle_freq", k.susp_angle_freq);
+            read_const(c, "susp_angle_damping", k.susp_angle_damping);
+            read_const(c, "susp_pitch_per_accel", k.susp_pitch_per_accel);
+            read_const(c, "susp_roll_per_lateral", k.susp_roll_per_lateral);
+            read_const(c, "susp_slope_gain", k.susp_slope_gain);
+            read_const(c, "susp_slope_lag", k.susp_slope_lag);
+            read_const(c, "susp_max_compress", k.susp_max_compress);
+            read_const(c, "susp_max_extend", k.susp_max_extend);
+            read_const(c, "susp_max_pitch", k.susp_max_pitch);
+            read_const(c, "susp_max_roll", k.susp_max_roll);
+            read_const(c, "susp_air_droop", k.susp_air_droop);
+            read_const(c, "susp_wobble_frames", k.susp_wobble_frames);
+            read_const(c, "susp_wobble_steer", k.susp_wobble_steer);
         }
     } catch (const std::exception& e) {
         if (error) *error = path + ": " + e.what();
@@ -279,6 +298,7 @@ KartParams PhysicsTables::params(const StatArray& lv, const Part& body, EngineCl
     p.mt_charge = C(Stat::MiniTurbo);
     p.mt_boost = mt_boost.at(L(Stat::MiniTurbo));
     p.invincibility_frames = int(C(Stat::Invincibility));
+    p.weight01 = float(L(Stat::Weight)) / float(kMaxLevel);
     p.drift = body.drift;
     p.is_bike = body.is_bike;
     return p;

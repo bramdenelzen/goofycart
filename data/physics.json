@@ -69,6 +69,17 @@
     "water_hysteresis": 6,
     "trick_window_frames": 18,
     "respawn_frames": 90,
+    "_suspension": "provisional, tuned by feel: a sprung body over the ground contact. Pairs run lightest to heaviest by the weight Level. Compression in metres (+ down), angles in radians. Only the landing wobble (steering lost after bottoming out) touches driving.",
+    "susp_freq_light": 16.0, "susp_freq_heavy": 12.0,
+    "susp_damping_light": 0.38, "susp_damping_heavy": 0.40,
+    "susp_land_gain_light": 0.35, "susp_land_gain_heavy": 0.2,
+    "susp_angle_freq": 11.0, "susp_angle_damping": 0.35,
+    "susp_pitch_per_accel": 0.004, "susp_roll_per_lateral": 0.0022,
+    "susp_slope_gain": 0.6, "susp_slope_lag": 0.5,
+    "susp_max_compress": 0.18, "susp_max_extend": 0.12,
+    "susp_max_pitch": 0.14, "susp_max_roll": 0.12,
+    "susp_air_droop": 0.06,
+    "susp_wobble_frames": 10, "susp_wobble_steer": 0.45,
     "stuck_respawn_frames": 300
   }
 }

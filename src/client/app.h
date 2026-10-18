@@ -307,7 +307,8 @@ private:
     static void spring(float& x, float& v, float target, float omega, float dt);
     float frame_dt_ = 1.0f / 60.0f;
     const KartVisual& build_visual(const sim::Build& b, int slot);
-    void draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle);
+    // `body`: the sprung part (body and driver) when it moves apart from the wheels.
+    void draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle, const mat4* body = nullptr);
     void draw_glider_visual(const KartVisual& v, const mat4& m, vec4 tint);
     void set_kart_meshes(const std::vector<sim::Build>& builds);
     sim::Build ghost_build_;
