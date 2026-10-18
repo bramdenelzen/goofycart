@@ -251,6 +251,115 @@ PaintedModel billboard(uint32_t seed) {
     return m;
 }
 
+// A corner sign: yellow board with a black chevron on two posts. Front +Z.
+PaintedModel turn_sign(bool left) {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect post = span(0, 3, 4, 4);
+    region(b, post);
+    for (float x : {-0.55f, 0.55f}) b.tube({x, 0.0f, 0}, {x, 1.2f, 0}, 0.06f, 0.05f, kWhite, 8, true);
+    t.gradient_v(post, col(200, 205, 215), col(110, 115, 128));
+    const UvRect board = span(0, 0, 4, 3);
+    region(b, board);
+    b.box_painted({0, 1.55f, 0}, {0.85f, 0.5f, 0.05f}, kWhite);
+    t.fill(board, col(255, 205, 30));
+    t.rounded(board, {0.04f, 0.06f, 0.96f, 0.94f}, 0.05f, col(250, 196, 20));
+    // Chevron pointing +u (the way to turn): two thick strokes.
+    t.custom(board, [left](float u, float v) {
+        const float x = (left ? 1.0f - u : u) - 0.35f, y = std::abs(v - 0.5f);
+        const float d = std::abs(x - (0.32f - y * 0.9f));
+        return d < 0.09f && y < 0.36f ? vec4(0.06f, 0.06f, 0.08f, 1.0f) : vec4(0.0f);
+    });
+    t.vignette(board, 0.2f, 0.06f);
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+// A feather flag on a bent pole, like a sponsor banner at a race.
+PaintedModel feather_flag(vec4 a, vec4 c2, uint32_t seed) {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect pole = span(0, 3, 1, 4);
+    region(b, pole);
+    std::vector<vec3> path;
+    for (int i = 0; i <= 8; ++i) {
+        const float s = float(i) / 8.0f;
+        path.push_back({0.25f * s * s, 3.6f * s, 0.0f});
+    }
+    b.sweep(path, 0.045f, kWhite, 6, true);
+    t.gradient_v(pole, col(230, 232, 238), col(120, 124, 135));
+    // The cloth: a curved sail from the pole, two-sided, taller than wide.
+    const UvRect cloth = span(1, 0, 4, 4);
+    region(b, cloth);
+    const int rows = 6;
+    for (int i = 0; i < rows; ++i) {
+        const float s0 = float(i) / float(rows), s1 = float(i + 1) / float(rows);
+        auto edge = [&](float s) { return vec3(0.04f + 0.25f * (0.9f * s + 0.1f) * (0.9f * s + 0.1f), 0.9f + 2.6f * s, 0.0f); };
+        auto out = [&](float s) { return vec3(0.75f - 0.18f * (1.0f - s) * (1.0f - s) + 0.1f * s, 0.75f + 2.7f * s, 0.12f * std::sin(s * 3.0f)); };
+        const vec3 a0 = edge(s0), a1 = edge(s1), b0 = out(s0), b1 = out(s1);
+        b.quad_uv(a0, b0, b1, a1, {0, 1 - s0}, {1, 1 - s0}, {1, 1 - s1}, {0, 1 - s1}, kWhite);
+        b.quad_uv(a1, b1, b0, a0, {0, 1 - s1}, {1, 1 - s1}, {1, 1 - s0}, {0, 1 - s0}, kWhite);
+    }
+    t.fill(cloth, a);
+    t.band_u(cloth, 0.0f, 0.18f, c2, 0.01f);
+    t.star(cloth, {0.58f, 0.3f}, 0.14f, c2);
+    for (int i = 0; i < 3; ++i) t.band_v(cloth, 0.5f + 0.1f * float(i), 0.54f + 0.1f * float(i), vec4(c2.r, c2.g, c2.b, 0.85f), 0.01f);
+    t.noise(cloth, 0.06f, 6.0f, seed, vec4(1.0f));
+    m.mesh = b.take();
+    m.two_sided = true;
+    m.finish();
+    return m;
+}
+
+// A small grandstand of cheering fans: tiers, a roof, coloured blobs. Front +Z.
+PaintedModel grandstand(uint32_t seed) {
+    PaintedModel m;
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect steel = span(0, 3, 4, 4);
+    const UvRect seats = span(0, 0, 4, 2);
+    const UvRect roof = span(0, 2, 4, 3);
+    region(b, seats);
+    for (int i = 0; i < 4; ++i) b.box_painted({0, 0.35f + 0.55f * float(i), -0.6f * float(i)}, {3.2f, 0.18f, 0.32f}, kWhite);
+    region(b, steel);
+    for (float x : {-3.1f, 3.1f}) {
+        b.box_painted({x, 1.6f, -1.0f}, {0.08f, 1.6f, 0.08f}, kWhite);
+        b.box_painted({x, 2.2f, -2.2f}, {0.08f, 2.2f, 0.08f}, kWhite);
+    }
+    region(b, roof);
+    b.box_painted({0, 4.45f, -1.3f}, {3.4f, 0.08f, 1.4f}, kWhite);
+    // The crowd: little heads and bodies along each tier.
+    struct {
+        uint32_t s;
+        float unit() {
+            s = s * 1664525u + 1013904223u;
+            return float(s >> 8) / float(1u << 24);
+        }
+    } r{seed * 2654435761u + 7u};
+    const vec4 shirts[6] = {col(230, 60, 50), col(60, 140, 240), col(250, 200, 40), col(70, 190, 90), col(240, 120, 200), col(250, 250, 250)};
+    for (int i = 0; i < 4; ++i)
+        for (int k = 0; k < 9; ++k) {
+            if (r.unit() < 0.2f) continue;
+            const float x = -2.9f + 0.72f * float(k) + 0.15f * (r.unit() - 0.5f), y = 0.55f + 0.55f * float(i), z = -0.6f * float(i) - 0.05f;
+            region(b, span(int(r.unit() * 3.99f), 0, int(r.unit() * 3.99f) + 1, 1, 8));
+            b.box_painted({x, y + 0.2f, z}, {0.16f, 0.2f, 0.1f}, kWhite);
+            region(b, span(4, 1, 5, 2, 8));
+            b.box_painted({x, y + 0.5f, z}, {0.1f, 0.1f, 0.1f}, kWhite);
+        }
+    t.gradient_v(seats, col(70, 90, 160), col(40, 50, 100));
+    for (int i = 0; i < 8; ++i) t.band_u(seats, float(i) / 8.0f, float(i) / 8.0f + 0.01f, col(20, 25, 50, 0.5f), 0.0f);
+    t.gradient_v(steel, col(200, 205, 215), col(120, 125, 140));
+    t.stripes_u(roof, 10, col(230, 50, 45), col(250, 250, 250));
+    for (int c = 0; c < 4; ++c) t.fill(span(c, 0, c + 1, 1, 8), shirts[(c + seed) % 6]);
+    t.fill(span(4, 1, 5, 2, 8), col(240, 200, 160));
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
 PaintedModel tire_stack() {
     PaintedModel m;
     MeshBuilder b;
@@ -914,6 +1023,12 @@ std::map<std::string, PaintedModel> make_gobby_props() {
     out["billboard_3"] = billboard(2);
     out["tire_stack"] = tire_stack();
     out["tire"] = loose_tire();
+    out["turn_sign"] = turn_sign(false);
+    out["turn_sign_left"] = turn_sign(true);
+    out["flag_red"] = feather_flag(col(225, 40, 40), col(255, 255, 255), 1);
+    out["flag_blue"] = feather_flag(col(40, 110, 220), col(255, 210, 40), 2);
+    out["flag_green"] = feather_flag(col(40, 170, 90), col(255, 255, 255), 3);
+    out["grandstand"] = grandstand(4);
     out["cone"] = cone();
     out["crate"] = crate();
     out["barrel"] = barrel(col(60, 110, 200));

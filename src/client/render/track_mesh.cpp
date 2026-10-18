@@ -490,6 +490,47 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
             out.push_back({k == 0 ? "pool_warm" : k == 1 ? "pool_pink" : "pool_cyan", glm::translate(mat4(1.0f), pool)});
         }
     }
+    // Chevron signs round the outside of every proper bend, facing the karts.
+    for (int i = 12; i < n - 12; i += 6) {
+        const sim::CenterSample& c = t.center[size_t(i)];
+        const vec3 t0 = t.center[size_t(i - 10)].tangent, t1 = t.center[size_t(i + 10)].tangent;
+        if (glm::dot(t0, t1) > 0.82f) continue;
+        const bool turns_right = glm::dot(glm::cross(t0, t1), c.up) < 0.0f;
+        const int side = turns_right ? -1 : 1; // the outside of the bend
+        if (!(side > 0 ? right[size_t(i)] : left[size_t(i)])) continue;
+        const vec3 top = t.vertices[size_t(i * kStride + (side > 0 ? 8 : 7))];
+        const vec3 outward = c.right * float(side);
+        out.push_back({turns_right ? "turn_sign" : "turn_sign_left", oriented(c, top + outward * 0.5f - c.up * 0.1f, glm::cross(c.up, -c.tangent), 1.0f)});
+    }
+    // Feather flags along the walls, alternating sides and colours.
+    if (th.scenery != S::City && th.scenery != S::Lava)
+        for (int i = 16; i < n - 8; i += 26) {
+            const int side = (i / 26) % 2 ? 1 : -1;
+            if (!(side > 0 ? right[size_t(i)] : left[size_t(i)])) continue;
+            const sim::CenterSample& c = t.center[size_t(i)];
+            const vec3 top = t.vertices[size_t(i * kStride + (side > 0 ? 8 : 7))];
+            const vec3 outward = c.right * float(side);
+            const int k = (i / 26) % 3;
+            out.push_back({k == 0 ? "flag_red" : k == 1 ? "flag_blue" : "flag_green",
+                           oriented(c, top + outward * 1.1f - c.up * 1.4f, c.tangent * float(side), 1.0f + 0.15f * rnd())});
+        }
+    // Grandstands full of fans where the road runs straight.
+    for (int i = 20; i < n - 20; i += 85) {
+        const sim::CenterSample& c = t.center[size_t(i)];
+        if (glm::dot(t.center[size_t(i - 10)].tangent, t.center[size_t(i + 10)].tangent) < 0.985f) continue;
+        const int side = (i / 85) % 2 ? 1 : -1;
+        if (!(side > 0 ? right[size_t(i)] : left[size_t(i)])) continue;
+        const vec3 top = t.vertices[size_t(i * kStride + (side > 0 ? 8 : 7))];
+        const vec3 outward = c.right * float(side);
+        const vec3 pos = top + outward * 4.5f - c.up * 1.6f;
+        bool clear = true;
+        for (int j = 0; j < n && clear; j += 3) {
+            const int along = std::abs(j - i);
+            if (std::min(along, n - along) < 14) continue;
+            clear = glm::distance(t.center[size_t(j)].pos, pos) > t.center[size_t(j)].half_width + 10.0f;
+        }
+        if (clear) out.push_back({"grandstand", oriented(c, pos, glm::cross(c.up, -outward), 1.0f)});
+    }
     // Billboards where the road runs straight for a while.
     for (int i = 30; i < n - 30; i += 70) {
         const sim::CenterSample& c = t.center[size_t(i)];
