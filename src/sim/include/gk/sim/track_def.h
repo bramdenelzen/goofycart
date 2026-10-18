@@ -45,6 +45,7 @@ struct TrackDef {
     std::string id;
     std::string name;
     std::string theme = "meadow"; // the client's palette and scenery
+    bool ground = false;          // the track sits on rolling terrain instead of floating islands
     int laps = 3;
     float half_width = 7.0f;
     float verge = 5.0f;           // default verge width each side (m)

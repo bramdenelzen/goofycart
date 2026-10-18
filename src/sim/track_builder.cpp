@@ -50,6 +50,7 @@ Track build_track(const TrackDef& def) {
     t.id = def.id;
     t.name = def.name;
     t.theme = def.theme;
+    t.ground = def.ground;
     t.laps = def.laps;
     std::vector<vec4> ctrl = def.points;
     for (auto& c : ctrl)
@@ -304,7 +305,8 @@ Track build_track(const TrackDef& def) {
     // Out-of-bounds floor far below the track.
     float min_y = 1e9f;
     for (const vec4& c : ctrl) min_y = std::min(min_y, c.y);
-    const float floor_y = std::floor(min_y) - 20.0f;
+    // On terrain the floor sits just under the ground, so a fall is short.
+    const float floor_y = std::floor(min_y) - (def.ground ? 12.0f : 20.0f);
     vec3 lo(1e9f), hi(-1e9f);
     for (const CenterSample& c : t.center) lo = glm::min(lo, c.pos), hi = glm::max(hi, c.pos);
     const float e = std::max(hi.x - lo.x, hi.z - lo.z) + 1200.0f;
@@ -414,6 +416,7 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
         d.name = j.at("name").get<std::string>();
         d.theme = j.value("theme", d.theme);
         d.laps = j.value("laps", d.laps);
+        d.ground = j.value("ground", d.ground);
         d.half_width = j.value("half_width", d.half_width);
         d.verge = j.value("verge", d.verge);
         if (j.contains("verge_surface") && !parse_surface(j["verge_surface"].get<std::string>(), d.verge_surface))

@@ -5,126 +5,126 @@
   "half_width": 7,
   "verge": 3,
   "verge_surface": "offroad_light",
-  "_comment": "A spiral up round the spire that passes over the start, pillars at the top, then two glides back down to the clouds.",
+  "_comment": "A spiral up round the tall spire that passes over the start, pillars at the top, then two glides back down with drifting cloud platforms to land on.",
   "points": [
     [
       0.0,
-      0,
+      0.0,
       0.0
     ],
     [
       0.0,
-      1,
+      1.5,
       67.5
     ],
     [
       27.0,
-      3,
+      4.5,
       120.0
     ],
     [
       82.5,
-      5,
+      7.5,
       138.0
     ],
     [
       135.0,
-      7,
+      10.5,
       108.0
     ],
     [
       144.0,
-      9,
+      13.5,
       52.5
     ],
     [
       117.0,
-      11,
+      16.5,
       9.0
     ],
     [
       63.0,
-      13,
+      19.5,
       -12.0
     ],
     [
       15.0,
-      15,
+      22.5,
       12.0
     ],
     [
       -27.0,
-      16,
+      24.0,
       67.5
     ],
     [
       -12.0,
-      17,
+      25.5,
       132.0
     ],
     [
       42.0,
-      18,
+      27.0,
       177.0
     ],
     [
       108.0,
-      18,
+      27.0,
       192.0
     ],
     [
       157.5,
-      17,
+      25.5,
       165.0
     ],
     [
       180.0,
-      15,
+      22.5,
       120.0
     ],
     [
       225.0,
-      12,
+      18.0,
       127.5
     ],
     [
       255.0,
-      9,
+      13.5,
       82.5
     ],
     [
       243.0,
-      7,
+      10.5,
       22.5
     ],
     [
       210.0,
-      5,
+      7.5,
       -30.0
     ],
     [
       165.0,
-      3,
+      4.5,
       -45.0
     ],
     [
       127.5,
-      2,
+      3.0,
       -82.5
     ],
     [
       75.0,
-      1,
+      1.5,
       -105.0
     ],
     [
       33.0,
-      0,
+      0.0,
       -90.0
     ],
     [
       6.0,
-      0,
+      0.0,
       -48.0
     ]
   ],
@@ -294,6 +294,43 @@
         1,
         2
       ]
+    },
+    {
+      "type": "mover",
+      "at": [
+        14,
+        15
+      ],
+      "kind": "platform",
+      "width": 7,
+      "length": 12,
+      "height": 0.9,
+      "travel": [
+        5,
+        0,
+        0
+      ],
+      "period": 3.4,
+      "ramp": 3,
+      "boost": true
+    },
+    {
+      "type": "mover",
+      "at": [
+        19,
+        10
+      ],
+      "kind": "platform",
+      "width": 7,
+      "length": 12,
+      "height": 0.9,
+      "travel": [
+        0,
+        0,
+        6
+      ],
+      "period": 3.0,
+      "ramp": 3
     }
   ]
 }

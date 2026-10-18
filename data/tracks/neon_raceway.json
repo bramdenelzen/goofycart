@@ -4,121 +4,121 @@
   "theme": "night",
   "half_width": 8,
   "verge": 4,
-  "_comment": "City blocks: square corners, a split lane, a chicane, then a flyover across the east avenue and a jump off its end.",
+  "_comment": "City blocks at night: traffic cruising the avenues, square corners, a split lane, a chicane, then a high flyover across the east avenue and a jump off its end.",
   "points": [
     [
       0.0,
-      0,
+      0.0,
       0.0
     ],
     [
       0.0,
-      0,
+      0.0,
       127.5
     ],
     [
       6.0,
-      0,
+      0.0,
       168.0
     ],
     [
       42.0,
-      0,
+      0.0,
       180.0
     ],
     [
       90.0,
-      0,
+      0.0,
       180.0
     ],
     [
       108.0,
-      0,
+      0.0,
       150.0
     ],
     [
       142.5,
-      0,
+      0.0,
       138.0
     ],
     [
       165.0,
-      0,
+      0.0,
       177.0
     ],
     [
       202.5,
-      0,
+      0.0,
       186.0
     ],
     [
       225.0,
-      0,
+      0.0,
       150.0
     ],
     [
       222.0,
-      0,
+      0.0,
       90.0
     ],
     [
       187.5,
-      0,
+      0.0,
       60.0
     ],
     [
       192.0,
-      0,
+      0.0,
       21.0
     ],
     [
       225.0,
-      0,
+      0.0,
       9.0
     ],
     [
       277.5,
-      3,
+      4.8,
       15.0
     ],
     [
       300.0,
-      6,
+      9.6,
       60.0
     ],
     [
       273.0,
-      9,
+      14.4,
       99.0
     ],
     [
       183.0,
-      10,
+      16.0,
       102.0
     ],
     [
       108.0,
-      10,
+      16.0,
       99.0
     ],
     [
       78.0,
-      7,
+      11.2,
       54.0
     ],
     [
       75.0,
-      3,
+      4.8,
       -22.5
     ],
     [
       45.0,
-      1,
+      1.6,
       -75.0
     ],
     [
       7.5,
-      0,
+      0.0,
       -67.5
     ]
   ],
@@ -267,6 +267,60 @@
       ],
       "length": 9,
       "height": 1.3
+    },
+    {
+      "type": "mover",
+      "at": [
+        1,
+        0
+      ],
+      "offset": -4.0,
+      "kind": "block",
+      "width": 2.2,
+      "length": 4.2,
+      "height": 1.6,
+      "travel": [
+        0,
+        0,
+        14
+      ],
+      "period": 4.5
+    },
+    {
+      "type": "mover",
+      "at": [
+        7,
+        10
+      ],
+      "offset": 4.0,
+      "kind": "block",
+      "width": 2.2,
+      "length": 4.2,
+      "height": 1.6,
+      "travel": [
+        0,
+        0,
+        12
+      ],
+      "period": 4.0,
+      "phase": 0.5
+    },
+    {
+      "type": "mover",
+      "at": [
+        12,
+        10
+      ],
+      "kind": "block",
+      "width": 2.2,
+      "length": 4.2,
+      "height": 1.6,
+      "travel": [
+        6,
+        0,
+        0
+      ],
+      "period": 3.2
     }
   ]
 }

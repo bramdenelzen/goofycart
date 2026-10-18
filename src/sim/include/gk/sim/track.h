@@ -52,6 +52,7 @@ public:
     std::string id;
     std::string name;
     std::string theme = "meadow";  // palette and scenery, for the client
+    bool ground = false;           // the client draws terrain under and around the road
     std::vector<vec3> vertices;
     std::vector<TrackTriangle> triangles;
     std::vector<CenterSample> center;

@@ -2,129 +2,130 @@
   "id": "lava_works",
   "name": "Lava Works",
   "theme": "volcano",
+  "ground": true,
   "half_width": 6.5,
   "verge": 4,
   "verge_surface": "offroad_heavy",
-  "_comment": "A chicane through the machinery, a long gantry bridge over the start straight, a glide over the lava pool and open edges.",
+  "_comment": "A chicane through the machinery, lava geysers bursting up through the road, a long gantry bridge over the start straight, a glide over the lava pool and open edges.",
   "points": [
     [
       0.0,
-      0,
+      0.0,
       0.0
     ],
     [
       0.0,
-      0,
+      0.0,
       67.5
     ],
     [
       15.0,
-      0,
+      0.0,
       112.5
     ],
     [
       60.0,
-      1,
+      1.5,
       127.5
     ],
     [
       87.0,
-      2,
+      3.0,
       93.0
     ],
     [
       72.0,
-      3,
+      4.5,
       57.0
     ],
     [
       105.0,
-      4,
+      6.0,
       27.0
     ],
     [
       157.5,
-      5,
+      7.5,
       36.0
     ],
     [
       177.0,
-      6,
+      9.0,
       75.0
     ],
     [
       225.0,
-      7,
+      10.5,
       87.0
     ],
     [
       255.0,
-      9,
+      13.5,
       45.0
     ],
     [
       240.0,
-      11,
+      16.5,
       -15.0
     ],
     [
       187.5,
-      13,
+      19.5,
       -42.0
     ],
     [
       135.0,
-      13,
+      19.5,
       -18.0
     ],
     [
       82.5,
-      13,
+      19.5,
       -45.0
     ],
     [
       30.0,
-      13,
+      19.5,
       -15.0
     ],
     [
       -22.5,
-      13,
+      19.5,
       30.0
     ],
     [
       -67.5,
-      11,
+      16.5,
       57.0
     ],
     [
       -120.0,
-      7,
+      10.5,
       33.0
     ],
     [
       -142.5,
-      3,
+      4.5,
       -22.5
     ],
     [
       -120.0,
-      2,
+      3.0,
       -75.0
     ],
     [
       -75.0,
-      1,
+      1.5,
       -105.0
     ],
     [
       -30.0,
-      0,
+      0.0,
       -82.5
     ],
     [
       -7.5,
-      0,
+      0.0,
       -42.0
     ]
   ],
@@ -295,6 +296,82 @@
       ],
       "length": 9,
       "height": 1.3
+    },
+    {
+      "type": "mover",
+      "at": [
+        7,
+        25
+      ],
+      "offset": -3.0,
+      "kind": "block",
+      "width": 2.6,
+      "length": 2.6,
+      "height": 2.6,
+      "travel": [
+        0,
+        3.4,
+        0
+      ],
+      "period": 3.6,
+      "phase": 0.0
+    },
+    {
+      "type": "mover",
+      "at": [
+        8,
+        10
+      ],
+      "offset": 3.0,
+      "kind": "block",
+      "width": 2.6,
+      "length": 2.6,
+      "height": 2.6,
+      "travel": [
+        0,
+        3.4,
+        0
+      ],
+      "period": 3.6,
+      "phase": 0.33
+    },
+    {
+      "type": "mover",
+      "at": [
+        8,
+        30
+      ],
+      "offset": -2.5,
+      "kind": "block",
+      "width": 2.6,
+      "length": 2.6,
+      "height": 2.6,
+      "travel": [
+        0,
+        3.4,
+        0
+      ],
+      "period": 3.6,
+      "phase": 0.66
+    },
+    {
+      "type": "mover",
+      "at": [
+        13,
+        0
+      ],
+      "offset": 0.0,
+      "kind": "block",
+      "width": 2.6,
+      "length": 2.6,
+      "height": 2.6,
+      "travel": [
+        0,
+        3.4,
+        0
+      ],
+      "period": 3.6,
+      "phase": 0.5
     }
   ]
 }

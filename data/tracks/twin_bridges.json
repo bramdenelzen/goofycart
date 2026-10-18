@@ -2,83 +2,84 @@
   "id": "twin_bridges",
   "name": "Twin Bridges",
   "theme": "meadow",
+  "ground": true,
   "half_width": 8,
   "verge": 4,
-  "_comment": "A figure of eight on two levels: up round the hill, over the start on a high bridge, down past sliding platforms and bumper blocks, a glide over the creek and back under the bridge.",
+  "_comment": "A figure of eight on two levels through the hills: up round the big hill, over the start on a high bridge, down past sliding platforms and bumper blocks, a glide over the creek and back under the bridge.",
   "points": [
     [
       0.0,
-      0,
+      0.0,
       0.0
     ],
     [
       0.0,
-      0,
+      0.0,
       105.0
     ],
     [
       15.0,
-      1,
+      1.5,
       165.0
     ],
     [
       67.5,
-      3,
+      4.5,
       198.0
     ],
     [
       127.5,
-      6,
+      9.0,
       183.0
     ],
     [
       159.0,
-      9,
+      13.5,
       129.0
     ],
     [
       144.0,
-      11,
+      16.5,
       69.0
     ],
     [
       84.0,
-      12,
+      18.0,
       36.0
     ],
     [
       0.0,
-      12,
+      18.0,
       42.0
     ],
     [
       -72.0,
-      11,
+      16.5,
       39.0
     ],
     [
       -129.0,
-      8,
+      12.0,
       0.0
     ],
     [
       -135.0,
-      5,
+      7.5,
       -72.0
     ],
     [
       -87.0,
-      3,
+      4.5,
       -123.0
     ],
     [
       -18.0,
-      1,
+      1.5,
       -126.0
     ],
     [
       21.0,
-      0,
+      0.0,
       -67.5
     ]
   ],
@@ -287,6 +288,15 @@
         0,
         3
       ]
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        5,
+        30
+      ],
+      "length": 9,
+      "height": 1.5
     }
   ]
 }

@@ -3,7 +3,7 @@
   "name": "Harbor Hop",
   "theme": "harbor",
   "half_width": 7,
-  "_comment": "Square-cornered docks with crates, a pier bridge over the start straight, a hairpin round the lighthouse and a glide down to the water.",
+  "_comment": "Square-cornered docks with crates and crane loads swinging over the quay, a high pier bridge over the start straight, a hairpin round the lighthouse and a glide down to the water.",
   "points": [
     [
       0.0,
@@ -57,37 +57,37 @@
     ],
     [
       150.0,
-      4,
+      5,
       0.0
     ],
     [
       97.5,
-      7,
+      9,
       -7.5
     ],
     [
       37.5,
-      9,
+      12,
       33.0
     ],
     [
       -30.0,
-      9,
+      12,
       45.0
     ],
     [
       -90.0,
-      8,
+      10,
       30.0
     ],
     [
       -127.5,
-      6,
+      7,
       -15.0
     ],
     [
       -165.0,
-      3,
+      4,
       -37.5
     ],
     [
@@ -296,6 +296,59 @@
         1,
         2
       ]
+    },
+    {
+      "type": "mover",
+      "at": [
+        3,
+        20
+      ],
+      "kind": "block",
+      "width": 2.4,
+      "length": 2.4,
+      "height": 2.2,
+      "travel": [
+        5.5,
+        0,
+        0
+      ],
+      "period": 2.8
+    },
+    {
+      "type": "mover",
+      "at": [
+        5,
+        25
+      ],
+      "kind": "block",
+      "width": 2.4,
+      "length": 2.4,
+      "height": 2.2,
+      "travel": [
+        5.5,
+        0,
+        0
+      ],
+      "period": 3.2,
+      "phase": 0.5
+    },
+    {
+      "type": "mover",
+      "at": [
+        21,
+        20
+      ],
+      "kind": "platform",
+      "width": 8,
+      "length": 12,
+      "height": 0.8,
+      "travel": [
+        0,
+        0.5,
+        0
+      ],
+      "period": 2.4,
+      "ramp": 3
     }
   ]
 }

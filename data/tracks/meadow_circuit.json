@@ -2,8 +2,9 @@
   "id": "meadow_circuit",
   "name": "Meadow Circuit",
   "theme": "meadow",
+  "ground": true,
   "half_width": 7.5,
-  "_comment": "A figure of eight: the back straight crosses the start straight on a bridge, then glides off it.",
+  "_comment": "A figure of eight through rolling farmland: up over the hills, tractors trundling across the back road, a crest jump, then the bridge over the start straight and a glide off it.",
   "points": [
     [
       0.0,
@@ -22,102 +23,102 @@
     ],
     [
       21.0,
-      0,
+      1,
       112.5
     ],
     [
       -9.0,
-      0,
+      2,
       157.5
     ],
     [
       18.0,
-      0,
+      3,
       202.5
     ],
     [
       75.0,
-      1,
+      4,
       225.0
     ],
     [
       142.5,
-      2,
+      7,
       210.0
     ],
     [
       177.0,
-      3,
+      10,
       165.0
     ],
     [
       150.0,
-      4,
+      9,
       123.0
     ],
     [
       99.0,
-      5,
+      8,
       138.0
     ],
     [
       72.0,
-      6,
+      9,
       93.0
     ],
     [
       96.0,
-      8,
+      11,
       48.0
     ],
     [
       78.0,
-      10,
+      13,
       6.0
     ],
     [
       22.5,
-      10,
+      13,
       0.0
     ],
     [
       -45.0,
-      10,
+      13,
       -3.0
     ],
     [
       -105.0,
-      8,
+      11,
       -15.0
     ],
     [
       -150.0,
-      6,
+      8,
       -48.0
     ],
     [
       -162.0,
-      4,
+      5,
       -102.0
     ],
     [
       -198.0,
-      3,
+      7,
       -144.0
     ],
     [
       -162.0,
-      2,
+      4,
       -186.0
     ],
     [
       -111.0,
-      1,
+      2,
       -162.0
     ],
     [
       -78.0,
-      0,
+      1,
       -195.0
     ],
     [
@@ -249,6 +250,63 @@
         2,
         3
       ]
+    },
+    {
+      "type": "mover",
+      "at": [
+        7,
+        15
+      ],
+      "kind": "block",
+      "width": 2.6,
+      "length": 3.4,
+      "height": 2.2,
+      "travel": [
+        6,
+        0,
+        0
+      ],
+      "period": 3.2
+    },
+    {
+      "type": "mover",
+      "at": [
+        8,
+        5
+      ],
+      "kind": "block",
+      "width": 2.6,
+      "length": 3.4,
+      "height": 2.2,
+      "travel": [
+        6,
+        0,
+        0
+      ],
+      "period": 3.6,
+      "phase": 0.5
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        12,
+        25
+      ],
+      "length": 9,
+      "height": 1.5
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        19,
+        10
+      ],
+      "offset": -4.0,
+      "shape": "block",
+      "width": 2.2,
+      "length": 2.2,
+      "height": 1.4,
+      "prop": "crate"
     }
   ]
 }

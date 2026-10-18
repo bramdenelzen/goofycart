@@ -734,6 +734,131 @@ void market_town(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng&
     }
 }
 
+// ---- terrain under a grounded track
+
+namespace {
+
+float hash01(int x, int y, uint32_t seed) {
+    uint32_t h = uint32_t(x) * 374761393u + uint32_t(y) * 668265263u + seed * 2246822519u;
+    h = (h ^ (h >> 13)) * 1274126177u;
+    return float((h ^ (h >> 16)) & 0xffff) / 65535.0f;
+}
+float value_noise(float x, float y, uint32_t seed) {
+    const int x0 = int(std::floor(x)), y0 = int(std::floor(y));
+    const float fx = x - float(x0), fy = y - float(y0);
+    const float tx = fx * fx * (3.0f - 2.0f * fx), ty = fy * fy * (3.0f - 2.0f * fy);
+    const float a = hash01(x0, y0, seed), c = hash01(x0 + 1, y0, seed), d = hash01(x0, y0 + 1, seed), e = hash01(x0 + 1, y0 + 1, seed);
+    return glm::mix(glm::mix(a, c, tx), glm::mix(d, e, tx), ty);
+}
+float fbm2(float x, float y, uint32_t seed) {
+    return 0.55f * value_noise(x, y, seed) + 0.3f * value_noise(x * 2.1f, y * 2.1f, seed + 1) + 0.15f * value_noise(x * 4.3f, y * 4.3f, seed + 2);
+}
+
+// Rolling terrain under a grounded track: a height field that follows the
+// road a little below it (so the road rides a ridge or an embankment), drops
+// into a ravine under glide gaps, and rolls off into the theme's hills away
+// from the road.
+struct Ground {
+    float x0 = 0.0f, z0 = 0.0f, cell = 5.0f;
+    int nx = 0, nz = 0;
+    std::vector<float> h;
+    bool valid() const { return nx > 1 && nz > 1; }
+    float at(int i, int j) const { return h[size_t(std::clamp(j, 0, nz - 1) * nx + std::clamp(i, 0, nx - 1))]; }
+    float height(float x, float z) const {
+        if (!valid()) return 0.0f;
+        const float u = (x - x0) / cell, v = (z - z0) / cell;
+        const int i = int(std::floor(u)), j = int(std::floor(v));
+        const float fu = std::clamp(u - float(i), 0.0f, 1.0f), fv = std::clamp(v - float(j), 0.0f, 1.0f);
+        return glm::mix(glm::mix(at(i, j), at(i + 1, j), fu), glm::mix(at(i, j + 1), at(i + 1, j + 1), fu), fv);
+    }
+};
+
+struct GroundLook {
+    float amp;
+    uint32_t tex, color, steep_color;
+};
+GroundLook ground_look(const ThemeStyle& th) {
+    using S = ThemeStyle::Scenery;
+    switch (th.scenery) {
+    case S::Cactus: return {5.0f, TexSand, rgba(226, 196, 132), rgba(190, 140, 90)};
+    case S::Pines: return {12.0f, TexSnow, rgba(236, 242, 250), rgba(150, 160, 180)};
+    case S::Mesas: return {10.0f, TexDirt, rgba(206, 140, 86), rgba(160, 82, 52)};
+    case S::Lava: return {8.0f, TexRock, rgba(66, 54, 56), rgba(38, 30, 32)};
+    default: return {7.0f, TexGrass, rgba(96, 168, 70), rgba(120, 96, 70)};
+    }
+}
+
+Ground make_ground(const sim::Track& t, const ThemeStyle& th) {
+    Ground g;
+    const GroundLook look = ground_look(th);
+    vec3 lo(1e9f), hi(-1e9f);
+    for (const auto& c : t.center) lo = glm::min(lo, c.pos), hi = glm::max(hi, c.pos);
+    const float margin = 280.0f;
+    g.x0 = lo.x - margin, g.z0 = lo.z - margin;
+    g.nx = int((hi.x - lo.x + 2.0f * margin) / g.cell) + 1;
+    g.nz = int((hi.z - lo.z + 2.0f * margin) / g.cell) + 1;
+    const float base = lo.y - 2.5f;
+    const uint32_t seed = hash_name(t.id);
+    std::vector<float> target(size_t(g.nx * g.nz), 1e9f), weight(size_t(g.nx * g.nz), 0.0f), near(size_t(g.nx * g.nz), 1e9f);
+    // Every road sample pulls the ground towards just under itself, strongly
+    // close by and fading out over ~45 m; the lowest nearby road wins, so a
+    // bridge never buries the road beneath it.
+    for (const sim::CenterSample& c : t.center) {
+        const float inner = c.half_width + 5.0f, outer = c.half_width + 46.0f;
+        const float y = c.has_floor ? c.pos.y - 0.9f : c.pos.y - 16.0f; // a ravine under a glide
+        const int i0 = std::max(0, int((c.pos.x - outer - g.x0) / g.cell)), i1 = std::min(g.nx - 1, int((c.pos.x + outer - g.x0) / g.cell) + 1);
+        const int j0 = std::max(0, int((c.pos.z - outer - g.z0) / g.cell)), j1 = std::min(g.nz - 1, int((c.pos.z + outer - g.z0) / g.cell) + 1);
+        for (int j = j0; j <= j1; ++j)
+            for (int i = i0; i <= i1; ++i) {
+                const float x = g.x0 + float(i) * g.cell, z = g.z0 + float(j) * g.cell;
+                const float d = glm::length(vec2(x - c.pos.x, z - c.pos.z));
+                if (d > outer) continue;
+                const float w = 1.0f - glm::smoothstep(inner, outer, d);
+                const size_t k = size_t(j * g.nx + i);
+                weight[k] = std::max(weight[k], w);
+                target[k] = std::min(target[k], y + (1.0f - w) * 30.0f);
+                near[k] = std::min(near[k], d);
+            }
+    }
+    g.h.resize(size_t(g.nx * g.nz));
+    for (int j = 0; j < g.nz; ++j)
+        for (int i = 0; i < g.nx; ++i) {
+            const size_t k = size_t(j * g.nx + i);
+            const float x = g.x0 + float(i) * g.cell, z = g.z0 + float(j) * g.cell;
+            // Hills grow bigger further from the track, into a skyline.
+            const float far = glm::smoothstep(60.0f, 260.0f, near[k] < 1e8f ? near[k] : 1e4f);
+            const float amp = look.amp * (1.0f + 2.5f * far);
+            const float n = fbm2(x * 0.011f, z * 0.011f, seed) * 0.75f + fbm2(x * 0.004f, z * 0.004f, seed + 7) * 0.25f;
+            const float hills = base + amp * n + far * look.amp * 1.5f;
+            float hgt = glm::mix(hills, target[k], weight[k]);
+            if (target[k] < 1e8f) hgt = std::min(hgt, target[k]);
+            g.h[k] = hgt;
+        }
+    return g;
+}
+
+void add_ground_mesh(MeshBuilder& b, const Ground& g, const ThemeStyle& th, uint32_t seed) {
+    const GroundLook look = ground_look(th);
+    auto P = [&](int i, int j) { return vec3(g.x0 + float(i) * g.cell, g.at(i, j), g.z0 + float(j) * g.cell); };
+    auto tri = [&](vec3 a, vec3 c, vec3 d, int i, int j) {
+        const vec3 n = glm::normalize(glm::cross(c - a, d - a));
+        const float steep = 1.0f - glm::smoothstep(0.6f, 0.85f, n.y);
+        // A little patchiness so big slopes are not one flat colour.
+        const float patch = 0.9f + 0.2f * hash01(i, j, seed);
+        const uint32_t ground = shade(look.color, patch), rock = shade(look.steep_color, patch);
+        b.texture(steep > 0.5f ? TexRock : look.tex, 6.0f);
+        b.tri(a, c, d, steep > 0.5f ? rock : ground);
+    };
+    for (int j = 0; j + 1 < g.nz; ++j)
+        for (int i = 0; i + 1 < g.nx; ++i) {
+            const vec3 a = P(i, j), c = P(i + 1, j), d = P(i + 1, j + 1), e = P(i, j + 1);
+            if ((i + j) & 1) tri(a, e, d, i, j), tri(a, d, c, i, j);
+            else tri(a, e, c, i, j), tri(c, e, d, i, j);
+        }
+}
+
+} // namespace
+
 MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* props) {
     using S = ThemeStyle::Scenery;
     const ThemeStyle& th = theme_style(t.theme);
@@ -751,6 +876,10 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
     const float span = std::max(hi.x - lo.x, hi.z - lo.z);
     float floor_y = lo.y - 20.0f;
     for (const auto& v : t.vertices) floor_y = std::min(floor_y, v.y);
+    // Terrain under a grounded track; the floating islands and distant
+    // hills belong to the other kind.
+    const Ground ground = t.ground ? make_ground(t, th) : Ground{};
+    if (ground.valid()) add_ground_mesh(b, ground, th, hash_name(t.id));
 
     // Columns under bridges: where the road passes over another part of the
     // track, posts down to the ground on both sides, kept off the road below.
@@ -775,9 +904,11 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
                         glm::length(vec2(o.pos.x - top.x, o.pos.z - top.z)) > o.half_width + 7.0f;
             }
             if (!clear) continue;
-            const float h = top.y - floor_y;
+            const float bottom = ground.valid() ? ground.height(top.x, top.z) - 1.0f : floor_y;
+            const float h = top.y - bottom;
+            if (h < 1.0f) continue;
             b.texture(t.theme == "night" || t.theme == "volcano" || t.theme == "sky" ? TexPanel : TexRock, 2.0f);
-            b.box(vec3(top.x, floor_y + h * 0.5f, top.z), vec3(0.8f, h * 0.5f, 0.8f), th.wall_b);
+            b.box(vec3(top.x, bottom + h * 0.5f, top.z), vec3(0.8f, h * 0.5f, 0.8f), th.wall_b);
         }
     }
 
@@ -793,6 +924,55 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
             for (size_t j = 0; j < t.center.size() && clear; j += 4)
                 clear = glm::length(vec2(t.center[j].pos.x - base.x, t.center[j].pos.z - base.z)) > t.center[j].half_width + 12.0f;
             if (!clear) continue;
+            if (ground.valid() && props) { // standing on the terrain, no islands
+                base.y = ground.height(base.x, base.z) + 0.1f;
+                const float yaw = rnd() * 6.28f;
+                switch (th.scenery) {
+                case S::Cactus:
+                    place("cactus", base, yaw, vec3(1.1f + rnd() * 0.9f));
+                    if (rnd() < 0.5f) place(pick({"rock_red", "boulder"}), base + vec3(3.0f, 0.0f, 1.5f), rnd() * 6.28f, vec3(0.9f + rnd() * 1.2f));
+                    if (rnd() < 0.2f) place("dead_tree", base + vec3(-2.5f, 0.0f, -2.0f), rnd() * 6.28f, vec3(1.2f));
+                    break;
+                case S::Pines:
+                    for (int k = 0; k < 2 + int(rnd() * 3.0f); ++k) {
+                        const vec3 p = base + vec3(rnd() * 8.0f - 4.0f, 0.0f, rnd() * 8.0f - 4.0f);
+                        place("tree_pine_snow", vec3(p.x, ground.height(p.x, p.z), p.z), rnd() * 6.28f, vec3(0.8f + rnd() * 0.5f));
+                    }
+                    if (rnd() < 0.3f) place(pick({"snowman", "crystal", "rock"}), base + vec3(3.0f, 0.0f, -2.0f), yaw, vec3(0.9f + rnd() * 0.5f));
+                    break;
+                case S::Mesas:
+                    if (rnd() < 0.45f) {
+                        const float r = 5.0f + rnd() * 8.0f, h = 8.0f + rnd() * 22.0f;
+                        place("mesa", base - vec3(0, 1.0f, 0), yaw, vec3(r, h, r));
+                    } else {
+                        place(pick({"rock_red", "boulder", "rock_red"}), base, yaw, vec3(1.2f + rnd() * 1.6f));
+                        if (rnd() < 0.5f) place("cactus", base + vec3(2.5f, 0.0f, 2.0f), rnd() * 6.28f, vec3(1.2f));
+                    }
+                    break;
+                case S::Lava: {
+                    const float r = 2.5f + rnd() * 3.0f, h = 3.0f + rnd() * 9.0f;
+                    place("lava_rock", base - vec3(0, 0.6f, 0), yaw, vec3(r / 2.4f, h / 2.6f, r / 2.2f));
+                    if (rnd() < 0.3f) place("dead_tree", base + vec3(3.0f, 0.0f, 0.0f), rnd() * 6.28f, vec3(1.0f));
+                    break;
+                }
+                default: {
+                    const int trees = 1 + int(rnd() * 3.0f);
+                    for (int k = 0; k < trees; ++k) {
+                        const vec3 p = base + vec3(rnd() * 8.0f - 4.0f, 0.0f, rnd() * 8.0f - 4.0f);
+                        place(rnd() < 0.15f ? "tree_autumn" : pick({"tree_round", "tree_round_2"}), vec3(p.x, ground.height(p.x, p.z), p.z), rnd() * 6.28f, vec3(0.6f + rnd() * 0.5f));
+                    }
+                    for (int k = 0; k < 3; ++k) {
+                        const vec3 p = base + vec3(rnd() * 10.0f - 5.0f, 0.0f, rnd() * 10.0f - 5.0f);
+                        const float roll = rnd();
+                        place(roll < 0.4f ? "bush" : roll < 0.7f ? "flower_pink" : roll < 0.9f ? "flower_yellow" : "rock", vec3(p.x, ground.height(p.x, p.z), p.z), rnd() * 6.28f,
+                              vec3(roll < 0.4f ? 0.7f + rnd() * 0.5f : roll < 0.9f ? 1.6f + rnd() : 0.5f + rnd() * 0.4f));
+                    }
+                    if (rnd() < 0.12f) place(pick({"hay_bale", "fence", "windmill"}), base + vec3(4.0f, 0.0f, 3.0f), yaw, vec3(1.0f));
+                    break;
+                }
+                }
+                continue;
+            }
             switch (th.scenery) {
             case S::Trees: {
                 base.y -= 6.0f + rnd() * 14.0f;
@@ -1009,7 +1189,7 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
             b.icosphere(p, 1.2f + rnd() * 1.0f, th.scenery == S::City ? rgba(255, 255, 230) : rgba(255, 140, 60));
         }
     }
-    hills(b, t, th, rnd, mid, span, floor_y);
+    if (!ground.valid()) hills(b, t, th, rnd, mid, span, floor_y);
     if (!props) { // with props, the painted trackside draws these
         kerbs(b, t);
         wall_rails(b, t, th);
@@ -1021,7 +1201,7 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
         if (!props) flags(b, t, th, left, right);
         if (props) {
             wall_props(t, th, left, right, rnd, *props);
-            roadside_islands(b, t, th, rnd, *props);
+            if (!ground.valid()) roadside_islands(b, t, th, rnd, *props);
             if (th.scenery == ThemeStyle::Scenery::Market) market_town(b, t, th, rnd, floor_y, *props);
             // Obstacles as painted props, fitted to their collision shapes.
             for (const auto& o : t.obstacles) {
