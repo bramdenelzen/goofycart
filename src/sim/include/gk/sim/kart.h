@@ -52,6 +52,7 @@ struct KartState {
     bool drift_button_prev = false;
     float hop_steer = 0.0f;
     uint8_t drift_frames = 0;      // frames since the drift started: the entry ramp
+    float drift_turn = 0.0f;       // how hard the drift turns now, eased towards the stick (drift_turn_target)
 
     BoostKind boost = BoostKind::None;
     int boost_frames = 0;
@@ -65,6 +66,7 @@ struct KartState {
     bool gliding = false;
 
     int respawn_frames = 0;        // > 0 while the kart is carried back to the track
+    int stuck_frames = 0;          // trying to drive but not moving: wedged, rescued after a while
     int invincible_frames = 0;
     int stun_frames = 0;           // burnout or spin-out: no driving
     int last_safe_sample = 0;
@@ -125,6 +127,12 @@ struct KartStepContext {
 };
 
 void kart_spawn(KartState& s, const Track& track, int grid_slot);
+// The drift turn (fraction of the kart's turn rate) the stick asks for:
+// `rel` is the stick along the drift, +1 into the turn, -1 away from it.
+float drift_turn_target(const PhysicsConstants& k, const KartParams& p, float rel);
+// The stick that asks for a drift turn of `factor` (unclamped), for the CPUs.
+float drift_rel_for(const PhysicsConstants& k, const KartParams& p, float factor);
+
 void kart_step(KartState& s, const KartInput& in, const KartStepContext& ctx);
 void kart_give_boost(KartState& s, BoostKind kind, int frames, float mult, bool ignores_offroad);
 // Called once when the countdown ends: resolves the rocket start.

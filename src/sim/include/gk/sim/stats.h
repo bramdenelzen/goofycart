@@ -114,11 +114,19 @@ struct PhysicsConstants {
     float road_slip_retention = 0.2f;
     float drift_slip_retention = 0.6f;
     // Drift entry: for the first drift_entry_frames the kart keeps sliding
-    // along its old direction (high slip retention) while the heading swings
-    // in from drift_entry_yaw of the full drift yaw rate up to all of it.
+    // along its old direction (high slip retention).
     int drift_entry_frames = 18;
     float drift_entry_slip_retention = 0.94f;
-    float drift_entry_yaw = 0.5f;
+    // Drift turn, as a fraction of the kart's turn rate: stick fully away
+    // from the turn, centred, fully into it. The drift starts at
+    // drift_turn_start and eases towards the stick's value at
+    // drift_turn_response per second, so it tightens and widens gradually.
+    float drift_turn_wide = 0.18f;
+    float drift_turn_neutral = 0.4f;
+    float drift_turn_tight = 0.78f;
+    float drift_turn_start = 0.1f;
+    float drift_turn_response = 0.9f;
+    float drift_inward_bonus = 1.15f; // inward-drifting parts turn this much tighter
     float coin_speed_bonus = 0.005f; // per coin; unpublished, to measure
     int max_coins = 10;
 
@@ -137,6 +145,7 @@ struct PhysicsConstants {
     int rocket_frames = 60;      float rocket_mult = 1.25f;
     int rocket_window_early = 100, rocket_window_late = 60; // frames before GO
     int burnout_frames = 60;
+    int stuck_respawn_frames = 300; // wedged this long (gas or brake held, barely moving): carried back
     float boost_accel = 40.0f;
 
     float glide_launch_velocity = 7.0f;

@@ -33,7 +33,12 @@
     "drift_slip_retention": 0.7,
     "drift_entry_frames": 18,
     "drift_entry_slip_retention": 0.94,
-    "drift_entry_yaw": 0.5,
+    "drift_turn_wide": 0.18,
+    "drift_turn_neutral": 0.4,
+    "drift_turn_tight": 0.78,
+    "drift_turn_start": 0.1,
+    "drift_turn_response": 0.9,
+    "drift_inward_bonus": 1.15,
     "coin_speed_bonus": 0.005,
     "max_coins": 10,
     "charge_fast": { "source": "datamined (Super Mario Wiki: Mini-Turbo)", "value": 5.0 },
@@ -56,6 +61,7 @@
     "glide_sink": 4.0,
     "glide_pitch_speed": 0.18,
     "trick_window_frames": 18,
-    "respawn_frames": 90
+    "respawn_frames": 90,
+    "stuck_respawn_frames": 300
   }
 }

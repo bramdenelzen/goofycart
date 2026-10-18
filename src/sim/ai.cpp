@@ -194,14 +194,27 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     // nose towards the target, until there's room to drive round it.
     if (k.grounded && k.speed < 2.0f && !k.knocked()) {
         bool blocked = false;
+        float side_hit = 0.0f; // > 0: the blockage is more on the right
+        // Once backing off, keep going until there's real room ahead.
+        const float look = k.speed < -0.3f ? 5.0f : 2.2f;
         for (float side : {-0.7f, 0.0f, 0.7f}) {
-            const auto hit = t.raycast(k.pos + k.up() * 0.5f + k.right() * side, k.forward(), 2.2f);
-            blocked |= hit && hit->surface == Surface::Wall;
+            const auto hit = t.raycast(k.pos + k.up() * 0.5f + k.right() * side, k.forward(), look);
+            if (hit && hit->surface == Surface::Wall) {
+                blocked = true;
+                side_hit += side;
+            }
         }
         if (blocked) {
             in.accelerate = false;
             in.brake = true;
-            in.steer = 0.0f;
+            // Reversing turns the nose the other way to the stick: swing it
+            // towards the target, or away from the side that's blocked.
+            // The open side of the road: towards the middle of the CPU band.
+            const CenterSample& here = t.center[size_t(t.wrap(k.sample))];
+            const Track::LinePoint& band = t.line[size_t(t.wrap(k.sample + 3))];
+            const float lat = glm::dot(k.pos - here.pos, here.right), mid = 0.5f * (band.lo + band.hi);
+            const float want = std::abs(mid - lat) > 0.8f ? sign(mid - lat) : side_hit > 0.0f ? -1.0f : 1.0f;
+            in.steer = -want;
             return in;
         }
     }
@@ -212,10 +225,8 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     const float turn = turn_ahead(t, k.sample + int(4.0f / spacing), 30.0f, spacing);
     const float turn_long = turn_ahead(t, k.sample + int(4.0f / spacing), 55.0f, spacing);
     const bool going_right_way = to.z > 0.5f;
-    const bool outward = p.drift == DriftType::Outward;
-    const float drift_base = outward ? 0.62f : 0.82f, drift_mod = outward ? 0.38f : 0.28f;
     // A drift can't turn gentler than this; only drift where the corner needs most of it.
-    const float min_drift_yaw = p.turn_rate * (drift_base - drift_mod) * speed_fac;
+    const float min_drift_yaw = p.turn_rate * drift_turn_target(c, p, -1.0f) * speed_fac;
     const float near_turn = turn_ahead(t, k.sample + 1, 14.0f, spacing);
     const float corner_yaw = std::abs(near_turn) / 14.0f * speed;
     const bool want_drift = skill.drifts && k.grounded && going_right_way && speed > c.min_drift_speed + 3.0f &&
@@ -230,7 +241,7 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     };
     if (k.drift == DriftState::Drifting) {
         const float dir = float(k.drift_dir);
-        float rel = (yaw_needed * dir / (p.turn_rate * speed_fac) - drift_base) / drift_mod; // +1 = into the turn
+        float rel = drift_rel_for(c, p, yaw_needed * dir / (p.turn_rate * speed_fac)); // +1 = into the turn
         const float rest = turn_ahead(t, k.sample, 12.0f, spacing) * dir;
         const int tier = k.mt_tier(c);
         // Let go once the wanted mini-turbo is ready (and drift again if the

@@ -94,6 +94,8 @@ float terrain_multiplier(const KartState& s, const KartParams& p, const PhysicsC
     }
 }
 
+float inward_mult(const PhysicsConstants& k, const KartParams& p) { return p.drift == DriftType::Outward ? 1.0f : k.drift_inward_bonus; }
+
 void release_drift(KartState& s, const KartStepContext& ctx, bool give_boost) {
     const int tier = s.mt_tier(ctx.k);
     if (give_boost && tier > 0) {
@@ -105,6 +107,7 @@ void release_drift(KartState& s, const KartStepContext& ctx, bool give_boost) {
     s.drift = DriftState::None;
     s.drift_dir = 0;
     s.drift_frames = 0;
+    s.drift_turn = 0.0f;
     s.mt_charge = 0.0f;
 }
 
@@ -113,6 +116,8 @@ void start_respawn(KartState& s, const KartStepContext& ctx) {
     s.drift = DriftState::None;
     s.drift_dir = 0;
     s.drift_frames = 0;
+    s.drift_turn = 0.0f;
+    s.stuck_frames = 0;
     s.mt_charge = 0;
     s.boost_frames = 0;
     s.boost = BoostKind::None;
@@ -177,6 +182,7 @@ void land(KartState& s, const Probe& pr, const KartInput& in, const KartStepCont
             s.drift = DriftState::Drifting;
             s.drift_dir = steer > 0 ? 1 : -1;
             s.drift_frames = 0;
+            s.drift_turn = ctx.k.drift_turn_start; // starts almost straight: the kart keeps its momentum
             s.mt_charge = 0.0f;
             s.slide = lateral; // landing into a drift keeps all the sideways momentum
         } else {
@@ -216,7 +222,7 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
     } else {
         s.air_vel.y -= k.gravity * kDt;
         float rate = in.steer * p.turn_rate * 0.35f;
-        if (s.drift == DriftState::Drifting) rate = float(s.drift_dir) * p.turn_rate * 0.5f;
+        if (s.drift == DriftState::Drifting) rate = float(s.drift_dir) * p.turn_rate * s.drift_turn * 0.8f;
         const quat q = glm::angleAxis(-rate * kDt, kUp);
         s.rot = glm::normalize(q * s.rot);
         const vec3 h = q * vec3(s.air_vel.x, 0.0f, s.air_vel.z);
@@ -326,15 +332,15 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
             entry = t * t * (3.0f - 2.0f * t);
         }
         if (s.drift_frames < 255) ++s.drift_frames;
+        // The drift turn eases towards what the stick asks for.
+        const float target = drift_turn_target(k, p, in.steer * float(s.drift_dir));
+        s.drift_turn = approach(s.drift_turn, target, k.drift_turn_response * kDt);
     }
 
     // Steering turns the heading directly; it is not a physics torque.
     float yaw_rate;
     if (s.drift == DriftState::Drifting) {
-        const float rel = in.steer * float(s.drift_dir); // +1 = into the turn
-        const bool outward = p.drift == DriftType::Outward;
-        const float base = outward ? 0.62f : 0.82f, mod = outward ? 0.38f : 0.28f;
-        yaw_rate = float(s.drift_dir) * p.turn_rate * (base + mod * rel) * glm::mix(k.drift_entry_yaw, 1.0f, entry);
+        yaw_rate = float(s.drift_dir) * p.turn_rate * s.drift_turn;
     } else {
         const float at_speed = 1.0f - 0.25f * std::clamp(std::abs(s.speed) / p.top_speed, 0.0f, 1.0f);
         yaw_rate = in.steer * p.turn_rate * at_speed;
@@ -356,8 +362,10 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
 
     s.pos += (nf * s.speed + s.slide) * kDt;
 
+    // The nose swings in as far as the drift is tight.
+    const float tightness = std::clamp(s.drift_turn / std::max(k.drift_turn_tight * inward_mult(k, p), 1e-3f), 0.0f, 1.0f);
     const float target_yaw = s.drift == DriftState::Drifting
-                                 ? float(s.drift_dir) * (p.drift == DriftType::Outward ? 0.45f : 0.18f)
+                                 ? float(s.drift_dir) * (p.drift == DriftType::Outward ? 0.32f : 0.15f) * (0.3f + 0.7f * tightness)
                                  : 0.0f;
     s.visual_drift_yaw = approach(s.visual_drift_yaw, target_yaw, 3.0f * kDt);
 }
@@ -409,6 +417,18 @@ void collide_walls(KartState& s, const KartStepContext& ctx) {
 }
 
 } // namespace
+
+float drift_turn_target(const PhysicsConstants& k, const KartParams& p, float rel) {
+    rel = std::clamp(rel, -1.0f, 1.0f);
+    const float f = rel >= 0.0f ? glm::mix(k.drift_turn_neutral, k.drift_turn_tight, rel) : glm::mix(k.drift_turn_neutral, k.drift_turn_wide, -rel);
+    return f * inward_mult(k, p);
+}
+
+float drift_rel_for(const PhysicsConstants& k, const KartParams& p, float factor) {
+    factor /= inward_mult(k, p);
+    if (factor >= k.drift_turn_neutral) return (factor - k.drift_turn_neutral) / std::max(k.drift_turn_tight - k.drift_turn_neutral, 1e-4f);
+    return -(k.drift_turn_neutral - factor) / std::max(k.drift_turn_neutral - k.drift_turn_wide, 1e-4f);
+}
 
 int KartState::mt_tier(const PhysicsConstants& k) const {
     if (drift != DriftState::Drifting) return 0;
@@ -488,6 +508,16 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     if (s.pos.y < ctx.track.kill_y || (s.grounded && s.surface == Surface::OutOfBounds)) {
         start_respawn(s, ctx);
         return;
+    }
+    // Wedged against something: trying to drive but going nowhere.
+    if (s.grounded && !s.finished && (in.accelerate || in.brake) && std::abs(s.speed) < 1.5f) {
+        if (++s.stuck_frames >= ctx.k.stuck_respawn_frames) {
+            s.stuck_frames = 0;
+            start_respawn(s, ctx);
+            return;
+        }
+    } else {
+        s.stuck_frames = 0;
     }
     if (s.grounded && s.surface != Surface::OutOfBounds) {
         const CenterSample& c = ctx.track.center[size_t(s.sample)];

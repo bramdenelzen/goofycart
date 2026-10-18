@@ -139,6 +139,8 @@ void write_kart(Writer& w, const sim::KartState& s) {
     w.u16(uint16_t(std::clamp(s.mt_charge * 16.0f, 0.0f, 65535.0f)));
     w.i8(int8_t(std::lround(std::clamp(s.hop_steer, -1.0f, 1.0f) * 127.0f)));
     w.u8(s.drift_frames);
+    w.u16(uint16_t(std::clamp(s.stuck_frames, 0, 65535)));
+    w.u16(uint16_t(std::clamp(s.drift_turn * 20000.0f, 0.0f, 65535.0f)));
     w.u8(uint8_t(std::clamp(s.boost_frames, 0, 255)));
     w.u16(uint16_t(std::clamp(s.boost_mult * 1000.0f, 0.0f, 65535.0f)));
     w.u8(uint8_t(std::clamp(s.trick_window, 0, 255)));
@@ -205,6 +207,8 @@ sim::KartState read_kart(Reader& r) {
     s.mt_charge = float(r.u16()) / 16.0f;
     s.hop_steer = float(r.i8()) / 127.0f;
     s.drift_frames = r.u8();
+    s.stuck_frames = r.u16();
+    s.drift_turn = float(r.u16()) / 20000.0f;
     s.boost_frames = r.u8();
     s.boost_mult = float(r.u16()) / 1000.0f;
     s.trick_window = r.u8();
@@ -615,7 +619,8 @@ uint32_t hash_constants(const sim::PhysicsTables& t) {
     Writer w;
     for (float f : {k.gravity, k.hop_velocity, k.min_drift_speed, k.brake_decel, k.coast_decel, k.reverse_top,
                     k.reverse_accel, k.overspeed_decel, k.slope_factor, k.road_slip_retention, k.drift_slip_retention,
-                    k.drift_entry_slip_retention, k.drift_entry_yaw,
+                    k.drift_entry_slip_retention, k.drift_turn_wide, k.drift_turn_neutral, k.drift_turn_tight,
+                    k.drift_turn_start, k.drift_turn_response, k.drift_inward_bonus,
                     k.coin_speed_bonus, k.charge_fast, k.charge_slow, k.spark_threshold, k.mt_thresholds[0],
                     k.mt_thresholds[1], k.mt_thresholds[2], k.mt_boost_mult, k.offroad_light, k.offroad_medium,
                     k.offroad_heavy, k.boost_pad_mult, k.mushroom_mult, k.trick_mult, k.rocket_mult, k.boost_accel,
@@ -623,7 +628,7 @@ uint32_t hash_constants(const sim::PhysicsTables& t) {
         w.f32(f);
     for (int i : {k.max_coins, k.mt_frames[0], k.mt_frames[1], k.mt_frames[2], k.boost_pad_frames, k.mushroom_frames,
                   k.trick_frames, k.rocket_frames, k.rocket_window_early, k.rocket_window_late, k.burnout_frames,
-                  k.trick_window_frames, k.respawn_frames, k.drift_entry_frames})
+                  k.trick_window_frames, k.respawn_frames, k.drift_entry_frames, k.stuck_respawn_frames})
         w.i32(i);
     return crc32(w.data());
 }
