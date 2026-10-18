@@ -841,13 +841,13 @@ void App::render(float alpha, float dt) {
         }
         if (!online_ && karts[size_t(player_)].finished) {
             const char* hint = "ENTER / A: CONTINUE";
-            const VkExtent2D ext = renderer_.internal_extent();
+            const VkExtent2D ext = renderer_.ui_extent();
             renderer_.ui_text((float(ext.width) - render::Renderer::ui_text_width(hint, 1.5f)) * 0.5f,
                               float(ext.height) - 22.0f, hint, render::rgba(255, 255, 255), 1.5f);
         }
     }
     if (flash_ > 0.0f) {
-        const VkExtent2D ext = renderer_.internal_extent();
+        const VkExtent2D ext = renderer_.ui_extent();
         renderer_.ui_rect(0, 0, float(ext.width), float(ext.height), render::rgba(255, 255, 230, uint8_t(flash_ * 200.0f)));
         flash_ = std::max(0.0f, flash_ - dt * 3.0f);
     }
@@ -1054,7 +1054,7 @@ void App::draw_online_results() {
 }
 
 void App::draw_net_status() {
-    const VkExtent2D ext = renderer_.internal_extent();
+    const VkExtent2D ext = renderer_.ui_extent();
     const float H = float(ext.height);
     std::string line;
     if (!net_->connected()) line = "DISCONNECTED FROM SERVER";

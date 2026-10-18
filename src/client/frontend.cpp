@@ -10,11 +10,11 @@ namespace {
 
 void centered(render::Renderer& r, float y, const char* text, uint32_t color, float scale) {
     const float w = render::Renderer::ui_text_width(text, scale);
-    r.ui_text((float(r.internal_extent().width) - w) * 0.5f, y, text, color, scale);
+    r.ui_text((float(r.ui_extent().width) - w) * 0.5f, y, text, color, scale);
 }
 
 void footer(render::Renderer& r, const char* hint) {
-    const float W = float(r.internal_extent().width), H = float(r.internal_extent().height);
+    const float W = float(r.ui_extent().width), H = float(r.ui_extent().height);
     const float hw = render::Renderer::ui_text_width(hint, 1.5f);
     r.ui_rect((W - hw) * 0.5f - 6, H - 26, hw + 12, 18, rgba(0, 0, 0, 140));
     r.ui_text((W - hw) * 0.5f, H - 22, hint, rgba(255, 255, 255), 1.5f);
@@ -66,12 +66,12 @@ TitleChoice update_title(TitleState& s, const ClientActions& act) {
 }
 
 void draw_title(render::Renderer& r, const TitleState& s) {
-    const float H = float(r.internal_extent().height);
+    const float H = float(r.ui_extent().height);
     float y = H * 0.16f;
     centered(r, y + 2, "GOBBY KART", rgba(0, 0, 0, 160), 5.0f);
     centered(r, y, "GOBBY KART", rgba(255, 220, 60), 5.0f);
     y += 70.0f;
-    const float W = float(r.internal_extent().width);
+    const float W = float(r.ui_extent().width);
     r.ui_rect(W * 0.5f - 90, y - 8, 180, 24.0f * kTitleCount + 10, rgba(0, 0, 0, 150));
     for (int i = 0; i < kTitleCount; ++i) {
         const bool sel = i == s.row;
@@ -86,7 +86,7 @@ void draw_title(render::Renderer& r, const TitleState& s) {
 // ---------------------------------------------------------------- online
 
 void draw_online_status(render::Renderer& r, const std::string& text, bool failed) {
-    const float W = float(r.internal_extent().width), H = float(r.internal_extent().height);
+    const float W = float(r.ui_extent().width), H = float(r.ui_extent().height);
     const float w = std::max(200.0f, render::Renderer::ui_text_width(text.c_str(), 1.0f) + 24.0f);
     r.ui_rect((W - w) * 0.5f, H * 0.4f - 30, w, 64, rgba(0, 0, 0, 160));
     centered(r, H * 0.4f - 22, "ONLINE", rgba(255, 230, 60), 2.0f);

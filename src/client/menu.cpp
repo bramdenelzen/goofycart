@@ -47,7 +47,7 @@ SelectAction update_select(SelectState& s, const ClientActions& act, const sim::
 
 void draw_select(render::Renderer& r, const SelectState& s, const sim::PartsCatalog& parts,
                  const net::LobbyMsg* lobby, const std::string& track_name) {
-    const VkExtent2D ext = r.internal_extent();
+    const VkExtent2D ext = r.ui_extent();
     const float W = float(ext.width), H = float(ext.height);
     char buf[96];
 

@@ -26,7 +26,7 @@ bool Settings::load(const std::string& path) {
         if (key == "master") master = std::clamp(v, 0, 10);
         else if (key == "music") music = std::clamp(v, 0, 10);
         else if (key == "sfx") sfx = std::clamp(v, 0, 10);
-        else if (key == "low_res") low_res = v != 0;
+        else if (key == "pixel_look") low_res = v != 0; // was low_res; renamed when full resolution became the default
         else if (key == "fullscreen") fullscreen = v != 0;
         else if (key == "show_help") show_help = v != 0;
         else if (key == "rumble") rumble = v != 0;
@@ -37,7 +37,7 @@ bool Settings::load(const std::string& path) {
 
 bool Settings::save(const std::string& path) const {
     std::ofstream f(path, std::ios::trunc);
-    f << "master=" << master << "\nmusic=" << music << "\nsfx=" << sfx << "\nlow_res=" << low_res
+    f << "master=" << master << "\nmusic=" << music << "\nsfx=" << sfx << "\npixel_look=" << low_res
       << "\nfullscreen=" << fullscreen << "\nshow_help=" << show_help << "\nrumble=" << rumble
       << "\ncrash_reports=" << crash_reports << "\nmaster_url=" << master_url << "\n";
     return bool(f);

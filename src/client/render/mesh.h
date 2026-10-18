@@ -26,8 +26,10 @@ struct MeshData {
     std::vector<uint32_t> indices;
 };
 
-// Builds faceted meshes: every face gets its own vertices and a flat normal,
-// which is the look the art direction asks for.
+// Builds meshes. The flat primitives (tri, quad, box, cone, icosphere) give
+// every face its own vertices and normal; the smooth ones (grid and what is
+// built on it: sphere, lathe, loft, capsule, tube, rounded_box) share
+// vertices along a surface so the lighting rounds over it.
 class MeshBuilder {
 public:
     // Texture for the faces added from now on, mapped from the face's
@@ -47,6 +49,37 @@ public:
     void cylinder_x(vec3 center, float radius, float half_width, int sides, uint32_t color);
     void cone(vec3 base_center, float radius, float height, int sides, uint32_t color);
     void icosphere(vec3 center, float radius, uint32_t color); // 80 faces
+
+    // ---- smooth surfaces
+    // A rows x cols grid of points, triangulated with averaged vertex normals.
+    // With `wrap` the last column joins the first. Texture coordinates run
+    // 0..u_tiles across the columns and 0..v_tiles down the rows.
+    void grid(const std::vector<vec3>& points, int rows, int cols, bool wrap, uint32_t color, float u_tiles = 1.0f,
+              float v_tiles = 1.0f);
+    // Ellipsoid (a sphere when the radii match), `segments` around, `rings` from pole to pole.
+    void sphere(vec3 center, vec3 radii, uint32_t color, int segments = 24, int rings = 16);
+    void sphere(vec3 center, float radius, uint32_t color, int segments = 24, int rings = 16) {
+        sphere(center, vec3(radius), color, segments, rings);
+    }
+    // A profile of (radius, height) pairs revolved around `axis` from `origin`.
+    // Points with radius 0 close the ends.
+    void lathe(vec3 origin, vec3 axis, const std::vector<vec2>& profile, int segments, uint32_t color, float u_tiles = 1.0f,
+               float v_tiles = 1.0f);
+    // Successive cross-section rings, all of the same point count, skinned
+    // together; ends are closed with a flat fan when `cap_ends` is set.
+    void loft(const std::vector<std::vector<vec3>>& rings, uint32_t color, bool cap_ends = true);
+    void capsule(vec3 a, vec3 b, float radius, uint32_t color, int segments = 12, int rings = 4);
+    // A tube from a to b with radii at each end, rounded or flat caps.
+    void tube(vec3 a, vec3 b, float radius_a, float radius_b, uint32_t color, int segments = 16, bool caps = true);
+    void rounded_box(vec3 center, vec3 half, float radius, uint32_t color, int segments = 16, int rings = 12);
+    void torus(vec3 center, vec3 axis, float ring_radius, float tube_radius, uint32_t color, int segments = 24, int sides = 10);
+    // A round tube along a polyline, with a radius at every point: pipes,
+    // frames, fenders, handlebars.
+    void sweep(const std::vector<vec3>& path, const std::vector<float>& radii, uint32_t color, int segments = 12, bool caps = true);
+    void sweep(const std::vector<vec3>& path, float radius, uint32_t color, int segments = 12, bool caps = true) {
+        sweep(path, std::vector<float>(path.size(), radius), color, segments, caps);
+    }
+
     void append(const MeshData& other, const mat4& transform);
 
     MeshData& data() { return data_; }

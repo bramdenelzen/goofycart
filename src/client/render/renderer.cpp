@@ -129,6 +129,9 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
         return false;
     }
     vkb_physical_ = phys.value();
+    VkPhysicalDeviceFeatures f10{};
+    f10.samplerAnisotropy = VK_TRUE;
+    anisotropy_ = vkb_physical_.enable_features_if_present(f10);
     device_name_ = vkb_physical_.name;
 
     auto dev = vkb::DeviceBuilder(vkb_physical_).build();
@@ -589,12 +592,14 @@ bool Renderer::create_textures() {
     vc.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, uint32_t(kTexMips), 0, uint32_t(TexCount)};
     GK_VK_CHECK(vkCreateImageView(device_, &vc, nullptr, &textures_.view));
 
-    // Chunky texels up close, the smaller mips further away.
+    // Trilinear, anisotropic where the GPU allows it.
     VkSamplerCreateInfo sc{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-    sc.magFilter = VK_FILTER_NEAREST;
-    sc.minFilter = VK_FILTER_NEAREST;
-    sc.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sc.magFilter = VK_FILTER_LINEAR;
+    sc.minFilter = VK_FILTER_LINEAR;
+    sc.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     sc.addressModeU = sc.addressModeV = sc.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sc.anisotropyEnable = anisotropy_ ? VK_TRUE : VK_FALSE;
+    sc.maxAnisotropy = anisotropy_ ? 8.0f : 1.0f;
     sc.maxLod = float(kTexMips);
     GK_VK_CHECK(vkCreateSampler(device_, &sc, nullptr, &sampler_));
 
@@ -816,7 +821,8 @@ void Renderer::end_frame() {
         std::memcpy(f.ui.mapped, ui_vertices_.data(), count * sizeof(UiVertex));
         vmaFlushAllocation(allocator_, f.ui.alloc, 0, VK_WHOLE_SIZE);
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, ui_pipeline_);
-        const vec2 inv(2.0f / float(offscreen_extent_.width), 2.0f / float(offscreen_extent_.height));
+        const VkExtent2D ui = ui_extent();
+        const vec2 inv(2.0f / float(ui.width), 2.0f / float(ui.height));
         vkCmdPushConstants(cmd, ui_layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(inv), &inv);
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &f.ui.buffer, &offset);

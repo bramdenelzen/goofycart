@@ -267,9 +267,9 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 const float h = 4.0f + rnd() * 5.0f;
                 const uint32_t g = rgba(70, 150, 80);
                 b.texture(TexBark, 1.0f);
-                b.box(base + vec3(0, h * 0.5f, 0), vec3(0.5f, h * 0.5f, 0.5f), g);
-                b.box(base + vec3(0.9f, h * 0.55f, 0), vec3(0.4f, 0.3f, 0.4f), g);
-                b.box(base + vec3(1.2f, h * 0.7f, 0), vec3(0.3f, h * 0.2f, 0.3f), g);
+                b.capsule(base, base + vec3(0, h, 0), 0.5f, g, 12, 4);
+                b.sweep({base + vec3(0.3f, h * 0.45f, 0), base + vec3(1.0f, h * 0.5f, 0), base + vec3(1.2f, h * 0.9f, 0)}, 0.3f, g, 10);
+                b.sweep({base + vec3(-0.3f, h * 0.6f, 0), base + vec3(-0.9f, h * 0.65f, 0), base + vec3(-1.0f, h * 0.95f, 0)}, 0.26f, g, 10);
                 b.texture(TexSand, 2.0f);
                 b.cone(base, 3.0f + rnd() * 4.0f, 1.2f, 10, rgba(230, 196, 132));
                 break;
@@ -287,7 +287,7 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                     b.append(boat.take(), m);
                 } else { // buoy
                     b.texture(TexStripes, 1.0f);
-                    b.cone(base, 0.8f, 1.8f, 10, rgba(250, 120, 40));
+                    b.lathe(base, kUp, {{0.0f, 0.0f}, {0.8f, 0.0f}, {0.7f, 0.9f}, {0.3f, 1.6f}, {0.12f, 2.2f}, {0.0f, 2.3f}}, 14, rgba(250, 120, 40), 2.0f, 1.0f);
                 }
                 break;
             }
@@ -299,11 +299,13 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 b.cone(base, 5.0f, 0.5f, 10, rgba(240, 245, 252));
                 for (int k = 0; k < 2; ++k) {
                     const vec3 p = base + vec3(rnd() * 4.0f - 2.0f, 0.4f, rnd() * 4.0f - 2.0f);
+                    b.texture(TexBark, 1.0f);
+                    b.tube(p - vec3(0, 0.4f, 0), p + vec3(0, 1.0f, 0), 0.22f, 0.16f, rgba(90, 60, 40), 10, true);
                     b.texture(TexLeaves, 1.0f);
-                    b.cone(p, 1.6f, 3.0f, 8, rgba(40, 100, 70));
-                    b.cone(p + vec3(0, 2.0f, 0), 1.2f, 2.6f, 8, rgba(46, 112, 78));
+                    b.lathe(p, kUp, {{0.0f, 0.0f}, {1.6f, 0.1f}, {1.1f, 1.6f}, {0.0f, 3.0f}}, 14, rgba(40, 100, 70), 3.0f, 1.0f);
+                    b.lathe(p + vec3(0, 2.0f, 0), kUp, {{0.0f, 0.0f}, {1.2f, 0.1f}, {0.8f, 1.3f}, {0.0f, 2.6f}}, 14, rgba(46, 112, 78), 3.0f, 1.0f);
                     b.texture(TexSnow, 1.0f);
-                    b.cone(p + vec3(0, 3.8f, 0), 0.7f, 1.4f, 8, rgba(240, 245, 252));
+                    b.lathe(p + vec3(0, 3.8f, 0), kUp, {{0.0f, 0.0f}, {0.7f, 0.1f}, {0.4f, 0.8f}, {0.0f, 1.4f}}, 12, rgba(240, 245, 252), 2.0f, 1.0f);
                 }
                 break;
             }
@@ -331,8 +333,8 @@ MeshData make_scenery_mesh(const sim::Track& t) {
                 base.y = c.pos.y - 8.0f - rnd() * 16.0f;
                 b.texture(TexCloud, 3.0f);
                 for (int k = 0; k < 4; ++k)
-                    b.icosphere(base + vec3(rnd() * 10.0f - 5.0f, rnd() * 2.0f, rnd() * 10.0f - 5.0f), 3.0f + rnd() * 4.0f,
-                                rgba(250, 250, 255));
+                    b.sphere(base + vec3(rnd() * 10.0f - 5.0f, rnd() * 2.0f, rnd() * 10.0f - 5.0f), 3.0f + rnd() * 4.0f,
+                             rgba(250, 250, 255), 14, 10);
                 break;
             }
             case S::City: {
@@ -366,8 +368,8 @@ MeshData make_scenery_mesh(const sim::Track& t) {
         const float d = span * 0.8f + 120.0f + rnd() * 380.0f;
         const vec3 p(mid.x + std::cos(a) * d, mid.y + 10.0f + rnd() * 50.0f, mid.z + std::sin(a) * d);
         for (int k = 0; k < 4; ++k)
-            b.icosphere(p + vec3(rnd() * 16.0f - 8.0f, rnd() * 3.0f, rnd() * 10.0f - 5.0f), 5.0f + rnd() * 5.0f,
-                        rgba(250, 250, 255));
+            b.sphere(p + vec3(rnd() * 16.0f - 8.0f, rnd() * 3.0f, rnd() * 10.0f - 5.0f), 5.0f + rnd() * 5.0f,
+                     rgba(250, 250, 255), 14, 10);
     }
     if (th.scenery == S::City || th.scenery == S::Lava) {
         for (int i = 0; i < 160; ++i) {

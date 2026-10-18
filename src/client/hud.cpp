@@ -25,7 +25,7 @@ void draw_minimap(render::Renderer& r, const sim::World& w, int player) {
     const sim::Track& t = w.track();
     const int n = int(t.center.size());
     if (n < 4) return;
-    const VkExtent2D ext = r.internal_extent();
+    const VkExtent2D ext = r.ui_extent();
     const float H = float(ext.height);
     // Fit the track into a box on the left, below the lap and time, seen
     // from above (+x right, +z down) and kept in proportion.
@@ -179,7 +179,7 @@ void item_slot(render::Renderer& r, float x, float y, float size, sim::Item item
 
 void draw_results(render::Renderer& r, const std::string& title, const std::vector<ResultRow>& rows,
                   const std::string& footer) {
-    const VkExtent2D ext = r.internal_extent();
+    const VkExtent2D ext = r.ui_extent();
     const float W = float(ext.width), H = float(ext.height);
     const bool totals = !rows.empty() && rows[0].total >= 0;
     const float tw = totals ? 250.0f : 214.0f;
@@ -215,7 +215,7 @@ void draw_results(render::Renderer& r, const std::string& title, const std::vect
 
 void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::vector<std::string>& names,
               const HudMessage& msg, bool show_help, bool finish_table) {
-    const VkExtent2D ext = r.internal_extent();
+    const VkExtent2D ext = r.ui_extent();
     const float W = float(ext.width), H = float(ext.height);
     const sim::KartState& k = w.karts()[size_t(player)];
     const auto& kc = w.tables().constants;

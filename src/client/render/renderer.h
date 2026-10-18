@@ -1,6 +1,7 @@
 #pragma once
 #include "mesh.h"
 
+#include <cmath>
 #include <volk.h>
 #include <vk_mem_alloc.h>
 
@@ -38,7 +39,7 @@ struct SceneLighting {
 };
 
 struct RendererOptions {
-    bool full_resolution = false; // false = render low-res and integer-upscale
+    bool full_resolution = true;  // false = render low-res and integer-upscale
     int target_height = 300;      // internal height is window height / floor(window height / this)
     bool validation = false;
 };
@@ -59,7 +60,7 @@ public:
     void draw(MeshId mesh, const mat4& model, vec4 tint = vec4(1.0f));
     void end_frame();
 
-    // 2D overlay in internal-resolution pixels, drawn after the 3D scene.
+    // 2D overlay in ui_extent() pixels, drawn after the 3D scene.
     void ui_rect(float x, float y, float w, float h, uint32_t color);
     void ui_quad(vec2 a, vec2 b, vec2 c, vec2 d, uint32_t color);
     // Text in the stb_easy_font face (about 6 x 7 px per glyph at scale 1).
@@ -72,6 +73,14 @@ public:
     void set_full_resolution(bool on);
     bool full_resolution() const { return options_.full_resolution; }
     VkExtent2D internal_extent() const { return offscreen_extent_; }
+    // The 2D overlay is laid out in a virtual space kUiHeight pixels high
+    // (the width follows the aspect), scaled to the internal image: the HUD
+    // keeps its size whatever the resolution.
+    static constexpr uint32_t kUiHeight = 320;
+    VkExtent2D ui_extent() const {
+        const float h = float(std::max<uint32_t>(offscreen_extent_.height, 1));
+        return {uint32_t(std::lround(float(offscreen_extent_.width) * float(kUiHeight) / h)), kUiHeight};
+    }
     const std::string& device_name() const { return device_name_; }
 
 private:
@@ -153,6 +162,7 @@ private:
     Image offscreen_color_, offscreen_depth_;
     VkExtent2D offscreen_extent_{};
     uint32_t pixel_scale_ = 1;
+    bool anisotropy_ = false;
 
     VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;
     VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;

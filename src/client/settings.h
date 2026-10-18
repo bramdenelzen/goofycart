@@ -6,7 +6,7 @@ namespace gk {
 
 struct Settings {
     int master = 8, music = 6, sfx = 9; // volumes, 0..10
-    bool low_res = true;                // the chunky upscaled look (F2)
+    bool low_res = false;               // the chunky upscaled look (F2)
     bool fullscreen = false;
     bool show_help = true;              // control hints in races (F1)
     bool rumble = true;

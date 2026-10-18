@@ -33,24 +33,24 @@ MeshData make_banana_mesh() {
     // Three yellow segments in an arc, brown tips.
     MeshBuilder b;
     const uint32_t y = rgba(250, 220, 50), br = rgba(110, 80, 40);
-    for (int i = 0; i < 3; ++i) {
-        const float a = (float(i) - 1.0f) * 0.55f;
-        const vec3 c(std::sin(a) * 0.35f, 0.25f + std::cos(a) * 0.12f, 0.0f);
-        MeshBuilder seg;
-        seg.box({0, 0, 0}, {0.13f, 0.1f, 0.1f}, y);
-        b.append(seg.data(), glm::rotate(glm::translate(mat4(1.0f), c), -a, vec3(0, 0, 1)));
+    std::vector<vec3> path;
+    std::vector<float> radii;
+    const int n = 10;
+    for (int i = 0; i <= n; ++i) {
+        const float t = float(i) / float(n), a = (t - 0.5f) * 1.6f;
+        path.push_back({std::sin(a) * 0.55f, 0.12f + (1.0f - std::cos(a)) * 0.55f, 0.0f});
+        const float bulge = std::sin(t * kPi);
+        radii.push_back(0.03f + 0.09f * bulge);
     }
-    b.box({-0.52f, 0.33f, 0.0f}, {0.04f, 0.04f, 0.04f}, br);
-    b.box({0.52f, 0.33f, 0.0f}, {0.04f, 0.04f, 0.04f}, br);
+    b.sweep(path, radii, y, 10, true);
+    for (const vec3& tip : {path.front(), path.back()}) b.sphere(tip, 0.035f, br, 8, 6);
     return b.take();
 }
 
 MeshData make_shell_mesh(uint32_t color, bool spikes) {
     MeshBuilder b;
     // Dome, white rim and a dark underside.
-    MeshBuilder dome;
-    dome.icosphere({0, 0, 0}, 0.38f, color);
-    b.append(dome.data(), glm::scale(glm::translate(mat4(1.0f), vec3(0, 0.08f, 0)), vec3(1.0f, 0.75f, 1.0f)));
+    b.sphere({0, 0.08f, 0}, vec3(0.38f, 0.29f, 0.38f), color, 24, 14);
     const int n = 8;
     for (int i = 0; i < n; ++i) {
         const float a0 = 2.0f * kPi * float(i) / float(n), a1 = 2.0f * kPi * float(i + 1) / float(n);
@@ -62,12 +62,9 @@ MeshData make_shell_mesh(uint32_t color, bool spikes) {
     if (spikes) {
         for (int i = 0; i < 6; ++i) {
             const float a = 2.0f * kPi * float(i) / 6.0f;
-            MeshBuilder s;
-            s.cone({0, 0, 0}, 0.07f, 0.22f, 4, rgba(250, 250, 250));
             const vec3 dir = glm::normalize(vec3(std::cos(a), 0.9f, std::sin(a)));
             const vec3 base = vec3(0, 0.08f, 0) + dir * 0.3f;
-            const quat q = glm::rotation(vec3(0, 1, 0), dir);
-            b.append(s.data(), glm::translate(mat4(1.0f), base) * glm::mat4_cast(q));
+            b.tube(base, base + dir * 0.22f, 0.07f, 0.01f, rgba(250, 250, 250), 10, true);
         }
         // Little wings
         b.box({0.45f, 0.25f, 0.0f}, {0.15f, 0.02f, 0.08f}, rgba(250, 250, 250));
@@ -78,9 +75,10 @@ MeshData make_shell_mesh(uint32_t color, bool spikes) {
 
 MeshData make_bomb_mesh() {
     MeshBuilder b;
-    b.icosphere({0, 0.4f, 0}, 0.42f, rgba(30, 30, 40));
-    b.box({0, 0.86f, 0}, {0.08f, 0.06f, 0.08f}, rgba(160, 160, 170));
-    b.box({0, 0.98f, 0}, {0.02f, 0.06f, 0.02f}, rgba(220, 200, 150));
+    b.sphere({0, 0.4f, 0}, 0.42f, rgba(30, 30, 40), 24, 16);
+    b.tube({0, 0.78f, 0}, {0, 0.92f, 0}, 0.1f, 0.1f, rgba(160, 160, 170), 12, true);
+    b.sweep({{0, 0.92f, 0}, {0.03f, 1.02f, 0.02f}, {0.08f, 1.08f, 0.05f}}, 0.02f, rgba(220, 200, 150), 6);
+    b.sphere({0.08f, 1.1f, 0.05f}, 0.04f, rgba(255, 160, 40), 8, 6);
     b.box({0.18f, 0.5f, 0.38f}, {0.05f, 0.08f, 0.02f}, rgba(255, 255, 255)); // eyes
     b.box({-0.18f, 0.5f, 0.38f}, {0.05f, 0.08f, 0.02f}, rgba(255, 255, 255));
     b.box({0.3f, 0.05f, 0.0f}, {0.1f, 0.05f, 0.14f}, rgba(240, 180, 40));     // feet
@@ -90,7 +88,7 @@ MeshData make_bomb_mesh() {
 
 MeshData make_ball_mesh(uint32_t color) {
     MeshBuilder b;
-    b.icosphere({0, 0, 0}, 0.3f, color);
+    b.sphere({0, 0, 0}, 0.3f, color, 20, 14);
     return b.take();
 }
 
