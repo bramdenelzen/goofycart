@@ -345,7 +345,12 @@ void MeshBuilder::append(const MeshData& other, const mat4& m) {
     const glm::mat3 nm = glm::transpose(glm::inverse(glm::mat3(m)));
     for (const auto& v : other.vertices)
         data_.vertices.push_back({vec3(m * vec4(v.pos, 1.0f)), glm::normalize(nm * v.normal), v.color, v.uv, v.layer});
-    for (auto i : other.indices) data_.indices.push_back(base + i);
+    const bool mirrored = glm::determinant(glm::mat3(m)) < 0.0f; // flips the winding back
+    for (size_t k = 0; k + 2 < other.indices.size(); k += 3) {
+        data_.indices.push_back(base + other.indices[k]);
+        data_.indices.push_back(base + other.indices[k + (mirrored ? 2 : 1)]);
+        data_.indices.push_back(base + other.indices[k + (mirrored ? 1 : 2)]);
+    }
 }
 
 MeshData make_ground_mesh(float half, int cells) {

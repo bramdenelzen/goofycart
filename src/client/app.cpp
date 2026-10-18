@@ -193,7 +193,7 @@ bool App::init() {
     }
     {   // A soft round shadow under each kart.
         render::Canvas c(128, vec4(0.0f));
-        c.glow({0.0f, 0.0f, 1.0f, 1.0f}, {0.5f, 0.5f}, 0.5f, vec4(0.0f, 0.0f, 0.03f, 0.62f), 0.55f);
+        c.glow({0.0f, 0.0f, 1.0f, 1.0f}, {0.5f, 0.5f}, 0.5f, vec4(0.0f, 0.0f, 0.03f, 0.35f), 0.6f);
         render::MeshBuilder q;
         q.quad_uv({-1, 0, -1}, {-1, 0, 1}, {1, 0, 1}, {1, 0, -1}, {0, 0}, {0, 1}, {1, 1}, {1, 0}, render::rgba(255, 255, 255));
         shadow_mesh_ = renderer_.upload_mesh(q.take(), renderer_.upload_texture(128, 128, c.rgba().data()), false, true, true);

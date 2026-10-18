@@ -1,6 +1,7 @@
 set(GK_SHADERS
   ${PROJECT_SOURCE_DIR}/shaders/mesh.vert ${PROJECT_SOURCE_DIR}/shaders/mesh.frag
-  ${PROJECT_SOURCE_DIR}/shaders/ui.vert ${PROJECT_SOURCE_DIR}/shaders/ui.frag)
+  ${PROJECT_SOURCE_DIR}/shaders/ui.vert ${PROJECT_SOURCE_DIR}/shaders/ui.frag
+  ${PROJECT_SOURCE_DIR}/shaders/shadow.vert)
 
 # Compile shaders at build time when glslangValidator is available, otherwise
 # fall back to the checked-in SPIR-V headers in shaders/prebuilt.

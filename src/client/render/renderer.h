@@ -33,10 +33,11 @@ struct Camera {
 };
 
 struct SceneLighting {
-    vec3 light_dir = glm::normalize(vec3(0.4f, 1.0f, 0.3f)); // towards the light
+    vec3 light_dir = glm::normalize(vec3(0.6f, 0.62f, 0.45f)); // towards the light: a mid-morning sun
     float ambient = 0.45f;
     vec3 sky = {0.53f, 0.74f, 0.95f};
     float fog_density = 0.006f;
+    bool shadows = true;
 };
 
 struct RendererOptions {
@@ -127,8 +128,11 @@ private:
         vec4 light_dir;
         vec4 fog_color;
         vec4 sky_color;
+        mat4 light_vp;
+        vec4 shadow;
     };
     static constexpr uint32_t kFramesInFlight = 2;
+    static constexpr uint32_t kShadowSize = 2048;
     struct Frame {
         VkCommandPool pool = VK_NULL_HANDLE;
         VkCommandBuffer cmd = VK_NULL_HANDLE;
@@ -140,6 +144,7 @@ private:
         Buffer ui;       // per-frame overlay vertices
         std::string readback_path;
         VkExtent2D readback_extent{};
+        Image shadow;    // the sun's depth map
     };
 
     bool create_swapchain();
@@ -190,6 +195,10 @@ private:
     VkPipeline mesh_pipeline_ = VK_NULL_HANDLE;
     VkPipeline mesh_pipeline_two_sided_ = VK_NULL_HANDLE;
     VkPipeline mesh_pipeline_blend_ = VK_NULL_HANDLE;
+    VkPipeline shadow_pipeline_ = VK_NULL_HANDLE;
+    VkSampler shadow_sampler_ = VK_NULL_HANDLE;
+    mat4 light_vp_{1.0f};
+    bool create_shadow_pipeline();
     VkDescriptorSetLayout texture_set_layout_ = VK_NULL_HANDLE;
     VkDescriptorPool texture_pool_ = VK_NULL_HANDLE;
     std::vector<Texture2D> textures2d_;

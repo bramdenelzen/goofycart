@@ -2,10 +2,12 @@
 
 layout(set = 0, binding = 0) uniform Frame {
     mat4 view_proj;
-    vec4 camera_pos;   // xyz, w unused
+    vec4 camera_pos;
     vec4 light_dir;    // xyz towards the light, w = ambient
     vec4 fog_color;    // rgb, a = fog density
     vec4 sky_color;
+    mat4 light_vp;     // world to shadow map
+    vec4 shadow;       // x: 1 = shadows on, y: one shadow-map texel in uv
 } frame;
 
 layout(push_constant) uniform Draw {

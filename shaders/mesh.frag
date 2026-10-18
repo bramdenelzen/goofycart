@@ -6,6 +6,8 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 light_dir;    // xyz towards the light, w = ambient
     vec4 fog_color;    // rgb, a = fog density
     vec4 sky_color;
+    mat4 light_vp;     // world to shadow map
+    vec4 shadow;       // x: 1 = shadows on, y: one shadow-map texel in uv
 } frame;
 
 layout(push_constant) uniform Draw {
@@ -24,6 +26,24 @@ layout(location = 4) flat in uint v_layer;
 layout(set = 0, binding = 1) uniform sampler2DArray textures;
 // A loaded model's own texture, when draw.flags.x is set.
 layout(set = 1, binding = 0) uniform sampler2D albedo_tex;
+// The sun's shadow map, depth-compared.
+layout(set = 0, binding = 2) uniform sampler2DShadow shadow_map;
+
+// 0 in shadow .. 1 lit, softened over a 4x4 neighbourhood.
+float sun_visibility(vec3 world, vec3 n) {
+    if (frame.shadow.x < 0.5) return 1.0;
+    vec4 p = frame.light_vp * vec4(world + n * 0.12, 1.0);
+    vec3 s = p.xyz / p.w;
+    vec2 uv = s.xy * 0.5 + 0.5;
+    if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || s.z >= 1.0) return 1.0;
+    float t = frame.shadow.y, sum = 0.0;
+    for (int y = -1; y <= 2; ++y)
+        for (int x = -1; x <= 2; ++x) sum += texture(shadow_map, vec3(uv + (vec2(x, y) - 0.5) * t, s.z - 0.0006));
+    float v = sum / 16.0;
+    // Fade out towards the edge of the shadowed area.
+    vec2 e = abs(uv - 0.5) * 2.0;
+    return mix(v, 1.0, smoothstep(0.85, 1.0, max(e.x, e.y)));
+}
 
 layout(location = 0) out vec4 out_color;
 
@@ -54,15 +74,16 @@ void main() {
     // Soft wrapped diffuse: the shadow side stays readable, the terminator is
     // smooth over rounded shapes.
     float ndl = dot(n, l);
-    float diffuse = smoothstep(-0.35, 0.9, ndl);
+    float diffuse = smoothstep(-0.35, 0.9, ndl) * mix(0.12, 1.0, sun_visibility(v_world, n));
     // Hemisphere ambient: faces towards the sky take a touch of its colour.
     float up = n.y * 0.5 + 0.5;
     vec3 amb = ambient * mix(vec3(0.85, 0.82, 0.8), mix(vec3(1.0), frame.sky_color.rgb * 1.4, 0.35), up);
-    vec3 lit = albedo * (amb + (1.0 - ambient) * diffuse * vec3(1.0, 0.98, 0.94));
+    // Sun and sky: the sun is strong enough that its shadows read clearly.
+    vec3 lit = albedo * (amb * 0.78 + (1.05 - ambient * 0.55) * diffuse * vec3(1.0, 0.97, 0.9));
 
     // A broad glossy highlight and a thin rim: plastic and paint, not matte.
     vec3 h = normalize(l + v);
-    float spec = pow(max(dot(n, h), 0.0), 36.0) * 0.28 * step(0.0, ndl);
+    float spec = pow(max(dot(n, h), 0.0), 36.0) * 0.28 * step(0.0, ndl) * diffuse;
     float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.12 * (0.5 + 0.5 * ndl);
     lit += (spec + rim) * mix(vec3(1.0), frame.sky_color.rgb, 0.3);
 

@@ -611,7 +611,7 @@ PaintedModel town_house(vec4 wall, vec4 shutter, vec4 awning_a, int floors, uint
     });
     t.gradient_v(r_trim, col(170, 160, 150), col(110, 100, 95));
     m.mesh = b.take();
-    m.two_sided = true; // the awning
+    m.two_sided = false; // both faces are built: culling keeps them apart // the awning
     m.finish();
     return m;
 }
@@ -667,7 +667,7 @@ PaintedModel market_stall(vec4 canopy, uint32_t seed) {
     t.fill(r_crate, col(190, 150, 95));
     for (int i = 0; i < 3; ++i) t.band_v(r_crate, float(i) / 3.0f, float(i) / 3.0f + 0.04f, col(120, 85, 50), 0.01f);
     m.mesh = b.take();
-    m.two_sided = true;
+    m.two_sided = false; // both faces are built: culling keeps them apart
     m.finish();
     return m;
 }
@@ -775,7 +775,7 @@ PaintedModel windmill() {
     t.fill(r_sail, col(245, 240, 225));
     t.custom(r_sail, [](float u, float v) { const float g = std::min(std::fmod(u * 6.0f, 1.0f), std::fmod(v * 3.0f, 1.0f)); return vec4(0.45f, 0.3f, 0.2f, g < 0.08f ? 1.0f : 0.0f); });
     m.mesh = b.take();
-    m.two_sided = true;
+    m.two_sided = false; // both faces are built: culling keeps them apart
     m.finish();
     return m;
 }
