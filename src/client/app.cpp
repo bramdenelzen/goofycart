@@ -693,7 +693,17 @@ void App::start_hosting() {
     std::filesystem::remove(info, ec);
     const std::string port = std::to_string(net::kDefaultPort);
     const char* args[] = {server.c_str(), "--port", port.c_str(), "--upnp", "--info-file", info.c_str(), "--workdir", dir.c_str(), nullptr};
-    host_process_ = SDL_CreateProcess(args, false);
+    // In the background, with no stdio: a windowed Windows game has no console
+    // handles to inherit (DuplicateHandle fails), and this also keeps the
+    // server from opening a console window of its own.
+    const SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetPointerProperty(props, SDL_PROP_PROCESS_CREATE_ARGS_POINTER, const_cast<char**>(args));
+    SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDIN_NUMBER, SDL_PROCESS_STDIO_NULL);
+    SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDOUT_NUMBER, SDL_PROCESS_STDIO_NULL);
+    SDL_SetNumberProperty(props, SDL_PROP_PROCESS_CREATE_STDERR_NUMBER, SDL_PROCESS_STDIO_NULL);
+    SDL_SetBooleanProperty(props, SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN, true);
+    host_process_ = SDL_CreateProcessWithProperties(props);
+    SDL_DestroyProperties(props);
     if (!host_process_) {
         host_failed_ = true;
         host_lines_ = {std::string("COULD NOT START THE SERVER: ") + SDL_GetError()};
