@@ -14,8 +14,12 @@ struct Particle {
     vec4 color0{1.0f}, color1{1.0f, 1.0f, 1.0f, 0.0f};
     float gravity = 0.0f;           // m/s^2 downward
     float drag = 0.0f;              // per second
-    float stretch = 0.0f;           // streak length per m/s
+    float stretch = 0.0f;           // streak length per m/s of motion relative to `carry`
+    vec3 carry{0.0f};               // the velocity it was carried along with (a kart's), for streak direction
     bool additive = false;
+    render::Renderer::Sprite sprite = render::Renderer::Sprite::Puff;
+    float angle = 0.0f, spin = 0.0f; // radians, radians per second
+    float pop = 0.0f;               // > 0: grows in fast over this share of its life, then shrinks out
 };
 
 class Particles {

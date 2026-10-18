@@ -417,6 +417,8 @@ void App::start_race() {
     const bool time_trial = course_.mode == GameMode::TimeTrial;
     message_ = {track.name, render::rgba(255, 255, 255), 3.0f};
     particles_.clear();
+    skids_.clear();
+    skid_last_.clear();
     auto clamp_part = [](int i, size_t n) { return std::clamp(i, 0, int(n) - 1); };
     options_.build.driver = clamp_part(options_.build.driver, parts_.drivers.size());
     options_.build.body = clamp_part(options_.build.body, parts_.bodies.size());
@@ -1055,13 +1057,6 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
 
     const auto& kc = world()->tables().constants;
     emit_kart_particles(index, s, m);
-    if (s.drift == sim::DriftState::Drifting && s.mt_charge >= kc.spark_threshold) {
-        const vec4 c = to_tint(tier_color(s.mt_tier(kc)));
-        for (float side : {-1.0f, 1.0f}) { // a hot core at each rear wheel
-            const float j = std::sin(float(frame_ + index) * 2.3f + side) * 0.08f;
-            renderer_.draw(spark_mesh_, glm::scale(glm::translate(m, vec3(side * 0.55f, 0.12f + j, -0.7f - j)), vec3(0.8f)), c * 1.6f);
-        }
-    }
     if (s.boost_frames > 0) {
         const float flicker = 0.8f + 0.2f * std::sin(float(frame_) * 1.9f + float(index));
         vec4 c = to_tint(render::rgba(255, 170, 40));
@@ -1073,6 +1068,7 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
 }
 
 void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m) {
+    using Sp = render::Renderer::Sprite;
     const float dt = frame_dt_;
     if (dt <= 0.0f || paused_) return;
     const auto& kc = world()->tables().constants;
@@ -1080,123 +1076,193 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
     auto dir = [&](vec3 local) { return glm::normalize(vec3(m * vec4(local, 0.0f))); };
     const vec3 vel = s.velocity();
     const float speed = glm::length(vel);
-    // Expected count this frame for a rate per second, rounded randomly.
     auto count = [&](float rate) {
         const float n = rate * dt;
         return int(n) + (particles_.rnd() < n - std::floor(n) ? 1 : 0);
     };
-    const bool near = glm::distance(s.pos, cam_pos_) < 70.0f; // far karts: skip the small stuff
+    auto R = [&] { return particles_.rnd(); };
+    const bool near = glm::distance(s.pos, cam_pos_) < 70.0f;
 
-    // Drift sparks: a spray from the rear wheels in the charge colour.
-    if (s.drift == sim::DriftState::Drifting && s.mt_charge >= kc.spark_threshold) {
-        const vec4 c = to_tint(tier_color(s.mt_tier(kc)));
-        {
-            for (float side : {-1.0f, 1.0f}) { // a glow at each rear wheel, renewed every frame
-                Particle g;
-                g.pos = at({side * 0.68f, 0.18f, -0.95f});
-                g.vel = vel;
-                g.life = 0.03f;
-                g.size0 = g.size1 = 0.3f + 0.08f * particles_.rnd();
-                g.color0 = g.color1 = vec4(glm::mix(vec3(c), vec3(1.0f), 0.25f), 0.95f); // opaque colour reads on any ground
-                particles_.emit(g);
+    // Skid marks: two dark strips behind the rear wheels while drifting or sliding.
+    {
+        const bool marking = s.grounded && speed > 5.0f && (s.drift == sim::DriftState::Drifting || glm::length(s.slide) > 4.0f);
+        const size_t slot = size_t(index % 12);
+        if (skid_last_.size() < 12) skid_last_.assign(12, SkidPoint{});
+        SkidPoint& last = skid_last_[slot];
+        if (marking) {
+            const vec3 up = s.up(), across = glm::normalize(vec3(m * vec4(1, 0, 0, 0)));
+            SkidPoint now;
+            now.valid = true;
+            for (int w = 0; w < 2; ++w) now.wheel[w] = at({w == 0 ? -0.62f : 0.62f, 0.0f, -0.6f}) + up * 0.04f;
+            now.across = across;
+            if (!last.valid) last = now;
+            else if (glm::distance(now.wheel[0], last.wheel[0]) > 0.35f) {
+                for (int w = 0; w < 2; ++w) {
+                    const float hw = 0.13f;
+                    skids_.push_back({last.wheel[w] - last.across * hw, last.wheel[w] + last.across * hw, now.wheel[w] + now.across * hw,
+                                      now.wheel[w] - now.across * hw, 0.0f});
+                }
+                if (skids_.size() > 2400) skids_.erase(skids_.begin(), skids_.begin() + 200);
+                last = now;
             }
+        } else {
+            last.valid = false;
         }
-        for (float side : {-1.0f, 1.0f})
-            for (int i = 0, n = count(near ? 120.0f : 30.0f); i < n; ++i) {
+    }
+
+    // Drift sparks: chunky sparkles and flicked dots in the charge colour,
+    // a hot white centre, kicked out from the rear wheels.
+    if (s.drift == sim::DriftState::Drifting && s.mt_charge >= kc.spark_threshold) {
+        const vec3 c = vec3(to_tint(tier_color(s.mt_tier(kc))));
+        for (float side : {-1.0f, 1.0f}) {
+            const vec3 wheel = at({side * 0.68f, 0.14f, -0.95f});
+            Particle g; // the flare at the wheel, renewed every frame
+            g.pos = wheel, g.vel = g.carry = vel, g.life = 0.03f;
+            g.size0 = g.size1 = 0.26f + 0.08f * R();
+            g.sprite = Sp::Sparkle, g.angle = R() * 6.28f;
+            g.color0 = g.color1 = vec4(glm::mix(c, vec3(1.0f), 0.55f), 1.0f);
+            particles_.emit(g);
+            for (int i = 0, n = count(near ? 70.0f : 20.0f); i < n; ++i) {
                 Particle p;
-                p.pos = at({side * 0.68f, 0.12f, -0.95f});
-                // Mostly carried along with the kart, flicking out and back.
-                p.vel = vel * 0.9f + dir({side * (1.0f + 1.5f * particles_.rnd()), 1.5f + 2.5f * particles_.rnd(), -1.5f - 2.5f * particles_.rnd()});
-                p.life = 0.15f + 0.2f * particles_.rnd();
-                p.size0 = 0.17f, p.size1 = 0.04f;
-                p.color0 = vec4(glm::mix(vec3(c), vec3(1.0f), 0.35f), 1.0f), p.color1 = vec4(vec3(c), 0.3f);
-                p.gravity = 14.0f;
+                p.pos = wheel;
+                p.carry = vel * 0.9f;
+                p.vel = p.carry + dir({side * (1.5f + 2.0f * R()), 2.0f + 3.0f * R(), -1.0f - 2.0f * R()});
+                p.life = 0.18f + 0.18f * R();
+                p.size0 = 0.07f, p.size1 = 0.05f;
+                p.sprite = R() < 0.35f ? Sp::Sparkle : Sp::Dot;
+                p.stretch = p.sprite == Sp::Dot ? 0.05f : 0.0f;
+                p.angle = R() * 6.28f, p.spin = 10.0f;
+                p.color0 = vec4(glm::mix(c, vec3(1.0f), 0.3f), 1.0f), p.color1 = vec4(c, 1.0f);
+                p.gravity = 16.0f;
                 particles_.emit(p);
             }
+        }
     }
-    // Tyre smoke while drifting or sliding hard on the road.
+    // Tyre smoke: round white cartoon puffs that pop out and shrink away.
     const bool sliding = s.grounded && (s.drift == sim::DriftState::Drifting || glm::length(s.slide) > 3.0f) && speed > 5.0f;
     if (sliding && near)
-        for (int i = 0, n = count(18.0f); i < n; ++i) {
+        for (int i = 0, n = count(10.0f); i < n; ++i) {
             Particle p;
-            const float side = particles_.rnd() < 0.5f ? -1.0f : 1.0f;
-            p.pos = at({side * 0.6f, 0.15f, -0.65f});
-            p.vel = vel * 0.15f + vec3(0, 0.8f + particles_.rnd(), 0) + particles_.rnd_dir() * 0.6f;
-            p.life = 0.7f + 0.5f * particles_.rnd();
-            p.size0 = 0.25f, p.size1 = 1.0f + 0.4f * particles_.rnd();
-            p.color0 = vec4(0.92f, 0.92f, 0.95f, 0.38f), p.color1 = vec4(0.95f, 0.95f, 1.0f, 0.0f);
-            p.drag = 1.5f;
+            const float side = R() < 0.5f ? -1.0f : 1.0f;
+            p.pos = at({side * 0.7f, 0.2f, -0.85f});
+            p.vel = vel * 0.25f + vec3(0, 1.0f + R(), 0) + particles_.rnd_dir() * 0.4f;
+            p.life = 0.45f + 0.25f * R();
+            p.size0 = 0.2f + 0.1f * R(), p.size1 = 0.32f;
+            p.pop = 0.2f;
+            p.angle = R() * 6.28f, p.spin = (R() - 0.5f) * 3.0f;
+            p.color0 = vec4(0.97f, 0.97f, 1.0f, 0.95f), p.color1 = vec4(0.92f, 0.93f, 0.98f, 0.9f);
+            p.drag = 2.0f;
             particles_.emit(p);
         }
-    // Boost: fire from the exhaust, plus a trail of smoke.
+    // Boost: licks of flame from the exhaust, yellow at the root to red at the tip.
     if (s.boost_frames > 0) {
-        vec3 tint(1.0f, 0.55f, 0.15f);
-        if (s.boost == sim::BoostKind::MiniTurbo) tint = vec3(to_tint(tier_color(1)));
-        if (s.boost == sim::BoostKind::SuperMiniTurbo) tint = vec3(to_tint(tier_color(2)));
-        if (s.boost == sim::BoostKind::UltraMiniTurbo) tint = vec3(to_tint(tier_color(3)));
-        for (int i = 0, n = count(near ? 90.0f : 25.0f); i < n; ++i) {
+        vec3 hot(1.0f, 0.92f, 0.35f), cool(1.0f, 0.3f, 0.08f);
+        auto tier = [&](int t) { const vec3 c = vec3(to_tint(tier_color(t))); hot = glm::mix(c, vec3(1.0f), 0.6f), cool = c; };
+        if (s.boost == sim::BoostKind::MiniTurbo) tier(1);
+        if (s.boost == sim::BoostKind::SuperMiniTurbo) tier(2);
+        if (s.boost == sim::BoostKind::UltraMiniTurbo) tier(3);
+        if (s.boost == sim::BoostKind::Slipstream) hot = vec3(0.9f, 1.0f, 1.0f), cool = vec3(0.4f, 0.8f, 1.0f);
+        for (int i = 0, n = count(near ? 40.0f : 12.0f); i < n; ++i) {
             Particle p;
-            p.pos = at({(particles_.rnd() - 0.5f) * 0.4f, 0.3f, -0.95f});
-            p.vel = vel * 0.7f + dir({0, 0.4f, -1.0f}) * (4.0f + 4.0f * particles_.rnd()) + particles_.rnd_dir() * 0.7f;
-            p.life = 0.12f + 0.15f * particles_.rnd();
-            p.size0 = 0.28f, p.size1 = 0.06f;
-            p.color0 = vec4(glm::mix(tint, vec3(1.0f, 0.95f, 0.7f), 0.5f) * 1.8f, 1.0f), p.color1 = vec4(tint, 0.0f);
-            p.additive = true;
+            p.pos = at({(R() - 0.5f) * 0.3f, 0.32f, -1.0f});
+            p.carry = vel;
+            p.vel = vel + dir({(R() - 0.5f) * 0.4f, 0.3f, -1.0f}) * (4.0f + 2.0f * R());
+            p.life = 0.1f + 0.06f * R();
+            p.size0 = 0.15f, p.size1 = 0.05f;
+            p.sprite = Sp::Flame, p.stretch = 0.05f;
+            p.color0 = vec4(hot, 1.0f), p.color1 = vec4(cool, 1.0f);
             particles_.emit(p);
         }
-        if (near)
-            for (int i = 0, n = count(14.0f); i < n; ++i) {
-                Particle p;
-                p.pos = at({0, 0.35f, -1.1f});
-                p.vel = vel * 0.3f + vec3(0, 1.0f, 0) + particles_.rnd_dir() * 0.5f;
-                p.life = 0.6f + 0.4f * particles_.rnd();
-                p.size0 = 0.3f, p.size1 = 1.1f;
-                p.color0 = vec4(0.45f, 0.42f, 0.42f, 0.3f), p.color1 = vec4(0.6f, 0.6f, 0.62f, 0.0f);
-                p.drag = 1.2f;
-                particles_.emit(p);
-            }
     }
-    // Dust and spray off the road.
+    // Dust off rough ground: tan cartoon puffs.
     using S = sim::Surface;
     const bool rough = s.surface == S::OffroadLight || s.surface == S::OffroadMedium || s.surface == S::OffroadHeavy || s.surface == S::Sand ||
                        s.surface == S::Ice;
     if (s.grounded && rough && speed > 4.0f && near) {
         const std::string& theme = world()->track().theme;
-        vec3 dust = theme == "desert" || theme == "canyon" ? vec3(0.86f, 0.66f, 0.45f)
-                  : theme == "snow"                      ? vec3(0.95f, 0.97f, 1.0f)
-                  : theme == "volcano"                   ? vec3(0.35f, 0.3f, 0.3f)
-                                                         : vec3(0.62f, 0.52f, 0.38f);
-        if (s.surface == S::Sand) dust = vec3(0.93f, 0.82f, 0.58f);
-        for (int i = 0, n = count(10.0f + speed * 1.2f); i < n; ++i) {
+        vec3 dust = theme == "desert" || theme == "canyon" ? vec3(0.93f, 0.74f, 0.5f)
+                  : theme == "snow"                      ? vec3(1.0f, 1.0f, 1.0f)
+                  : theme == "volcano"                   ? vec3(0.45f, 0.4f, 0.4f)
+                                                         : vec3(0.72f, 0.6f, 0.42f);
+        if (s.surface == S::Sand) dust = vec3(0.98f, 0.88f, 0.62f);
+        for (int i = 0, n = count(6.0f + speed * 0.6f); i < n; ++i) {
             Particle p;
-            const float side = particles_.rnd() < 0.5f ? -1.0f : 1.0f;
-            p.pos = at({side * 0.6f, 0.1f, -0.6f});
-            p.vel = vel * 0.2f + vec3(0, 1.2f + 1.5f * particles_.rnd(), 0) + particles_.rnd_dir() * 1.0f;
-            p.life = 0.6f + 0.5f * particles_.rnd();
-            p.size0 = 0.2f, p.size1 = 0.9f;
-            p.color0 = vec4(dust, 0.55f), p.color1 = vec4(dust, 0.0f);
-            p.gravity = 1.5f, p.drag = 1.0f;
+            const float side = R() < 0.5f ? -1.0f : 1.0f;
+            p.pos = at({side * 0.7f, 0.15f, -0.8f});
+            p.vel = vel * 0.2f + vec3(0, 1.5f + 1.5f * R(), 0) + particles_.rnd_dir() * 0.8f;
+            p.life = 0.5f + 0.3f * R();
+            p.size0 = 0.2f + 0.1f * R(), p.size1 = 0.3f;
+            p.pop = 0.25f, p.angle = R() * 6.28f;
+            p.color0 = p.color1 = vec4(dust, 1.0f);
+            p.gravity = 2.0f, p.drag = 1.5f;
             particles_.emit(p);
         }
     }
-    // Star: a rainbow of glints trailing behind.
-    if (s.star_frames > 0)
-        for (int i = 0, n = count(40.0f); i < n; ++i) {
+    // Slipstream: white wind lines streaming past while you're in the tow.
+    if (s.draft > 15 && near)
+        for (int i = 0, n = count(30.0f * float(s.draft) / 75.0f); i < n; ++i) {
             Particle p;
-            p.pos = at({(particles_.rnd() - 0.5f) * 1.2f, 0.3f + particles_.rnd() * 0.8f, -0.5f});
-            p.vel = vel * 0.2f + particles_.rnd_dir() * 1.5f;
-            p.life = 0.4f + 0.3f * particles_.rnd();
-            const float h = particles_.rnd() * 6.28f;
-            const vec3 c(0.5f + 0.5f * std::sin(h), 0.5f + 0.5f * std::sin(h + 2.1f), 0.5f + 0.5f * std::sin(h + 4.2f));
-            p.size0 = 0.12f, p.size1 = 0.0f;
-            p.color0 = vec4(c * 1.8f, 1.0f), p.color1 = vec4(c, 0.0f);
-            p.additive = true;
+            const float a = R() * 6.28f;
+            p.pos = at({std::cos(a) * (0.9f + 0.3f * R()), 0.5f + std::sin(a) * 0.6f, 1.2f + R()});
+            p.carry = vel;
+            p.vel = vel - dir({0, 0, 1}) * 14.0f;
+            p.life = 0.16f;
+            p.size0 = p.size1 = 0.03f;
+            p.sprite = Sp::Solid, p.stretch = 0.06f;
+            p.color0 = vec4(1.0f, 1.0f, 1.0f, 0.85f), p.color1 = vec4(0.85f, 0.95f, 1.0f, 0.0f);
+            particles_.emit(p);
+        }
+    // Star: a trail of spinning rainbow stars.
+    if (s.star_frames > 0)
+        for (int i = 0, n = count(14.0f); i < n; ++i) {
+            Particle p;
+            p.pos = at({(R() - 0.5f) * 1.2f, 0.3f + R() * 0.8f, -0.6f});
+            p.vel = vel * 0.3f + particles_.rnd_dir() * 1.5f;
+            p.life = 0.5f + 0.3f * R();
+            const float h = R() * 6.28f;
+            const vec3 c(0.55f + 0.45f * std::sin(h), 0.55f + 0.45f * std::sin(h + 2.1f), 0.55f + 0.45f * std::sin(h + 4.2f));
+            p.size0 = p.size1 = 0.13f;
+            p.pop = 0.15f, p.sprite = Sp::Star, p.spin = 6.0f, p.angle = R() * 6.28f;
+            p.color0 = p.color1 = vec4(c, 1.0f);
             particles_.emit(p);
         }
     (void)index;
 }
 
-void App::burst(vec3 pos, int n, vec3 color, float speed, float size, bool additive, float gravity, float life) {
+void App::draw_speed_lines(const sim::KartState& k, float top_speed) {
+    // Thin tapered streaks rushing in from the screen edges, like an anime
+    // speed effect: only at the edges, so the road stays clear. Faint near
+    // top speed, strong while boosting.
+    const float speed = glm::length(k.velocity());
+    float intensity = std::clamp((speed / std::max(top_speed, 1.0f) - 0.97f) / 0.2f, 0.0f, 0.6f);
+    if (k.boost_frames > 0) intensity = std::max(intensity, k.boost == sim::BoostKind::BoostPad || k.boost == sim::BoostKind::Mushroom ? 1.0f : 0.8f);
+    if (paused_) intensity = 0.0f;
+    const float dt = frame_dt_;
+    const float n = 90.0f * intensity * dt;
+    for (int i = 0, c = int(n) + (particles_.rnd() < n - std::floor(n) ? 1 : 0); i < c; ++i)
+        speed_lines_.push_back({particles_.rnd() * 6.2832f, 1.08f + 0.15f * particles_.rnd(), 0.18f + 0.2f * particles_.rnd(),
+                                0.14f + 0.08f * particles_.rnd(), 0.0f, 1.2f + 1.8f * particles_.rnd()});
+    for (SpeedLine& l : speed_lines_) l.age += dt;
+    std::erase_if(speed_lines_, [](const SpeedLine& l) { return l.age >= l.life; });
+    const float W = ui::W(renderer_), H = ui::H(renderer_);
+    const vec2 c(W * 0.5f, H * 0.52f);
+    const float half = 0.5f * std::sqrt(W * W + H * H);
+    vec3 tint(1.0f);
+    if (k.boost == sim::BoostKind::MiniTurbo || k.boost == sim::BoostKind::SuperMiniTurbo || k.boost == sim::BoostKind::UltraMiniTurbo)
+        tint = glm::mix(vec3(1.0f), vec3(to_tint(tier_color(k.boost == sim::BoostKind::MiniTurbo ? 1 : k.boost == sim::BoostKind::SuperMiniTurbo ? 2 : 3))), 0.35f);
+    for (const SpeedLine& l : speed_lines_) {
+        const float t = l.age / l.life;
+        const float r0 = (l.r - 0.45f * t) * half, r1 = r0 - l.len * half; // rushing inward
+        const vec2 d(std::cos(l.angle), std::sin(l.angle)), side(-d.y, d.x);
+        const float a = std::sin(t * 3.1416f) * 0.55f;
+        const uint32_t col = render::rgba(uint8_t(tint.r * 255), uint8_t(tint.g * 255), uint8_t(tint.b * 255), uint8_t(a * 255));
+        const vec2 outer = c + d * r0, inner = c + d * r1;
+        renderer_.ui_quad(outer - side * l.width, outer + side * l.width, inner + side * 0.15f, inner - side * 0.15f, col);
+    }
+}
+
+void App::burst(vec3 pos, int n, vec3 color, float speed, float size, render::Renderer::Sprite sprite, float gravity, float life) {
+    using Sp = render::Renderer::Sprite;
     for (int i = 0; i < n; ++i) {
         Particle p;
         p.pos = pos;
@@ -1204,46 +1270,52 @@ void App::burst(vec3 pos, int n, vec3 color, float speed, float size, bool addit
         d.y = std::abs(d.y) * 0.8f + 0.2f;
         p.vel = d * speed * (0.5f + 0.5f * particles_.rnd());
         p.life = life * (0.6f + 0.4f * particles_.rnd());
-        p.size0 = size, p.size1 = additive ? 0.0f : size * 2.5f;
-        p.color0 = vec4(additive ? color * 1.7f : color, additive ? 1.0f : 0.6f), p.color1 = vec4(color, 0.0f);
-        p.gravity = gravity, p.drag = additive ? 0.5f : 2.0f;
-        p.stretch = additive ? 0.02f : 0.0f;
-        p.additive = additive;
+        p.size0 = p.size1 = size * (0.8f + 0.4f * particles_.rnd());
+        p.sprite = sprite;
+        p.pop = sprite == Sp::Puff ? 0.2f : 0.1f;
+        p.angle = particles_.rnd() * 6.28f;
+        p.spin = sprite == Sp::Puff ? 1.0f : (particles_.rnd() - 0.5f) * 14.0f;
+        p.color0 = p.color1 = vec4(color, 1.0f);
+        p.gravity = gravity, p.drag = sprite == Sp::Puff ? 2.5f : 0.8f;
         particles_.emit(p);
     }
 }
 
 void App::event_particles(const sim::KartEvent& e) {
+    using Sp = render::Renderer::Sprite;
     const sim::World* w = world();
     if (!w || e.kart < 0 || size_t(e.kart) >= w->karts().size()) return;
     const sim::KartState& k = w->karts()[size_t(e.kart)];
     const vec3 base = k.pos + k.up() * 0.2f;
     switch (e.type) {
-    case sim::KartEventType::Land: burst(base, 16, vec3(0.85f, 0.82f, 0.78f), 4.0f, 0.3f, false, 0.5f, 0.6f); break;
-    case sim::KartEventType::WallHit: burst(base + k.forward() * 0.8f + k.up() * 0.3f, 24, vec3(1.0f, 0.75f, 0.3f), 7.0f, 0.06f, true, 14.0f, 0.4f); break;
-    case sim::KartEventType::Bump: burst(base + k.up() * 0.6f, 10, vec3(1.0f, 0.95f, 0.5f), 4.0f, 0.1f, true, 0.0f, 0.4f); break;
+    case sim::KartEventType::Land: burst(base, 8, vec3(0.97f, 0.96f, 0.94f), 4.0f, 0.4f, Sp::Puff, 0.0f, 0.5f); break;
+    case sim::KartEventType::WallHit:
+        burst(base + k.forward() * 0.8f + k.up() * 0.3f, 10, vec3(1.0f, 0.85f, 0.3f), 6.0f, 0.12f, Sp::Sparkle, 10.0f, 0.4f);
+        burst(base + k.forward() * 0.8f, 4, vec3(0.95f, 0.95f, 0.95f), 2.0f, 0.35f, Sp::Puff, 0.0f, 0.4f);
+        break;
+    case sim::KartEventType::Bump: burst(base + k.up() * 0.8f, 6, vec3(1.0f, 0.92f, 0.3f), 3.5f, 0.16f, Sp::Star, 0.0f, 0.45f); break;
     case sim::KartEventType::ItemBox: {
-        // Confetti in the box colours.
-        for (int i = 0; i < 4; ++i) {
-            const vec3 c = i == 0 ? vec3(1.0f, 0.3f, 0.3f) : i == 1 ? vec3(0.3f, 0.6f, 1.0f) : i == 2 ? vec3(1.0f, 0.85f, 0.2f) : vec3(0.4f, 1.0f, 0.5f);
-            burst(base + k.up() * 0.8f, 8, c, 6.0f, 0.09f, true, 6.0f, 0.7f);
-        }
+        const vec3 cs[5] = {{1.0f, 0.3f, 0.35f}, {0.25f, 0.6f, 1.0f}, {1.0f, 0.85f, 0.15f}, {0.35f, 0.95f, 0.45f}, {0.85f, 0.4f, 1.0f}};
+        for (const vec3& c : cs) burst(base + k.up() * 0.9f, 6, c, 6.5f, 0.11f, Sp::Confetti, 7.0f, 0.9f);
         break;
     }
-    case sim::KartEventType::Hit: burst(base + k.up() * 0.5f, 26, vec3(1.0f, 0.85f, 0.3f), 8.0f, 0.08f, true, 6.0f, 0.5f); break;
+    case sim::KartEventType::Hit: burst(base + k.up() * 0.8f, 8, vec3(1.0f, 0.9f, 0.25f), 4.0f, 0.2f, Sp::Star, -1.0f, 0.7f); break;
     case sim::KartEventType::Explosion:
-        burst(base, 40, vec3(1.0f, 0.55f, 0.15f), 10.0f, 0.25f, true, 2.0f, 0.6f);
-        burst(base, 24, vec3(0.3f, 0.28f, 0.28f), 5.0f, 0.8f, false, -1.0f, 1.4f);
+        burst(base, 18, vec3(1.0f, 0.6f, 0.15f), 9.0f, 0.4f, Sp::Flame, 0.0f, 0.4f);
+        burst(base, 14, vec3(0.35f, 0.33f, 0.36f), 5.0f, 0.9f, Sp::Puff, -1.5f, 1.1f);
         break;
-    case sim::KartEventType::Respawn: burst(base + k.up() * 0.5f, 30, vec3(0.7f, 0.9f, 1.0f), 3.0f, 0.12f, true, -2.0f, 0.9f); break;
-    case sim::KartEventType::Trick: burst(base + k.up() * 0.5f, 14, vec3(1.0f, 1.0f, 0.6f), 5.0f, 0.1f, true, 0.0f, 0.5f); break;
-    case sim::KartEventType::Smash: burst(base + k.forward() * 1.0f + k.up() * 0.5f, 18, vec3(0.75f, 0.62f, 0.45f), 4.0f, 0.4f, false, 0.0f, 0.8f); break;
-    case sim::KartEventType::TireKnock: burst(base + k.forward() * 0.8f, 14, vec3(0.5f, 0.5f, 0.52f), 3.0f, 0.4f, false, 0.0f, 0.7f); break;
-    case sim::KartEventType::TireBounce: burst(base, 12, vec3(1.0f, 1.0f, 0.7f), 5.0f, 0.1f, true, 4.0f, 0.5f); break;
-    case sim::KartEventType::Boost:
-        if (e.value == int(sim::BoostKind::MiniTurbo) || e.value == int(sim::BoostKind::SuperMiniTurbo) || e.value == int(sim::BoostKind::UltraMiniTurbo))
-            burst(base - k.forward() * 0.9f + k.up() * 0.2f, 22, vec3(to_tint(tier_color(e.value == int(sim::BoostKind::MiniTurbo) ? 1 : e.value == int(sim::BoostKind::SuperMiniTurbo) ? 2 : 3))), 6.0f, 0.08f, true, 4.0f, 0.4f);
+    case sim::KartEventType::Respawn: burst(base + k.up() * 0.5f, 14, vec3(0.75f, 0.92f, 1.0f), 3.0f, 0.18f, Sp::Sparkle, -2.0f, 0.8f); break;
+    case sim::KartEventType::Trick: burst(base + k.up() * 0.5f, 8, vec3(1.0f, 0.95f, 0.45f), 4.5f, 0.18f, Sp::Star, 0.0f, 0.5f); break;
+    case sim::KartEventType::Smash: burst(base + k.forward() * 1.0f + k.up() * 0.5f, 8, vec3(0.9f, 0.8f, 0.62f), 3.5f, 0.45f, Sp::Puff, 0.0f, 0.6f); break;
+    case sim::KartEventType::TireKnock: burst(base + k.forward() * 0.8f, 6, vec3(0.75f, 0.75f, 0.78f), 3.0f, 0.4f, Sp::Puff, 0.0f, 0.5f); break;
+    case sim::KartEventType::TireBounce: burst(base, 6, vec3(1.0f, 0.95f, 0.5f), 4.0f, 0.16f, Sp::Star, 3.0f, 0.5f); break;
+    case sim::KartEventType::Boost: {
+        const int t = e.value == int(sim::BoostKind::MiniTurbo) ? 1 : e.value == int(sim::BoostKind::SuperMiniTurbo) ? 2
+                    : e.value == int(sim::BoostKind::UltraMiniTurbo) ? 3 : 0;
+        if (t > 0) burst(base - k.forward() * 1.0f + k.up() * 0.3f, 12, vec3(to_tint(tier_color(t))), 6.0f, 0.18f, Sp::Sparkle, 3.0f, 0.4f);
+        if (e.value == int(sim::BoostKind::Slipstream)) burst(base + k.up() * 0.5f, 10, vec3(0.85f, 0.97f, 1.0f), 5.0f, 0.2f, Sp::Sparkle, 0.0f, 0.4f);
         break;
+    }
     default: break;
     }
 }
@@ -1622,9 +1694,15 @@ void App::render(float alpha, float dt) {
         draw_movers(*w, alpha);
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
         if (!paused_) particles_.update(frame_dt_);
+        // Skid marks fade over eight seconds.
+        for (Skid& k : skids_) k.age += paused_ ? 0.0f : frame_dt_;
+        std::erase_if(skids_, [](const Skid& k) { return k.age > 8.0f; });
+        for (const Skid& k : skids_)
+            renderer_.decal(k.a, k.b, k.c, k.d, vec4(0.08f, 0.08f, 0.1f, 0.42f * std::clamp((8.0f - k.age) / 2.0f, 0.0f, 1.0f)));
         particles_.draw(renderer_);
         if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
+        if (size_t(player_) < karts.size()) draw_speed_lines(karts[size_t(player_)], w->params(player_).top_speed);
         draw_hud(renderer_, *w, player_, kart_names(), paused_ ? HudMessage{} : message_, show_help_ && !server_results && !paused_, !server_results);
         if (server_results) draw_online_results();
         if (ghost_) {

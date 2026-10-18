@@ -97,8 +97,25 @@ private:
     void draw_movers(const sim::World& w, float alpha);
     void emit_kart_particles(int index, const sim::KartState& s, const mat4& m);
     void event_particles(const sim::KartEvent& e);
-    void burst(vec3 pos, int n, vec3 color, float speed, float size, bool additive, float gravity, float life);
+    void burst(vec3 pos, int n, vec3 color, float speed, float size, render::Renderer::Sprite sprite, float gravity, float life);
     Particles particles_;
+    struct Skid {
+        vec3 a, b, c, d;
+        float age;
+    };
+    struct SkidPoint {
+        bool valid = false;
+        vec3 wheel[2]{};
+        vec3 across{1, 0, 0};
+    };
+    std::vector<Skid> skids_;
+    std::vector<SkidPoint> skid_last_; // per kart
+    // Speed lines: streaks at the edges of the screen when going fast.
+    struct SpeedLine {
+        float angle, r, len, life, age, width;
+    };
+    std::vector<SpeedLine> speed_lines_;
+    void draw_speed_lines(const sim::KartState& k, float top_speed);
     std::map<std::string, std::vector<render::MeshId>> mover_meshes_; // per track, one per mover
     std::map<std::string, std::pair<render::TextureId, std::pair<vec3, vec3>>> sky_textures_; // theme -> sky, zenith, horizon
     render::MeshId single_prop(const std::string& name);

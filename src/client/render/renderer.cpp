@@ -558,16 +558,66 @@ UiVertex flat_vertex(vec2 p, uint32_t c) {
 } // namespace
 
 void Renderer::make_particle_texture() {
-    // A soft round blob with a bright core.
-    constexpr int S = 64;
-    std::vector<uint8_t> px(S * S * 4, 255);
-    for (int y = 0; y < S; ++y)
-        for (int x = 0; x < S; ++x) {
-            const float dx = (float(x) + 0.5f) / S * 2.0f - 1.0f, dy = (float(y) + 0.5f) / S * 2.0f - 1.0f;
-            const float r = std::sqrt(dx * dx + dy * dy);
-            const float a = std::clamp(1.0f - r, 0.0f, 1.0f);
-            px[size_t(y * S + x) * 4 + 3] = uint8_t(255.0f * a * a * (3.0f - 2.0f * a));
-        }
+    // A 4 x 4 atlas of hard-edged cartoon shapes (see Sprite), white with
+    // baked shading where it helps; colour comes from the particle.
+    constexpr int S = 256, C = 64;
+    std::vector<uint8_t> px(S * S * 4, 0);
+    auto cell = [&](int index, auto shape) {
+        const int cx = (index % 4) * C, cy = (index / 4) * C;
+        for (int y = 0; y < C; ++y)
+            for (int x = 0; x < C; ++x) {
+                // 4x4 supersampling for clean edges.
+                float a = 0.0f, l = 0.0f;
+                for (int sy = 0; sy < 4; ++sy)
+                    for (int sx = 0; sx < 4; ++sx) {
+                        const vec2 p((float(x) + (float(sx) + 0.5f) / 4.0f) / C * 2.0f - 1.0f, (float(y) + (float(sy) + 0.5f) / 4.0f) / C * 2.0f - 1.0f);
+                        float light = 1.0f;
+                        if (shape(p, light)) a += 1.0f, l += light;
+                    }
+                uint8_t* o = &px[(size_t(cy + y) * S + size_t(cx + x)) * 4];
+                const float lit = a > 0.0f ? l / a : 1.0f;
+                o[0] = o[1] = o[2] = uint8_t(std::clamp(lit, 0.0f, 1.0f) * 255.0f);
+                o[3] = uint8_t(a / 16.0f * 255.0f);
+            }
+    };
+    const float pi = 3.14159265f;
+    // Puff: a round cloud ball, lit from the top left, a darker rim below.
+    cell(0, [](vec2 p, float& l) {
+        const float r = glm::length(p);
+        if (r > 0.92f) return false;
+        const float shade = glm::dot(glm::normalize(p + vec2(1e-4f)), glm::normalize(vec2(-0.6f, -0.8f))) * r;
+        l = shade > 0.3f ? 1.0f : r > 0.7f && shade < -0.25f ? 0.8f : 0.92f;
+        return true;
+    });
+    // Star: five points, a highlight on the upper half.
+    cell(1, [pi](vec2 p, float& l) {
+        const float a = std::atan2(p.x, -p.y), r = glm::length(p);
+        const float k = std::fmod(a + 2.0f * pi, 2.0f * pi / 5.0f) / (2.0f * pi / 5.0f);
+        const float edge = glm::mix(0.95f, 0.42f, std::abs(k - 0.5f) * 2.0f);
+        l = p.y < 0.0f ? 1.0f : 0.85f;
+        return r < 1.0f - (1.0f - edge) * 1.0f && r < 0.95f ? true : r < glm::mix(0.42f, 0.95f, 1.0f - std::abs(k - 0.5f) * 2.0f);
+    });
+    // Sparkle: a four-pointed glint.
+    cell(2, [](vec2 p, float& l) {
+        const float ax = std::abs(p.x), ay = std::abs(p.y);
+        l = 1.0f;
+        return ax * ay * 6.0f + ax * 0.25f + ay * 0.25f < 0.22f || glm::length(p) < 0.18f;
+    });
+    // Flame: a teardrop, round at the bottom (+y) and pointed at the top.
+    cell(3, [](vec2 p, float& l) {
+        const float y = p.y; // -1 top .. 1 bottom
+        const float w = y > 0.35f ? std::sqrt(std::max(0.0f, 0.42f - (y - 0.35f) * (y - 0.35f))) : 0.65f * (y + 1.0f) / 1.35f;
+        l = std::abs(p.x) < w * 0.45f && y > -0.2f ? 1.0f : 0.8f; // a hot core
+        return std::abs(p.x) < w && y > -0.98f && y < 0.98f;
+    });
+    // Solid: a filled square (decals, lines).
+    cell(4, [](vec2, float& l) { l = 1.0f; return true; });
+    // Ring: a shockwave.
+    cell(5, [](vec2 p, float& l) { l = 1.0f; const float r = glm::length(p); return r > 0.72f && r < 0.94f; });
+    // Dot: a plain disc.
+    cell(6, [](vec2 p, float& l) { l = 1.0f; return glm::length(p) < 0.9f; });
+    // Confetti: a little rectangle.
+    cell(7, [](vec2 p, float& l) { l = p.y < 0.0f ? 1.0f : 0.8f; return std::abs(p.x) < 0.55f && std::abs(p.y) < 0.3f; });
     particle_texture_ = upload_texture(S, S, px.data());
 }
 
@@ -657,9 +707,43 @@ bool Renderer::create_ui_pipeline() {
     return true;
 }
 
-void Renderer::particle(vec3 pos, float size, vec4 color, bool additive, vec3 velocity, float stretch) {
+void Renderer::particle(vec3 pos, float size, vec4 color, bool additive, vec3 velocity, float stretch, Sprite sprite, float angle) {
     if (!frame_active_ || particles_.size() >= kMaxParticles || color.a <= 0.003f) return;
-    particles_.push_back({pos, velocity, size, stretch, pack_rgba(color), additive});
+    // Right in front of the lens a sprite would fill the screen: fade it out.
+    const float d = glm::distance(pos, cam_pos_);
+    if (d < 1.2f + size) return;
+    color.a *= std::clamp((d - 1.2f - size) / 2.5f, 0.0f, 1.0f);
+    particles_.push_back({pos, velocity, size, stretch, angle, pack_rgba(color), additive, sprite});
+}
+
+namespace {
+// Atlas cell (4 x 4) for a sprite, inset a texel.
+void sprite_uv(Renderer::Sprite s, vec2 out[4]) {
+    const int i = int(s);
+    const float c = 0.25f, e = 1.0f / 256.0f;
+    const float u0 = float(i % 4) * c + e, v0 = float(i / 4) * c + e, u1 = u0 + c - 2.0f * e, v1 = v0 + c - 2.0f * e;
+    out[0] = {u0, v1};
+    out[1] = {u1, v1};
+    out[2] = {u1, v0};
+    out[3] = {u0, v0};
+}
+} // namespace
+
+void Renderer::decal(vec3 a, vec3 b, vec3 c, vec3 d, vec4 color) {
+    if (!frame_active_ || decals_.size() >= 6 * 3000) return;
+    vec2 uv[4];
+    sprite_uv(Sprite::Solid, uv);
+    const vec2 mid = 0.5f * (uv[0] + uv[2]);
+    const vec3 p[4] = {a, b, c, d};
+    const int order[6] = {0, 1, 2, 0, 2, 3};
+    for (int k : order) {
+        Vertex v{};
+        v.pos = p[k];
+        v.normal = {0, 1, 0};
+        v.color = pack_rgba(color);
+        v.uv = mid;
+        decals_.push_back(v);
+    }
 }
 
 void Renderer::ui_rect(float x, float y, float w, float h, uint32_t color) {
@@ -1189,6 +1273,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
 
     draws_.clear();
     particles_.clear();
+    decals_.clear();
     ui_vertices_.clear();
     frame_active_ = true;
     return true;
@@ -1344,18 +1429,30 @@ void Renderer::end_frame() {
         vkCmdPushConstants(cmd, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
         vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
     }
-    if (!particles_.empty() && particle_texture_) {
-        // Soft blended ones (back to front) first, then the additive ones.
+    if ((!particles_.empty() || !decals_.empty()) && particle_texture_) {
+        // Decals, then soft blended particles (back to front), then additive ones.
         std::stable_sort(particles_.begin(), particles_.end(), [&](const ParticleCmd& a, const ParticleCmd& b) {
             if (a.additive != b.additive) return !a.additive;
             return glm::distance(a.pos, cam_pos_) > glm::distance(b.pos, cam_pos_);
         });
         Vertex* out = static_cast<Vertex*>(f.particles.mapped);
-        uint32_t n = 0, first_add = 0;
+        const uint32_t cap = 6 * kMaxParticles;
+        uint32_t n = 0;
+        for (const Vertex& v : decals_) {
+            if (n >= cap) break;
+            out[n++] = v;
+        }
+        uint32_t first_add = 0;
         bool add_seen = false;
         for (const ParticleCmd& p : particles_) {
+            if (n + 6 > cap) break;
             if (p.additive && !add_seen) first_add = n, add_seen = true;
             vec3 rx = cam_right_ * p.size, ry = cam_up_ * p.size;
+            if (p.angle != 0.0f) {
+                const float cs = std::cos(p.angle), sn = std::sin(p.angle);
+                const vec3 a = rx * cs + ry * sn, b = -rx * sn + ry * cs;
+                rx = a, ry = b;
+            }
             if (p.stretch > 0.0f && glm::length(p.vel) > 0.01f) {
                 // A streak: long axis along the motion as seen on screen.
                 const vec3 to = glm::normalize(p.pos - cam_pos_);
@@ -1367,7 +1464,8 @@ void Renderer::end_frame() {
                 }
             }
             const vec3 c[4] = {p.pos - rx - ry, p.pos + rx - ry, p.pos + rx + ry, p.pos - rx + ry};
-            const vec2 uv[4] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+            vec2 uv[4];
+            sprite_uv(p.sprite, uv);
             const int order[6] = {0, 1, 2, 0, 2, 3};
             for (int k : order) {
                 Vertex v{};

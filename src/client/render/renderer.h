@@ -83,7 +83,13 @@ public:
     // else in the scene. `additive` adds light (sparks, fire, glints);
     // otherwise it is blended by alpha (smoke, dust). `stretch` > 0 drags it
     // along `velocity` into a streak.
-    void particle(vec3 pos, float size, vec4 color, bool additive, vec3 velocity = vec3(0.0f), float stretch = 0.0f);
+    // Shapes in the particle atlas: hard-edged, cartoon style.
+    enum class Sprite : uint8_t { Puff, Star, Sparkle, Flame, Solid, Ring, Dot, Confetti };
+    void particle(vec3 pos, float size, vec4 color, bool additive, vec3 velocity = vec3(0.0f), float stretch = 0.0f,
+                  Sprite sprite = Sprite::Puff, float angle = 0.0f);
+    // A flat quad lying in the world (skid marks): corners in order, drawn
+    // see-through under the particles.
+    void decal(vec3 a, vec3 b, vec3 c, vec3 d, vec4 color);
     // 2D overlay in ui_extent() pixels, drawn after the 3D scene.
     void ui_rect(float x, float y, float w, float h, uint32_t color);
     void ui_quad(vec2 a, vec2 b, vec2 c, vec2 d, uint32_t color);
@@ -265,11 +271,13 @@ private:
     TextureId font_texture_ = 0;
     struct ParticleCmd {
         vec3 pos, vel;
-        float size, stretch;
+        float size, stretch, angle;
         uint32_t color;
         bool additive;
+        Sprite sprite;
     };
     std::vector<ParticleCmd> particles_;
+    std::vector<Vertex> decals_;
     TextureId particle_texture_ = 0;
     VkPipeline mesh_pipeline_add_ = VK_NULL_HANDLE;
     vec3 cam_right_{1, 0, 0}, cam_up_{0, 1, 0}, cam_pos_{0.0f};
