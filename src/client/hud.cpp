@@ -316,21 +316,6 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
                             (tc & 0x00ffffffu) | 0xb0000000u);
         for (int i = 0; i < 2; ++i) r.ui_rect(bx + bw * kc.mt_thresholds[size_t(i)] / full, by, 1, bh, rgba(255, 255, 255, 200));
     }
-    if (k.boost_frames > 0) {
-        const char* label = "BOOST";
-        switch (k.boost) {
-        case sim::BoostKind::MiniTurbo: label = "MINI-TURBO"; break;
-        case sim::BoostKind::Slipstream: label = "SLIPSTREAM!"; break;
-        case sim::BoostKind::SuperMiniTurbo: label = "SUPER MINI-TURBO"; break;
-        case sim::BoostKind::UltraMiniTurbo: label = "ULTRA MINI-TURBO"; break;
-        case sim::BoostKind::Trick: label = "TRICK BOOST"; break;
-        case sim::BoostKind::RocketStart: label = "ROCKET START"; break;
-        case sim::BoostKind::GlideRamp: label = "GLIDE RAMP"; break;
-        case sim::BoostKind::BoostPad: label = "DASH PANEL"; break;
-        default: break;
-        }
-        ui::title(r, W * 0.5f, H * 0.62f, label, 1.8f, rgba(255, 200, 80));
-    }
     if (k.gliding) centered(r, W * 0.5f, H * 0.25f, "GLIDING  (stick up/down to pitch)", rgba(160, 210, 255), 1.0f);
     if (k.respawn_frames > 0) centered(r, W * 0.5f, H * 0.35f, "RESPAWNING...", rgba(255, 255, 255), 2.0f);
 
