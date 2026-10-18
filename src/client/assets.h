@@ -21,6 +21,8 @@ struct GpuModel {
 // then anchored and offset.
 struct ModelSpec {
     std::string file;
+    std::vector<std::string> extra_files; // merged into the same model (same units)
+    std::string texture;                  // replaces every part's texture (e.g. a red shell's)
     float yaw = 0.0f, pitch = 0.0f, roll = 0.0f; // degrees, applied before fitting
     std::string fit = "height";                    // length (z), width (x), height (y), radius (half of the larger of y/z), none
     float size = 1.0f;                             // metres for the fitted dimension
@@ -28,6 +30,8 @@ struct ModelSpec {
     std::string anchor = "bottom";                 // bottom (min y at 0, xz centred), center, none
     vec3 offset{0.0f};
     bool two_sided = false;
+    vec3 tint{1.0f};                               // multiplies the texture
+    float alpha = 1.0f;                            // < 1 draws the model translucent
     // Bodies only: optional wheel centres and seat (metres, after fitting).
     std::vector<vec3> wheels;
     bool has_seat = false;

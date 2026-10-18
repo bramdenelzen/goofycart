@@ -36,8 +36,9 @@ void main() {
     float alpha = v_color.a;
     if (draw.flags.x == 1) {
         vec4 t = texture(albedo_tex, v_uv);
-        if (t.a < 0.4) discard; // cut-outs: leaves, hair, grilles
-        albedo = v_color.rgb * t.rgb;
+        if (t.a < 0.08) discard; // cut-outs: leaves, hair, grilles
+        albedo = v_color.rgb * t.rgb * 1.25; // game albedos expect a brighter pipeline
+        alpha *= t.a;
     } else {
         albedo = v_color.rgb * texture(textures, vec3(v_uv, float(v_layer))).rgb * 2.0;
     }

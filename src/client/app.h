@@ -37,7 +37,8 @@ struct AppOptions {
     std::string track;            // offline: race this track straight away (skips the menus)
     bool mute = false;
     bool time_trial = false;
-    std::string menu;             // open on this menu (options, course) for screenshots      // with --track: a Time Trial instead of a VS race
+    std::string menu;             // open on this menu (options, course) for screenshots
+    std::string preview_model;    // show this manifest item on the title screen instead of the kart      // with --track: a Time Trial instead of a VS race
     // Online play: connect to a gk_server instead of racing locally.
     std::string connect_host;
     uint16_t connect_port = net::kDefaultPort;

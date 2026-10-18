@@ -1083,7 +1083,16 @@ void App::render_menu(float dt) {
     renderer_.draw(track_mesh_, mat4(1.0f));
     renderer_.draw(scenery_mesh_, mat4(1.0f));
     const int mesh = online_ ? std::max(online_->seat(), 0) : std::clamp(options_.karts, 1, 12) - 1;
-    draw_kart_visual(build_visual(select_.build, mesh), glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot), vec4(1.0f), 0.0f);
+    const mat4 kart_m = glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot);
+    if (const GpuModel* preview = options_.preview_model.empty() ? nullptr : assets_.item(options_.preview_model)) {
+        draw_model(*preview, kart_m);
+        // The kart's axes, for checking a model's orientation: red +X, green +Y, blue +Z.
+        renderer_.draw(spark_mesh_, glm::scale(glm::translate(kart_m, vec3(1.5f, 0.1f, 0)), vec3(2.0f)), vec4(3, 0, 0, 1));
+        renderer_.draw(spark_mesh_, glm::scale(glm::translate(kart_m, vec3(0, 1.5f, 0)), vec3(2.0f)), vec4(0, 3, 0, 1));
+        renderer_.draw(spark_mesh_, glm::scale(glm::translate(kart_m, vec3(0, 0.1f, 1.5f)), vec3(2.0f)), vec4(0, 0, 3, 1));
+    } else {
+        draw_kart_visual(build_visual(select_.build, mesh), kart_m, vec4(1.0f), 0.0f);
+    }
     switch (screen_) {
     case Screen::Title: draw_title(renderer_, title_); break;
     case Screen::Options: draw_options(renderer_, options_menu_, settings_); break;

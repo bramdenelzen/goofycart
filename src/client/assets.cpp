@@ -4,6 +4,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 
 namespace gk {
@@ -20,13 +22,25 @@ ModelSpec spec_from(const json& j, const std::string& default_fit, float default
         s.file = j.get<std::string>();
         return s;
     }
-    s.file = j.value("file", "");
+    if (j.contains("file") && j["file"].is_array()) {
+        for (const auto& f : j["file"]) {
+            if (!f.is_string()) continue;
+            if (s.file.empty()) s.file = f.get<std::string>();
+            else s.extra_files.push_back(f.get<std::string>());
+        }
+    } else {
+        s.file = j.value("file", "");
+    }
+    s.texture = j.value("texture", "");
     s.yaw = j.value("yaw", 0.0f);
     s.pitch = j.value("pitch", 0.0f);
     s.roll = j.value("roll", 0.0f);
     s.scale = j.value("scale", 1.0f);
     s.anchor = j.value("anchor", s.anchor);
     s.two_sided = j.value("two_sided", false);
+    s.alpha = j.value("alpha", 1.0f);
+    if (j.contains("tint") && j["tint"].is_array() && j["tint"].size() == 3)
+        s.tint = vec3(j["tint"][0].get<float>(), j["tint"][1].get<float>(), j["tint"][2].get<float>());
     for (const char* dim : {"length", "width", "height", "radius"})
         if (j.contains(dim) && j[dim].is_number()) {
             s.fit = dim;
@@ -62,6 +76,18 @@ GpuModel AssetLibrary::upload(const ModelSpec& spec, const std::string& dir, ren
         log_warn("Model {}: {}", path, error);
         return out;
     }
+    for (const std::string& extra : spec.extra_files) {
+        const std::string epath = extra.rfind('/', 0) == 0 ? extra : dir + "/" + extra;
+        if (auto more = render::load_model(epath, &error)) {
+            for (auto& part : more->parts) model->parts.push_back(std::move(part));
+        } else {
+            log_warn("Model {}: {}", epath, error);
+        }
+    }
+    if (!spec.texture.empty()) {
+        const std::string tpath = spec.texture.rfind('/', 0) == 0 ? spec.texture : std::filesystem::path(path).parent_path().string() + "/" + spec.texture;
+        for (auto& part : model->parts) part.texture = tpath;
+    }
     // Orientation first, then fit the chosen dimension, then anchor.
     mat4 rot(1.0f);
     rot = glm::rotate(rot, glm::radians(spec.yaw), vec3(0, 1, 0));
@@ -82,7 +108,11 @@ GpuModel AssetLibrary::upload(const ModelSpec& spec, const std::string& dir, ren
     else if (spec.anchor == "center") shift = -centre;
     render::transform_model(*model, glm::translate(mat4(1.0f), shift + spec.offset));
 
+    const uint32_t vertex_color = render::rgba(uint8_t(std::clamp(spec.tint.x, 0.0f, 1.0f) * 255.0f), uint8_t(std::clamp(spec.tint.y, 0.0f, 1.0f) * 255.0f),
+                                               uint8_t(std::clamp(spec.tint.z, 0.0f, 1.0f) * 255.0f), uint8_t(std::clamp(spec.alpha, 0.0f, 1.0f) * 255.0f));
     for (auto& part : model->parts) {
+        if (vertex_color != render::rgba(255, 255, 255))
+            for (auto& v : part.mesh.vertices) v.color = vertex_color;
         render::TextureId tex = 0;
         if (!part.texture.empty()) {
             auto it = textures_.find(part.texture);

@@ -63,7 +63,9 @@ std::string resolve_texture(const std::string& name_in, const fs::path& model_di
     const fs::path given(name);
     const fs::path base = given.filename();
     std::vector<fs::path> candidates{given, model_dir / given, model_dir / base, (model_dir / base).replace_extension(".png"),
-                                     model_dir / "textures" / base, (model_dir / "textures" / base).replace_extension(".png")};
+                                     (model_dir / base).replace_extension(".dds"), model_dir / "textures" / base,
+                                     (model_dir / "textures" / base).replace_extension(".png"),
+                                     (model_dir / "textures" / base).replace_extension(".dds")};
     for (const fs::path& c : candidates)
         if (fs::is_regular_file(c, ec)) return c.string();
     // Last resort: the same basename (any extension stb reads) anywhere below.
@@ -72,7 +74,7 @@ std::string resolve_texture(const std::string& name_in, const fs::path& model_di
     for (const auto& entry : fs::recursive_directory_iterator(model_dir, fs::directory_options::skip_permission_denied, ec)) {
         if (!entry.is_regular_file(ec)) continue;
         const std::string ext = lower(entry.path().extension().string());
-        if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".tga" && ext != ".bmp") continue;
+        if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".tga" && ext != ".bmp" && ext != ".dds") continue;
         if (lower(entry.path().stem().string()) == stem) return entry.path().string();
     }
     return {};
@@ -803,7 +805,122 @@ std::optional<ModelData> load_dae(const std::string& path, const std::string& te
 
 } // namespace
 
+namespace {
+
+// DDS: uncompressed BGRA/RGBA or BC1/BC2/BC3 (DXT1/3/5), top mip only.
+std::optional<ImageData> load_dds(const std::string& path) {
+    const auto data = read_file(path);
+    if (!data || data->size() < 128 || data->compare(0, 4, "DDS ") != 0) return std::nullopt;
+    const auto* bytes = reinterpret_cast<const uint8_t*>(data->data());
+    auto u32 = [&](size_t at) { return uint32_t(bytes[at]) | uint32_t(bytes[at + 1]) << 8 | uint32_t(bytes[at + 2]) << 16 | uint32_t(bytes[at + 3]) << 24; };
+    const int height = int(u32(12)), width = int(u32(16));
+    const uint32_t pf_flags = u32(80), fourcc = u32(84), bit_count = u32(88);
+    const uint32_t rmask = u32(92), gmask = u32(96), bmask = u32(100), amask = u32(104);
+    size_t offset = 128;
+    std::string cc(reinterpret_cast<const char*>(bytes + 84), 4);
+    if (cc == "DX10") {
+        if (data->size() < 148) return std::nullopt;
+        const uint32_t dxgi = u32(128);
+        // DXGI_FORMAT_BC1_* 70..72, BC2 73..75, BC3 76..78, R8G8B8A8 27..29, B8G8R8A8 86..88
+        if (dxgi >= 70 && dxgi <= 72) cc = "DXT1";
+        else if (dxgi >= 73 && dxgi <= 75) cc = "DXT3";
+        else if (dxgi >= 76 && dxgi <= 78) cc = "DXT5";
+        else if (dxgi >= 27 && dxgi <= 29) cc = "RGBA";
+        else if (dxgi >= 86 && dxgi <= 88) cc = "BGRA";
+        else return std::nullopt;
+        offset = 148;
+    } else if (!(pf_flags & 0x4)) { // DDPF_FOURCC not set: uncompressed
+        cc = bit_count == 32 ? (rmask == 0xff ? "RGBA" : "BGRA") : bit_count == 24 ? "BGR" : "";
+        if (cc.empty()) return std::nullopt;
+    }
+    if (width <= 0 || height <= 0) return std::nullopt;
+    ImageData img;
+    img.width = width;
+    img.height = height;
+    img.rgba.assign(size_t(width) * size_t(height) * 4, 255);
+    if (cc == "RGBA" || cc == "BGRA" || cc == "BGR") {
+        const size_t bpp = cc == "BGR" ? 3 : 4;
+        if (data->size() < offset + bpp * size_t(width) * size_t(height)) return std::nullopt;
+        for (size_t i = 0; i < size_t(width) * size_t(height); ++i) {
+            const uint8_t* s = bytes + offset + i * bpp;
+            uint8_t* d = &img.rgba[i * 4];
+            if (cc == "RGBA") { d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3]; }
+            else { d[0] = s[2]; d[1] = s[1]; d[2] = s[0]; d[3] = bpp == 4 ? s[3] : 255; }
+        }
+        (void)gmask; (void)bmask; (void)amask;
+        return img;
+    }
+    const bool dxt1 = cc == "DXT1", dxt3 = cc == "DXT3", dxt5 = cc == "DXT5";
+    if (!dxt1 && !dxt3 && !dxt5) return std::nullopt;
+    const size_t block_bytes = dxt1 ? 8 : 16;
+    const int bw = (width + 3) / 4, bh = (height + 3) / 4;
+    if (data->size() < offset + block_bytes * size_t(bw) * size_t(bh)) return std::nullopt;
+    auto put = [&](int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+        if (x >= width || y >= height) return;
+        uint8_t* d = &img.rgba[(size_t(y) * size_t(width) + size_t(x)) * 4];
+        d[0] = r; d[1] = g; d[2] = b; d[3] = a;
+    };
+    for (int by = 0; by < bh; ++by)
+        for (int bx = 0; bx < bw; ++bx) {
+            const uint8_t* blk = bytes + offset + (size_t(by) * size_t(bw) + size_t(bx)) * block_bytes;
+            uint8_t alpha[16];
+            for (auto& a : alpha) a = 255;
+            if (dxt3) {
+                for (int i = 0; i < 16; ++i) alpha[i] = uint8_t(((blk[i / 2] >> ((i % 2) * 4)) & 0xf) * 17);
+                blk += 8;
+            } else if (dxt5) {
+                const int a0 = blk[0], a1 = blk[1];
+                uint64_t bits = 0;
+                for (int i = 0; i < 6; ++i) bits |= uint64_t(blk[2 + i]) << (8 * i);
+                for (int i = 0; i < 16; ++i) {
+                    const int code = int((bits >> (3 * i)) & 7);
+                    int a;
+                    if (code == 0) a = a0;
+                    else if (code == 1) a = a1;
+                    else if (a0 > a1) a = ((8 - code) * a0 + (code - 1) * a1) / 7;
+                    else if (code == 6) a = 0;
+                    else if (code == 7) a = 255;
+                    else a = ((6 - code) * a0 + (code - 1) * a1) / 5;
+                    alpha[i] = uint8_t(a);
+                }
+                blk += 8;
+            }
+            const uint32_t c0 = uint32_t(blk[0]) | uint32_t(blk[1]) << 8, c1 = uint32_t(blk[2]) | uint32_t(blk[3]) << 8;
+            auto expand = [](uint32_t c, uint8_t* out) {
+                out[0] = uint8_t(((c >> 11) & 31) * 255 / 31);
+                out[1] = uint8_t(((c >> 5) & 63) * 255 / 63);
+                out[2] = uint8_t((c & 31) * 255 / 31);
+            };
+            uint8_t col[4][3];
+            expand(c0, col[0]);
+            expand(c1, col[1]);
+            bool punch = false;
+            if (c0 > c1 || !dxt1) {
+                for (int k = 0; k < 3; ++k) {
+                    col[2][k] = uint8_t((2 * col[0][k] + col[1][k]) / 3);
+                    col[3][k] = uint8_t((col[0][k] + 2 * col[1][k]) / 3);
+                }
+            } else {
+                for (int k = 0; k < 3; ++k) {
+                    col[2][k] = uint8_t((col[0][k] + col[1][k]) / 2);
+                    col[3][k] = 0;
+                }
+                punch = true;
+            }
+            const uint32_t idx = uint32_t(blk[4]) | uint32_t(blk[5]) << 8 | uint32_t(blk[6]) << 16 | uint32_t(blk[7]) << 24;
+            for (int i = 0; i < 16; ++i) {
+                const int ci = int((idx >> (2 * i)) & 3);
+                const uint8_t a = punch && ci == 3 ? 0 : alpha[i];
+                put(bx * 4 + i % 4, by * 4 + i / 4, col[ci][0], col[ci][1], col[ci][2], a);
+            }
+        }
+    return img;
+}
+
+} // namespace
+
 std::optional<ImageData> load_image(const std::string& path) {
+    if (lower(fs::path(path).extension().string()) == ".dds") return load_dds(path);
     int w = 0, h = 0, n = 0;
     stbi_uc* px = stbi_load(path.c_str(), &w, &h, &n, 4);
     if (!px) return std::nullopt;
