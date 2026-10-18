@@ -24,6 +24,7 @@
 #include "font.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 
 namespace gk::render {
@@ -558,66 +559,116 @@ UiVertex flat_vertex(vec2 p, uint32_t c) {
 } // namespace
 
 void Renderer::make_particle_texture() {
-    // A 4 x 4 atlas of hard-edged cartoon shapes (see Sprite), white with
-    // baked shading where it helps; colour comes from the particle.
-    constexpr int S = 256, C = 64;
+    // A 4 x 4 atlas of hand-drawn-style shapes (see Sprite): each a signed
+    // distance (negative inside) drawn with a dark outline and baked
+    // shading in the grey channel; the particle colour multiplies it, so
+    // outlines come out as a dark shade of the particle's own colour.
+    constexpr int S = 512, C = 128;
+    constexpr float kLine = 0.07f; // outline width, in cell units (-1..1)
     std::vector<uint8_t> px(S * S * 4, 0);
-    auto cell = [&](int index, auto shape) {
+    struct Px { float d, light; }; // signed distance and shading 0..1
+    auto cell = [&](int index, bool outline, auto shape) {
         const int cx = (index % 4) * C, cy = (index / 4) * C;
         for (int y = 0; y < C; ++y)
             for (int x = 0; x < C; ++x) {
-                // 4x4 supersampling for clean edges.
                 float a = 0.0f, l = 0.0f;
-                for (int sy = 0; sy < 4; ++sy)
-                    for (int sx = 0; sx < 4; ++sx) {
-                        const vec2 p((float(x) + (float(sx) + 0.5f) / 4.0f) / C * 2.0f - 1.0f, (float(y) + (float(sy) + 0.5f) / 4.0f) / C * 2.0f - 1.0f);
-                        float light = 1.0f;
-                        if (shape(p, light)) a += 1.0f, l += light;
+                for (int sy = 0; sy < 3; ++sy)
+                    for (int sx = 0; sx < 3; ++sx) {
+                        const vec2 p((float(x) + (float(sx) + 0.5f) / 3.0f) / C * 2.0f - 1.0f, (float(y) + (float(sy) + 0.5f) / 3.0f) / C * 2.0f - 1.0f);
+                        const Px q = shape(p);
+                        if (q.d > 0.0f) continue;
+                        a += 1.0f;
+                        l += outline && q.d > -kLine ? 0.16f : q.light;
                     }
                 uint8_t* o = &px[(size_t(cy + y) * S + size_t(cx + x)) * 4];
                 const float lit = a > 0.0f ? l / a : 1.0f;
                 o[0] = o[1] = o[2] = uint8_t(std::clamp(lit, 0.0f, 1.0f) * 255.0f);
-                o[3] = uint8_t(a / 16.0f * 255.0f);
+                o[3] = uint8_t(a / 9.0f * 255.0f);
             }
     };
     const float pi = 3.14159265f;
-    // Puff: a round cloud ball, lit from the top left, a darker rim below.
-    cell(0, [](vec2 p, float& l) {
-        const float r = glm::length(p);
-        if (r > 0.92f) return false;
-        const float shade = glm::dot(glm::normalize(p + vec2(1e-4f)), glm::normalize(vec2(-0.6f, -0.8f))) * r;
-        l = shade > 0.3f ? 1.0f : r > 0.7f && shade < -0.25f ? 0.8f : 0.92f;
-        return true;
-    });
-    // Star: five points, a highlight on the upper half.
-    cell(1, [pi](vec2 p, float& l) {
+    auto circle = [](vec2 p, vec2 c, float r) { return glm::length(p - c) - r; };
+    // A cloud puff: overlapping round lobes, lit from the top left with a
+    // darker underside and a few shadow creases.
+    auto puff = [&](const std::vector<vec3>& lobes) {
+        return [lobes, circle](vec2 p) {
+            float d = 1e9f;
+            for (const vec3& l : lobes) d = std::min(d, circle(p, vec2(l), l.z));
+            const float up = glm::dot(p, glm::normalize(vec2(0.45f, 0.9f))); // + towards the lower right
+            float light = up < 0.05f ? 1.0f : up < 0.45f ? 0.86f : 0.7f;
+            // A crease inside each lobe on its lower side.
+            for (const vec3& l : lobes) {
+                const float r = glm::length(p - vec2(l));
+                if (r < l.z * 0.85f && r > l.z * 0.72f && (p.y - l.y) > 0.25f * l.z) light = std::min(light, 0.66f);
+            }
+            return Px{d, light};
+        };
+    };
+    cell(0, true, puff({{-0.3f, 0.2f, 0.42f}, {0.25f, 0.18f, 0.48f}, {0.0f, -0.25f, 0.5f}, {-0.48f, -0.12f, 0.3f}, {0.52f, -0.15f, 0.3f}}));
+    cell(11, true, puff({{-0.2f, 0.25f, 0.45f}, {0.35f, 0.1f, 0.42f}, {-0.05f, -0.3f, 0.42f}, {0.4f, -0.4f, 0.25f}, {-0.55f, 0.0f, 0.28f}}));
+    // Star: five chunky points, a lighter upper half.
+    cell(1, true, [](vec2 p) {
         const float a = std::atan2(p.x, -p.y), r = glm::length(p);
-        const float k = std::fmod(a + 2.0f * pi, 2.0f * pi / 5.0f) / (2.0f * pi / 5.0f);
-        const float edge = glm::mix(0.95f, 0.42f, std::abs(k - 0.5f) * 2.0f);
-        l = p.y < 0.0f ? 1.0f : 0.85f;
-        return r < 1.0f - (1.0f - edge) * 1.0f && r < 0.95f ? true : r < glm::mix(0.42f, 0.95f, 1.0f - std::abs(k - 0.5f) * 2.0f);
+        const float k = std::pow(0.5f + 0.5f * std::cos(5.0f * a), 1.6f); // 1 at a point
+        const float edge = glm::mix(0.45f, 0.95f, k);
+        return Px{(r - edge) * 0.75f, p.y < -0.05f ? 1.0f : 0.84f};
     });
-    // Sparkle: a four-pointed glint.
-    cell(2, [](vec2 p, float& l) {
-        const float ax = std::abs(p.x), ay = std::abs(p.y);
-        l = 1.0f;
-        return ax * ay * 6.0f + ax * 0.25f + ay * 0.25f < 0.22f || glm::length(p) < 0.18f;
+    // Sparkle: a four-pointed glint with a round bright centre.
+    cell(2, true, [](vec2 p) {
+        const float a = std::atan2(p.y, p.x), r = glm::length(p);
+        const float k = std::pow(std::abs(std::cos(2.0f * a)), 5.0f);
+        const float edge = glm::mix(0.22f, 0.95f, k);
+        return Px{(r - edge) * 0.7f, r < 0.32f ? 1.0f : 0.86f};
     });
-    // Flame: a teardrop, round at the bottom (+y) and pointed at the top.
-    cell(3, [](vec2 p, float& l) {
-        const float y = p.y; // -1 top .. 1 bottom
-        const float w = y > 0.35f ? std::sqrt(std::max(0.0f, 0.42f - (y - 0.35f) * (y - 0.35f))) : 0.65f * (y + 1.0f) / 1.35f;
-        l = std::abs(p.x) < w * 0.45f && y > -0.2f ? 1.0f : 0.8f; // a hot core
-        return std::abs(p.x) < w && y > -0.98f && y < 0.98f;
+    // Flame lick: a curved, tapering swoosh, tip at the top (-y), base at
+    // the bottom; a hot core along the middle.
+    cell(3, true, [](vec2 p) {
+        const float t = std::clamp((p.y + 0.95f) / 1.9f, 0.0f, 1.0f); // 0 tip .. 1 base
+        const float x0 = 0.35f * (1.0f - t) * (1.0f - t) - 0.12f;     // curls to the right near the tip
+        const float w = 0.06f + 0.5f * std::sin(t * 2.4f) * t;
+        const float d = std::max(std::abs(p.x - x0) - w, std::max(-0.95f - p.y, p.y - 0.9f));
+        return Px{d, std::abs(p.x - x0) < w * 0.45f ? 1.0f : 0.78f};
     });
-    // Solid: a filled square (decals, lines).
-    cell(4, [](vec2, float& l) { l = 1.0f; return true; });
-    // Ring: a shockwave.
-    cell(5, [](vec2 p, float& l) { l = 1.0f; const float r = glm::length(p); return r > 0.72f && r < 0.94f; });
-    // Dot: a plain disc.
-    cell(6, [](vec2 p, float& l) { l = 1.0f; return glm::length(p) < 0.9f; });
-    // Confetti: a little rectangle.
-    cell(7, [](vec2 p, float& l) { l = p.y < 0.0f ? 1.0f : 0.8f; return std::abs(p.x) < 0.55f && std::abs(p.y) < 0.3f; });
+    // Solid square: decals and lines.
+    cell(4, false, [](vec2 p) { return Px{std::max(std::abs(p.x), std::abs(p.y)) - 0.98f, 1.0f}; });
+    // Ring: a shock wave.
+    cell(5, true, [](vec2 p) { const float r = glm::length(p); return Px{std::abs(r - 0.78f) - 0.13f, 1.0f}; });
+    // Dot: a disc with a highlight.
+    cell(6, true, [](vec2 p) { return Px{glm::length(p) - 0.85f, glm::length(p - vec2(-0.25f, -0.25f)) < 0.3f ? 1.0f : 0.85f}; });
+    // Confetti: a little card.
+    cell(7, true, [](vec2 p) { return Px{std::max(std::abs(p.x) - 0.6f, std::abs(p.y) - 0.32f), p.y < 0.0f ? 1.0f : 0.82f}; });
+    // Burst: a jagged impact star, white-hot in the middle.
+    cell(8, true, [pi](vec2 p) {
+        const float a = std::atan2(p.y, p.x), r = glm::length(p);
+        const int n = 10;
+        const float k = std::abs(std::fmod(a + 2.0f * pi, 2.0f * pi / n) / (2.0f * pi / n) - 0.5f) * 2.0f;
+        const float jag = std::sin(a * 3.0f) * 0.08f + std::sin(a * 7.0f) * 0.05f; // irregular spikes
+        const float edge = glm::mix(0.38f, 0.95f + jag, std::pow(k, 2.2f));
+        return Px{(r - edge) * 0.7f, r < 0.32f ? 1.0f : r < 0.55f ? 0.9f : 0.78f};
+    });
+    // Streak: a thin wind line, fat at the head (bottom) and tapering away.
+    cell(9, false, [](vec2 p) {
+        const float t = std::clamp((p.y + 0.95f) / 1.9f, 0.0f, 1.0f);
+        const float w = 0.03f + 0.22f * t * t;
+        return Px{std::max(std::abs(p.x) - w, std::max(-0.95f - p.y, p.y - 0.95f)), 1.0f};
+    });
+    // Rock: a chipped chunk of dirt.
+    cell(10, true, [pi](vec2 p) {
+        const float a = std::atan2(p.y, p.x), r = glm::length(p);
+        const float corners[6] = {0.82f, 0.62f, 0.9f, 0.7f, 0.85f, 0.6f};
+        const float f = (a + pi) / (2.0f * pi) * 6.0f;
+        const int i = int(f) % 6;
+        const float edge = glm::mix(corners[i], corners[(i + 1) % 6], f - std::floor(f));
+        return Px{(r - edge) * 0.9f, glm::dot(p, vec2(-0.7f, -0.7f)) > 0.0f ? 1.0f : 0.75f};
+    });
+    // Drop: a water drop, point at the top.
+    cell(12, true, [](vec2 p) {
+        const float base = glm::length(p - vec2(0.0f, 0.25f)) - 0.55f;
+        const float cone = std::abs(p.x) - (p.y + 0.95f) * 0.5f;
+        const float d = p.y < 0.25f ? std::max(cone, -0.95f - p.y) : base;
+        return Px{std::min(base, std::max(cone, std::max(-0.95f - p.y, p.y - 0.25f))) + 0.0f * d, glm::length(p - vec2(-0.2f, 0.1f)) < 0.18f ? 1.0f : 0.85f};
+    });
+    if (const char* dump = std::getenv("GK_DUMP_PARTICLES")) stbi_write_png(dump, S, S, 4, px.data(), S * 4); // to check the art
     particle_texture_ = upload_texture(S, S, px.data());
 }
 
@@ -720,7 +771,7 @@ namespace {
 // Atlas cell (4 x 4) for a sprite, inset a texel.
 void sprite_uv(Renderer::Sprite s, vec2 out[4]) {
     const int i = int(s);
-    const float c = 0.25f, e = 1.0f / 256.0f;
+    const float c = 0.25f, e = 1.5f / 512.0f;
     const float u0 = float(i % 4) * c + e, v0 = float(i / 4) * c + e, u1 = u0 + c - 2.0f * e, v1 = v0 + c - 2.0f * e;
     out[0] = {u0, v1};
     out[1] = {u1, v1};

@@ -1116,24 +1116,29 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
         const vec3 c = vec3(to_tint(tier_color(s.mt_tier(kc))));
         for (float side : {-1.0f, 1.0f}) {
             const vec3 wheel = at({side * 0.68f, 0.14f, -0.95f});
-            Particle g; // the flare at the wheel, renewed every frame
-            g.pos = wheel, g.vel = g.carry = vel, g.life = 0.03f;
-            g.size0 = g.size1 = 0.26f + 0.08f * R();
-            g.sprite = Sp::Sparkle, g.angle = R() * 6.28f;
-            g.color0 = g.color1 = vec4(glm::mix(c, vec3(1.0f), 0.55f), 1.0f);
-            particles_.emit(g);
-            for (int i = 0, n = count(near ? 70.0f : 20.0f); i < n; ++i) {
+            // Curved flame licks flicking off the wheel, like drawn drift sparks.
+            for (int i = 0, n = count(near ? 26.0f : 8.0f); i < n; ++i) {
+                Particle p;
+                p.pos = wheel;
+                p.carry = vel * 0.95f;
+                p.vel = p.carry + dir({side * (0.8f + 1.2f * R()), 1.5f + 1.5f * R(), -2.0f - 2.0f * R()});
+                p.life = 0.12f + 0.1f * R();
+                p.size0 = 0.13f, p.size1 = 0.08f;
+                p.sprite = Sp::Flame, p.stretch = 0.03f;
+                p.color0 = vec4(glm::mix(c, vec3(1.0f), 0.35f), 1.0f), p.color1 = vec4(c, 1.0f);
+                particles_.emit(p);
+            }
+            for (int i = 0, n = count(near ? 14.0f : 4.0f); i < n; ++i) {
                 Particle p;
                 p.pos = wheel;
                 p.carry = vel * 0.9f;
-                p.vel = p.carry + dir({side * (1.5f + 2.0f * R()), 2.0f + 3.0f * R(), -1.0f - 2.0f * R()});
-                p.life = 0.18f + 0.18f * R();
-                p.size0 = 0.07f, p.size1 = 0.05f;
-                p.sprite = R() < 0.35f ? Sp::Sparkle : Sp::Dot;
-                p.stretch = p.sprite == Sp::Dot ? 0.05f : 0.0f;
-                p.angle = R() * 6.28f, p.spin = 10.0f;
-                p.color0 = vec4(glm::mix(c, vec3(1.0f), 0.3f), 1.0f), p.color1 = vec4(c, 1.0f);
-                p.gravity = 16.0f;
+                p.vel = p.carry + dir({side * (1.0f + 2.0f * R()), 2.0f + 2.5f * R(), -1.0f - 1.5f * R()});
+                p.life = 0.2f + 0.15f * R();
+                p.size0 = p.size1 = 0.05f + 0.03f * R();
+                p.sprite = R() < 0.5f ? Sp::Sparkle : Sp::Dot;
+                p.pop = 0.15f, p.angle = R() * 6.28f;
+                p.color0 = p.color1 = vec4(glm::mix(c, vec3(1.0f), 0.3f), 1.0f);
+                p.gravity = 14.0f;
                 particles_.emit(p);
             }
         }
@@ -1147,10 +1152,11 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
             p.pos = at({side * 0.7f, 0.2f, -0.85f});
             p.vel = vel * 0.25f + vec3(0, 1.0f + R(), 0) + particles_.rnd_dir() * 0.4f;
             p.life = 0.45f + 0.25f * R();
-            p.size0 = 0.2f + 0.1f * R(), p.size1 = 0.32f;
+            p.size0 = 0.12f + 0.06f * R(), p.size1 = 0.2f;
+            p.sprite = R() < 0.5f ? Sp::Puff : Sp::Puff2;
             p.pop = 0.2f;
             p.angle = R() * 6.28f, p.spin = (R() - 0.5f) * 3.0f;
-            p.color0 = vec4(0.97f, 0.97f, 1.0f, 0.95f), p.color1 = vec4(0.92f, 0.93f, 0.98f, 0.9f);
+            p.color0 = vec4(1.0f, 1.0f, 1.0f, 1.0f), p.color1 = vec4(0.88f, 0.88f, 0.9f, 1.0f);
             p.drag = 2.0f;
             particles_.emit(p);
         }
@@ -1168,8 +1174,8 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
             p.carry = vel;
             p.vel = vel + dir({(R() - 0.5f) * 0.4f, 0.3f, -1.0f}) * (4.0f + 2.0f * R());
             p.life = 0.1f + 0.06f * R();
-            p.size0 = 0.15f, p.size1 = 0.05f;
-            p.sprite = Sp::Flame, p.stretch = 0.05f;
+            p.size0 = 0.12f, p.size1 = 0.05f;
+            p.sprite = Sp::Flame, p.stretch = 0.04f;
             p.color0 = vec4(hot, 1.0f), p.color1 = vec4(cool, 1.0f);
             particles_.emit(p);
         }
@@ -1191,11 +1197,21 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
             p.pos = at({side * 0.7f, 0.15f, -0.8f});
             p.vel = vel * 0.2f + vec3(0, 1.5f + 1.5f * R(), 0) + particles_.rnd_dir() * 0.8f;
             p.life = 0.5f + 0.3f * R();
-            p.size0 = 0.2f + 0.1f * R(), p.size1 = 0.3f;
-            p.pop = 0.25f, p.angle = R() * 6.28f;
+            p.size0 = 0.14f + 0.07f * R(), p.size1 = 0.22f;
+            p.sprite = R() < 0.5f ? Sp::Puff : Sp::Puff2;
+            p.pop = 0.25f;
             p.color0 = p.color1 = vec4(dust, 1.0f);
             p.gravity = 2.0f, p.drag = 1.5f;
             particles_.emit(p);
+            if (R() < 0.25f) { // a chunk of dirt kicked up
+                Particle r = p;
+                r.sprite = Sp::Rock, r.pop = 0.1f;
+                r.size0 = r.size1 = 0.04f + 0.03f * R();
+                r.vel = vel * 0.3f + vec3(0, 3.0f + 2.0f * R(), 0) + particles_.rnd_dir() * 1.5f;
+                r.color0 = r.color1 = vec4(dust * 0.75f, 1.0f);
+                r.gravity = 18.0f, r.drag = 0.2f, r.spin = (R() - 0.5f) * 12.0f;
+                particles_.emit(r);
+            }
         }
     }
     // Slipstream: white wind lines streaming past while you're in the tow.
@@ -1207,22 +1223,22 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
             p.carry = vel;
             p.vel = vel - dir({0, 0, 1}) * 14.0f;
             p.life = 0.16f;
-            p.size0 = p.size1 = 0.03f;
-            p.sprite = Sp::Solid, p.stretch = 0.06f;
-            p.color0 = vec4(1.0f, 1.0f, 1.0f, 0.85f), p.color1 = vec4(0.85f, 0.95f, 1.0f, 0.0f);
+            p.size0 = p.size1 = 0.05f;
+            p.sprite = Sp::Streak, p.stretch = 0.07f;
+            p.color0 = vec4(0.9f, 1.0f, 1.0f, 0.95f), p.color1 = vec4(0.55f, 0.85f, 1.0f, 0.0f);
             particles_.emit(p);
         }
     // Star: a trail of spinning rainbow stars.
     if (s.star_frames > 0)
-        for (int i = 0, n = count(14.0f); i < n; ++i) {
+        for (int i = 0, n = count(7.0f); i < n; ++i) {
             Particle p;
             p.pos = at({(R() - 0.5f) * 1.2f, 0.3f + R() * 0.8f, -0.6f});
             p.vel = vel * 0.3f + particles_.rnd_dir() * 1.5f;
             p.life = 0.5f + 0.3f * R();
             const float h = R() * 6.28f;
             const vec3 c(0.55f + 0.45f * std::sin(h), 0.55f + 0.45f * std::sin(h + 2.1f), 0.55f + 0.45f * std::sin(h + 4.2f));
-            p.size0 = p.size1 = 0.13f;
-            p.pop = 0.15f, p.sprite = Sp::Star, p.spin = 6.0f, p.angle = R() * 6.28f;
+            p.size0 = p.size1 = 0.08f;
+            p.pop = 0.15f, p.sprite = R() < 0.5f ? Sp::Star : Sp::Sparkle, p.spin = 6.0f, p.angle = R() * 6.28f;
             p.color0 = p.color1 = vec4(c, 1.0f);
             particles_.emit(p);
         }
@@ -1287,33 +1303,52 @@ void App::event_particles(const sim::KartEvent& e) {
     if (!w || e.kart < 0 || size_t(e.kart) >= w->karts().size()) return;
     const sim::KartState& k = w->karts()[size_t(e.kart)];
     const vec3 base = k.pos + k.up() * 0.2f;
+    const vec3 front = base + k.forward() * 0.9f + k.up() * 0.3f;
     switch (e.type) {
-    case sim::KartEventType::Land: burst(base, 8, vec3(0.97f, 0.96f, 0.94f), 4.0f, 0.4f, Sp::Puff, 0.0f, 0.5f); break;
+    case sim::KartEventType::Land: burst(base, 6, vec3(1.0f, 1.0f, 1.0f), 3.5f, 0.18f, Sp::Puff2, 0.0f, 0.45f); break;
     case sim::KartEventType::WallHit:
-        burst(base + k.forward() * 0.8f + k.up() * 0.3f, 10, vec3(1.0f, 0.85f, 0.3f), 6.0f, 0.12f, Sp::Sparkle, 10.0f, 0.4f);
-        burst(base + k.forward() * 0.8f, 4, vec3(0.95f, 0.95f, 0.95f), 2.0f, 0.35f, Sp::Puff, 0.0f, 0.4f);
+        burst(front, 1, vec3(1.0f, 0.86f, 0.3f), 0.0f, 0.35f, Sp::Burst, 0.0f, 0.18f);
+        burst(front, 6, vec3(1.0f, 0.8f, 0.25f), 5.0f, 0.06f, Sp::Sparkle, 8.0f, 0.35f);
         break;
-    case sim::KartEventType::Bump: burst(base + k.up() * 0.8f, 6, vec3(1.0f, 0.92f, 0.3f), 3.5f, 0.16f, Sp::Star, 0.0f, 0.45f); break;
+    case sim::KartEventType::Bump:
+        burst(base + k.up() * 0.6f, 1, vec3(1.0f, 0.92f, 0.4f), 0.0f, 0.25f, Sp::Burst, 0.0f, 0.15f);
+        burst(base + k.up() * 0.8f, 4, vec3(1.0f, 0.9f, 0.3f), 3.0f, 0.08f, Sp::Star, 0.0f, 0.45f);
+        break;
     case sim::KartEventType::ItemBox: {
-        const vec3 cs[5] = {{1.0f, 0.3f, 0.35f}, {0.25f, 0.6f, 1.0f}, {1.0f, 0.85f, 0.15f}, {0.35f, 0.95f, 0.45f}, {0.85f, 0.4f, 1.0f}};
-        for (const vec3& c : cs) burst(base + k.up() * 0.9f, 6, c, 6.5f, 0.11f, Sp::Confetti, 7.0f, 0.9f);
+        const vec3 cs[5] = {{1.0f, 0.35f, 0.4f}, {0.3f, 0.65f, 1.0f}, {1.0f, 0.85f, 0.2f}, {0.4f, 0.95f, 0.5f}, {0.85f, 0.45f, 1.0f}};
+        for (const vec3& c : cs) {
+            burst(base + k.up() * 0.9f, 3, c, 5.5f, 0.06f, Sp::Confetti, 7.0f, 0.9f);
+            burst(base + k.up() * 0.9f, 1, c, 4.0f, 0.08f, Sp::Sparkle, 0.0f, 0.5f);
+        }
         break;
     }
-    case sim::KartEventType::Hit: burst(base + k.up() * 0.8f, 8, vec3(1.0f, 0.9f, 0.25f), 4.0f, 0.2f, Sp::Star, -1.0f, 0.7f); break;
-    case sim::KartEventType::Explosion:
-        burst(base, 18, vec3(1.0f, 0.6f, 0.15f), 9.0f, 0.4f, Sp::Flame, 0.0f, 0.4f);
-        burst(base, 14, vec3(0.35f, 0.33f, 0.36f), 5.0f, 0.9f, Sp::Puff, -1.5f, 1.1f);
+    case sim::KartEventType::Hit:
+        burst(base + k.up() * 0.5f, 1, vec3(1.0f, 0.9f, 0.35f), 0.0f, 0.5f, Sp::Burst, 0.0f, 0.2f);
+        burst(base + k.up() * 0.9f, 5, vec3(1.0f, 0.88f, 0.25f), 3.0f, 0.1f, Sp::Star, -1.0f, 0.7f);
         break;
-    case sim::KartEventType::Respawn: burst(base + k.up() * 0.5f, 14, vec3(0.75f, 0.92f, 1.0f), 3.0f, 0.18f, Sp::Sparkle, -2.0f, 0.8f); break;
-    case sim::KartEventType::Trick: burst(base + k.up() * 0.5f, 8, vec3(1.0f, 0.95f, 0.45f), 4.5f, 0.18f, Sp::Star, 0.0f, 0.5f); break;
-    case sim::KartEventType::Smash: burst(base + k.forward() * 1.0f + k.up() * 0.5f, 8, vec3(0.9f, 0.8f, 0.62f), 3.5f, 0.45f, Sp::Puff, 0.0f, 0.6f); break;
-    case sim::KartEventType::TireKnock: burst(base + k.forward() * 0.8f, 6, vec3(0.75f, 0.75f, 0.78f), 3.0f, 0.4f, Sp::Puff, 0.0f, 0.5f); break;
-    case sim::KartEventType::TireBounce: burst(base, 6, vec3(1.0f, 0.95f, 0.5f), 4.0f, 0.16f, Sp::Star, 3.0f, 0.5f); break;
+    case sim::KartEventType::Explosion:
+        burst(base + k.up() * 0.5f, 1, vec3(1.0f, 0.85f, 0.3f), 0.0f, 1.2f, Sp::Burst, 0.0f, 0.22f);
+        burst(base, 8, vec3(1.0f, 0.55f, 0.15f), 6.0f, 0.22f, Sp::Flame, 0.0f, 0.35f);
+        burst(base, 10, vec3(0.32f, 0.3f, 0.34f), 4.0f, 0.45f, Sp::Puff, -1.5f, 1.0f);
+        break;
+    case sim::KartEventType::Respawn: burst(base + k.up() * 0.5f, 10, vec3(0.75f, 0.92f, 1.0f), 2.5f, 0.09f, Sp::Sparkle, -2.0f, 0.8f); break;
+    case sim::KartEventType::Trick: burst(base + k.up() * 0.5f, 6, vec3(1.0f, 0.95f, 0.45f), 4.0f, 0.09f, Sp::Star, 0.0f, 0.5f); break;
+    case sim::KartEventType::Smash:
+        burst(front, 5, vec3(0.92f, 0.82f, 0.62f), 3.0f, 0.2f, Sp::Puff, 0.0f, 0.55f);
+        burst(front, 5, vec3(0.6f, 0.45f, 0.3f), 5.0f, 0.06f, Sp::Rock, 14.0f, 0.7f);
+        break;
+    case sim::KartEventType::TireKnock: burst(front, 4, vec3(0.8f, 0.8f, 0.82f), 2.5f, 0.18f, Sp::Puff2, 0.0f, 0.45f); break;
+    case sim::KartEventType::TireBounce: burst(base, 4, vec3(1.0f, 0.95f, 0.5f), 3.5f, 0.08f, Sp::Star, 3.0f, 0.5f); break;
     case sim::KartEventType::Boost: {
         const int t = e.value == int(sim::BoostKind::MiniTurbo) ? 1 : e.value == int(sim::BoostKind::SuperMiniTurbo) ? 2
                     : e.value == int(sim::BoostKind::UltraMiniTurbo) ? 3 : 0;
-        if (t > 0) burst(base - k.forward() * 1.0f + k.up() * 0.3f, 12, vec3(to_tint(tier_color(t))), 6.0f, 0.18f, Sp::Sparkle, 3.0f, 0.4f);
-        if (e.value == int(sim::BoostKind::Slipstream)) burst(base + k.up() * 0.5f, 10, vec3(0.85f, 0.97f, 1.0f), 5.0f, 0.2f, Sp::Sparkle, 0.0f, 0.4f);
+        const vec3 back = base - k.forward() * 1.0f + k.up() * 0.3f;
+        if (t > 0) {
+            const vec3 c = vec3(to_tint(tier_color(t)));
+            burst(back, 1, glm::mix(c, vec3(1.0f), 0.4f), 0.0f, 0.35f, Sp::Burst, 0.0f, 0.15f);
+            burst(back, 6, c, 4.5f, 0.07f, Sp::Sparkle, 3.0f, 0.4f);
+        }
+        if (e.value == int(sim::BoostKind::Slipstream)) burst(base + k.up() * 0.5f, 6, vec3(0.85f, 0.97f, 1.0f), 4.0f, 0.1f, Sp::Sparkle, 0.0f, 0.4f);
         break;
     }
     default: break;
