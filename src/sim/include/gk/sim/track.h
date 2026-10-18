@@ -185,8 +185,14 @@ public:
         float lo = -1e9f, hi = 1e9f;   // across the road (m from its centre, + right)
         Surface surface = Surface::Water;
         int gate = -1;
+        // Deep water: a volume the karts drive under, up to `level` (m), in
+        // the underwater mode. The floor keeps its own surface.
+        bool deep = false;
+        float level = 0.0f;
     };
     std::vector<Zone> zones;
+    // Whether `p` (on road sample `sample`) is under the water of an active deep zone.
+    bool in_deep_water(vec3 p, int sample) const;
     // The surface a zone puts at `p` (on road sample `sample`), if one is active there.
     std::optional<Surface> zone_surface(vec3 p, int sample) const;
 

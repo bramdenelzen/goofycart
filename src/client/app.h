@@ -259,6 +259,8 @@ private:
     render::MeshId box_mesh_ = 0, banana_mesh_ = 0, green_mesh_ = 0, red_mesh_ = 0, spiked_mesh_ = 0, bomb_mesh_ = 0,
                    ball_mesh_ = 0, boomerang_mesh_ = 0, bullet_mesh_ = 0, chomper_mesh_ = 0;
     float flash_ = 0.0f; // white screen flash (lightning)
+    float wet_lens_ = 0.0f; // drops on the lens after coming up out of deep water, 1 .. 0
+    void draw_water_overlay(const sim::World& w, vec3 camera);
     // What a kart looks like: procedural pieces, each replaced by a model
     // from the asset pack when it has one.
     struct KartVisual {

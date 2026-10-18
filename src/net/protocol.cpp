@@ -127,7 +127,8 @@ void write_kart(Writer& w, const sim::KartState& s) {
                            uint16_t(s.boost_ignores_offroad) << 2 | uint16_t(s.trick_done) << 3 |
                            uint16_t(s.glide_armed) << 4 | uint16_t(s.gliding) << 5 | uint16_t(s.finished) << 6 |
                            uint16_t(s.item_button_prev) << 7 | uint16_t(s.trailing) << 8 |
-                           uint16_t(s.item != sim::Item::None || s.item_next != sim::Item::None || s.roulette > 0) << 9;
+                           uint16_t(s.item != sim::Item::None || s.item_next != sim::Item::None || s.roulette > 0) << 9 |
+                           uint16_t(s.underwater) << 10;
     w.u16(flags);
     if (!s.grounded) {
         w.q16(s.air_vel.x, 120.0f);
@@ -170,6 +171,7 @@ void write_kart(Writer& w, const sim::KartState& s) {
     }
     w.u8(s.lucky_index);
     w.u8(s.draft);
+    w.u8(s.water_frames);
     // Item effect timers: a mask of the running ones, then each as u16.
     const int timers[] = {s.spin_frames, s.tumble_frames, s.shrink_frames, s.star_frames, s.bullet_frames, s.ghost_frames,
                           s.ink_frames, s.golden_frames, s.fire_frames, s.chomper_frames, s.chomper_cooldown};
@@ -197,6 +199,7 @@ sim::KartState read_kart(Reader& r) {
     s.glide_armed = flags & 16;
     s.gliding = flags & 32;
     s.finished = flags & 64;
+    s.underwater = flags & (1u << 10);
     if (!s.grounded) {
         s.air_vel.x = r.q16(120.0f);
         s.air_vel.y = r.q16(120.0f);
@@ -245,6 +248,7 @@ sim::KartState read_kart(Reader& r) {
     }
     s.lucky_index = r.u8();
     s.draft = r.u8();
+    s.water_frames = r.u8();
     int* timers[] = {&s.spin_frames, &s.tumble_frames, &s.shrink_frames, &s.star_frames, &s.bullet_frames, &s.ghost_frames,
                      &s.ink_frames, &s.golden_frames, &s.fire_frames, &s.chomper_frames, &s.chomper_cooldown};
     const uint16_t mask = r.u16();

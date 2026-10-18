@@ -238,7 +238,7 @@ void main() {
             float crest = v_uv.x, shore = v_uv.y;
             float mask = vnoise(v_world.xz * 0.9 + vec2(ts * 0.6, -ts * 0.4));
             // Foam on the crests and along the bank, ragged by the mask.
-            float foam = step(0.86, crest + (mask - 0.5) * 0.15) + step(shore + (mask - 0.5) * 0.12, 0.25);
+            float foam = step(0.86, crest + (mask - 0.5) * 0.15) + step(shore + (mask - 0.5) * 0.08, 0.12);
             albedo = mix(albedo, mix(albedo, vec3(0.75, 0.85, 0.9), 0.35), 1.0 - step(0.25, shore)); // lighter in the shallows
             albedo = mix(albedo, vec3(0.92, 0.96, 1.0), clamp(foam, 0.0, 1.0) * 0.85);
             alpha = 1.0; // the vertex alpha is the shore distance; water draws opaque

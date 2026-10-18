@@ -157,7 +157,7 @@ PhysicsTables PhysicsTables::builtin() {
     PhysicsTables t;
     auto& c = t.curves;
     c[int(Stat::SpeedGround)] = linear(19.5f, 27.0f);
-    c[int(Stat::SpeedWater)] = linear(18.5f, 25.5f);
+    c[int(Stat::SpeedWater)] = linear(19.5f, 27.0f); // as on the ground: parts make the difference
     c[int(Stat::SpeedAir)] = linear(20.0f, 27.0f);
     c[int(Stat::Acceleration)] = LevelCurve{{{0, 0.035f}, {1, 0.035f}, {10, 0.08f}, {20, 0.13f}}, 105.0f, "builtin"};
     c[int(Stat::Weight)] = LevelCurve{{{0, 8.0f}, {1, 8.0f}, {10, 22.5f}, {20, 60.0f}}, 1.0f, "builtin"};
@@ -243,6 +243,11 @@ bool PhysicsTables::load(const std::string& path, std::string* error) {
             read_const(c, "glide_launch_velocity", k.glide_launch_velocity);
             read_const(c, "glide_sink", k.glide_sink);
             read_const(c, "glide_pitch_speed", k.glide_pitch_speed);
+            read_const(c, "water_gravity_scale", k.water_gravity_scale);
+            read_const(c, "water_terminal_fall", k.water_terminal_fall);
+            read_const(c, "water_pitch_gain", k.water_pitch_gain);
+            read_const(c, "drift_turn_water_scale", k.drift_turn_water_scale);
+            read_const(c, "water_hysteresis", k.water_hysteresis);
             read_const(c, "trick_window_frames", k.trick_window_frames);
             read_const(c, "respawn_frames", k.respawn_frames);
         }

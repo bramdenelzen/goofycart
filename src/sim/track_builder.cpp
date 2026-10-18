@@ -700,6 +700,11 @@ Track build_track(const TrackDef& def) {
             if (!st.closed) count = std::min(count, st.n() - a);
             z.surface = f->surface;
             z.gate = f->gate;
+            z.deep = f->deep;
+            if (z.deep) { // the water's surface: level with the road where the zone starts or ends, whichever is lower
+                const int last = st.closed ? (a + std::max(1, count) - 1) % st.n() : std::min(a + std::max(1, count) - 1, st.n() - 1);
+                z.level = f->level < 1e8f ? f->level : std::min(st.c[size_t(a)].pos.y, st.c[size_t(last)].pos.y);
+            }
             if (f->width > 0.0f) z.lo = f->offset - 0.5f * f->width, z.hi = f->offset + 0.5f * f->width;
             else if (!f->left) z.lo = 0.4f; // half the road, leaving the line down the middle
             else if (!f->right) z.hi = -0.4f;
@@ -938,6 +943,10 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     if (tf.kind == K::Zone) {
         tf.width = f.value("width", 0.0f); // 0: the whole road (or one side of it)
         tf.surface = Surface::Water;
+        const std::string depth = f.value("depth", std::string("shallow"));
+        if (depth == "deep") tf.deep = true;
+        else if (depth != "shallow") throw std::runtime_error("unknown zone depth " + depth);
+        tf.level = f.value("level", tf.level);
     }
     if (tf.kind == K::Mover) {
         tf.block = f.value("kind", std::string("platform")) == "block";
@@ -962,6 +971,7 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     if (f.contains("surface") && !parse_surface(f["surface"].get<std::string>(), tf.surface))
         throw std::runtime_error("unknown surface in " + type);
     if (tf.kind == K::Verge && !f.contains("surface")) tf.surface = verge_surface;
+    if (tf.deep && tf.surface != Surface::Water) throw std::runtime_error("only water zones can be deep");
     return tf;
 }
 

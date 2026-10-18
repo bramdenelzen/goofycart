@@ -1466,16 +1466,22 @@ MeshData make_zone_mesh(const sim::Track& t, const sim::Track::Zone& z) {
             const float w = e.half_width + 0.6f;
             return side < 0.0f ? std::max(z.lo, -w) : std::min(z.hi, w);
         };
+        // Deep water: the sheet is the surface, level, over the stretch where
+        // the road has gone under it.
+        auto covered = [&](int k) {
+            const sim::CenterSample& e = t.road[size_t(k)];
+            return z.deep ? e.pos.y < z.level - 0.25f : e.has_floor;
+        };
         const sim::CenterSample& c0 = t.road[size_t(z.first)];
         const int cols = std::max(2, int(std::ceil((edge(c0, 1) - edge(c0, -1)) / 1.5f)) + 1);
         int i = z.first;
         while (i + 1 < z.first + z.count) {
-            if (!t.road[size_t(i)].has_floor) {
+            if (!covered(i)) {
                 ++i;
                 continue;
             }
             int j = i;
-            while (j + 1 < z.first + z.count && t.road[size_t(j + 1)].has_floor) ++j;
+            while (j + 1 < z.first + z.count && covered(j + 1)) ++j;
             const int rows = j - i + 1;
             if (rows < 2) {
                 i = j + 1;
@@ -1489,7 +1495,12 @@ MeshData make_zone_mesh(const sim::Track& t, const sim::Track::Zone& z) {
                 const float ends = 2.0f * float(std::min(r, rows - 1 - r));
                 for (int k = 0; k < cols; ++k) {
                     const float lat = lo + (hi - lo) * float(k) / float(cols - 1);
-                    pts.push_back(e.pos + e.right * lat + e.up * 0.12f);
+                    if (z.deep) {
+                        const vec3 flat = glm::normalize(vec3(e.right.x, 0.0f, e.right.z) + vec3(1e-6f));
+                        pts.push_back(vec3(e.pos.x, z.level, e.pos.z) + flat * lat);
+                    } else {
+                        pts.push_back(e.pos + e.right * lat + e.up * 0.12f);
+                    }
                     shore.push_back(std::min({lat - lo, hi - lat, ends}));
                 }
             }

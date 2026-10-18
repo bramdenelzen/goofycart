@@ -47,6 +47,24 @@ they are metres from where the branch leaves.
 Zone surfaces: `water`, `ice`, `oil`, `sand`, `offroad_*`, `boost` (a dash
 strip) and `lava` (out of bounds: a respawn).
 
+A `water` zone is shallow by default: the road's surface becomes water, with
+its own speed. `"depth": "deep"` makes it a volume of water instead, driven
+under: the road keeps its own surface and the karts switch to the underwater
+mode (the water stats for top speed and steering, drifts a little wider,
+half gravity and a capped fall in the air, the stick tipping the nose like
+the glider's, the glider folded away). A kart goes under once its middle has
+been below the water for 6 frames, and comes up the same way; no speed is
+lost either way. The water's surface is level with the lower of the road's
+two heights at the zone's ends, or `"level"` (metres) to set it. Dip the
+road under it with the control points:
+
+```json
+{"type": "zone", "from": [18, 0], "to": [20, 0], "surface": "water", "depth": "deep"}
+```
+
+CPUs drive through deep water like road. Harbor Hop's dip under the west
+quay is the example.
+
 An `obstacle` with a `when` becomes a barrier, since the fixed road can't change.
 
 ## Gates: what changes during a race

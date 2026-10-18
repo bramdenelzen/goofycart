@@ -447,7 +447,7 @@ void App::show_track(const std::string& id) {
             }
             for (const auto& bar : t.barriers) g.barriers.push_back(renderer_.upload_mesh(render::make_barrier_mesh(bar)));
             // Lava zones draw with the lava layer (mesh.frag), lit from within.
-            for (const auto& z : t.zones) g.zones.push_back(renderer_.upload_mesh(render::make_zone_mesh(t, z)));
+            for (const auto& z : t.zones) g.zones.push_back(renderer_.upload_mesh(render::make_zone_mesh(t, z), 0, z.deep)); // deep water: seen from under it too
             lava_spots_[t.id] = render::find_lava(t);
             for (const auto& sw : t.switches)
                 g.switches.push_back({renderer_.upload_mesh(render::make_switch_mesh(sw.radius, false)),
@@ -688,6 +688,7 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
             input_.rumble(0.3f, 0.6f, 150);
             break;
         case sim::KartEventType::Trick: input_.rumble(0.2f, 0.2f, 80); break;
+        case sim::KartEventType::WaterExit: wet_lens_ = 1.0f; break;
         case sim::KartEventType::Land: input_.rumble(0.5f, 0.2f, 120); break;
         case sim::KartEventType::WallHit: input_.rumble(0.8f, 0.4f, 120); break;
         case sim::KartEventType::Bump: input_.rumble(0.6f, 0.6f, 100); break;
@@ -1347,6 +1348,23 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
             p.drag = 2.0f;
             particles_.emit(p);
         }
+    // Underwater: a propeller spinning at the back and a stream of bubbles.
+    if (s.underwater && near) {
+        const float spin = float(double(SDL_GetTicks()) / 1000.0 * 40.0) + float(index);
+        renderer_.particle(at({0.0f, 0.45f, -1.15f}), 0.42f, vec4(0.85f, 0.9f, 0.95f, 1.0f), false, vec3(0.0f), 0.0f, Sp::Spark6, spin);
+        renderer_.particle(at({0.0f, 0.45f, -1.12f}), 0.1f, vec4(0.35f, 0.35f, 0.4f, 1.0f), false, vec3(0.0f), 0.0f, Sp::Dot);
+        for (int i = 0, n = count(10.0f + speed * 0.6f); i < n; ++i) {
+            Particle p;
+            p.pos = at({(R() - 0.5f) * 0.4f, 0.4f + 0.2f * R(), -1.2f});
+            p.vel = vel * 0.2f + vec3((R() - 0.5f) * 0.6f, 1.2f + 0.8f * R(), (R() - 0.5f) * 0.6f);
+            p.life = 0.9f + 0.6f * R();
+            p.size0 = 0.06f + 0.05f * R(), p.size1 = 0.14f + 0.06f * R();
+            p.sprite = R() < 0.6f ? Sp::Ring : Sp::Dot;
+            p.color0 = vec4(0.85f, 0.97f, 1.0f, 0.85f), p.color1 = vec4(0.85f, 0.97f, 1.0f, 0.0f);
+            p.drag = 1.5f;
+            particles_.emit(p);
+        }
+    }
     // Boost: licks of flame from the exhaust, yellow at the root to red at the tip.
     if (s.boost_frames > 0) {
         vec3 hot(1.0f, 0.92f, 0.35f), cool(1.0f, 0.3f, 0.08f);
@@ -1577,6 +1595,12 @@ void App::event_particles(const sim::KartEvent& e) {
         ring(front, 1.4f, vec3(1.0f, 0.9f, 0.6f), 0.25f);
         burst(front, 5, vec3(0.9f, 0.9f, 0.92f), 3.0f, 0.16f, Sp::Puff, 0.0f, 0.4f);
         sparks(front, 8, vec3(1.0f, 0.85f, 0.35f), 6.0f, 0.4f);
+        break;
+    case sim::KartEventType::WaterEnter:
+    case sim::KartEventType::WaterExit:
+        burst(base + k.up() * 0.6f, 14, vec3(0.85f, 0.95f, 1.0f), 4.5f, 0.12f, Sp::Drop, 9.0f, 0.7f);
+        burst(base + k.up() * 0.4f, 8, vec3(1.0f, 1.0f, 1.0f), 2.5f, 0.3f, Sp::Puff, 0.0f, 0.5f);
+        ring(base + k.up() * 0.3f, 2.4f, vec3(0.8f, 0.95f, 1.0f), 0.35f, false);
         break;
     case sim::KartEventType::Bump:
         ring(base + k.up() * 0.7f, 1.2f, vec3(1.0f, 1.0f, 0.8f), 0.22f);
@@ -1890,6 +1914,37 @@ void App::update_lava(const sim::World* w, vec3 camera) {
     if (lava_phase_.size() > 2000) lava_phase_.clear();
 }
 
+void App::draw_water_overlay(const sim::World& w, vec3 camera) {
+    const VkExtent2D ext = renderer_.ui_extent();
+    const float W = float(ext.width), H = float(ext.height);
+    const sim::Track& t = w.track();
+    const int hint = size_t(player_) < w.karts().size() ? w.karts()[size_t(player_)].sample : -1;
+    if (t.in_deep_water(camera, t.nearest_sample(camera, hint))) {
+        // A blue-green tint, and light wavering down from the surface.
+        renderer_.ui_rect(0, 0, W, H, render::rgba(20, 110, 125, 70));
+        const float time = renderer_.shader_time();
+        for (int i = 0; i < 5; ++i) {
+            const float x = W * (0.1f + 0.2f * float(i)) + 18.0f * std::sin(time * 0.9f + float(i) * 1.7f);
+            renderer_.ui_quad(vec2(x, 0.0f), vec2(x + 26.0f, 0.0f), vec2(x + 60.0f, H * 0.7f), vec2(x + 40.0f, H * 0.7f),
+                              render::rgba(200, 245, 255, uint8_t(18 + 10 * std::sin(time * 1.3f + float(i)))));
+        }
+    }
+    if (wet_lens_ > 0.0f) {
+        // Drops running down the lens after surfacing, clearing in under a second.
+        const float a = wet_lens_;
+        for (int i = 0; i < 11; ++i) {
+            const uint32_t h = uint32_t(i + 1) * 2654435761u;
+            const float x = W * float(h % 1000) / 1000.0f, y0 = H * float((h >> 10) % 1000) / 1000.0f;
+            const float y = y0 + (1.0f - a) * H * (0.08f + 0.06f * float((h >> 20) % 4));
+            const float r = 10.0f + float((h >> 4) % 18);
+            renderer_.ui_round_rect(x - r, y - r * 1.2f, r * 2.0f, r * 2.4f, r, render::rgba(210, 238, 255, uint8_t(90.0f * a)),
+                                    render::rgba(150, 200, 230, uint8_t(60.0f * a)), r * 0.5f);
+        }
+        renderer_.ui_rect(0, 0, W, H, render::rgba(160, 210, 235, uint8_t(35.0f * a)));
+        if (!paused_) wet_lens_ = std::max(0.0f, wet_lens_ - frame_dt_ / 0.9f);
+    }
+}
+
 void App::draw_gates(const sim::World& w) {
     const sim::Track& t = w.track();
     const auto it = gate_meshes_.find(t.id);
@@ -2162,7 +2217,18 @@ void App::render(float alpha, float dt) {
     cam.fov_y_deg = cam_fov_;
     if (w) show_track(w->track().id);
     update_lava(w, cam.position);
-    if (!renderer_.begin_frame(cam, light_)) return;
+    // Under deep water: a blue-green world that fades out close by.
+    render::SceneLighting lit = light_;
+    if (w && size_t(player_) < w->karts().size()) {
+        const sim::Track& t = w->track();
+        if (t.in_deep_water(cam.position, t.nearest_sample(cam.position, w->karts()[size_t(player_)].sample))) {
+            lit.sky = lit.zenith = vec3(0.1f, 0.42f, 0.46f);
+            lit.sky_texture = 0;
+            lit.fog_density = 0.05f;
+            lit.ambient = std::min(1.0f, lit.ambient + 0.1f);
+        }
+    }
+    if (!renderer_.begin_frame(cam, lit)) return;
     if (track_mesh_) renderer_.draw(track_mesh_, mat4(1.0f));
     if (scenery_mesh_) renderer_.draw(scenery_mesh_, mat4(1.0f));
     if (prop_meshes_)
@@ -2199,6 +2265,7 @@ void App::render(float alpha, float dt) {
         if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
         if (size_t(player_) < karts.size()) draw_speed_lines(karts[size_t(player_)], w->params(player_).top_speed);
+        draw_water_overlay(*w, cam.position);
         draw_hud(renderer_, *w, player_, kart_names(), paused_ ? HudMessage{} : message_, show_help_ && !server_results && !paused_, !server_results,
                  settings_.show_checkpoints || options_.checkpoints);
         if (server_results) draw_online_results();

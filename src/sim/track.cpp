@@ -178,9 +178,19 @@ std::vector<Track::Strip> Track::strips() const {
     return out;
 }
 
+bool Track::in_deep_water(vec3 p, int sample) const {
+    for (const Zone& z : zones) {
+        if (!z.deep || sample < z.first || sample >= z.first + z.count || !gate_holds(z.gate)) continue;
+        const CenterSample& c = road[size_t(sample)];
+        const float lat = glm::dot(p - c.pos, c.right);
+        if (lat >= z.lo - 1.0f && lat <= z.hi + 1.0f && p.y < z.level) return true;
+    }
+    return false;
+}
+
 std::optional<Surface> Track::zone_surface(vec3 p, int sample) const {
     for (const Zone& z : zones) {
-        if (sample < z.first || sample >= z.first + z.count || !gate_holds(z.gate)) continue;
+        if (z.deep || sample < z.first || sample >= z.first + z.count || !gate_holds(z.gate)) continue;
         const CenterSample& c = road[size_t(sample)];
         const float lat = glm::dot(p - c.pos, c.right);
         if (lat >= z.lo && lat <= z.hi && std::abs(glm::dot(p - c.pos, c.up)) < 2.5f) return z.surface;
