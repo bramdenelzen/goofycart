@@ -5,6 +5,7 @@
 
 #include "gk/online/master_client.h"
 #include "render/track_mesh.h"
+#include "render/trackside.h"
 
 #include "gk/core/crash.h"
 #include "gk/core/fixed_step.h"
@@ -338,6 +339,11 @@ void App::show_track(const std::string& id) {
         for (auto& [name, builder] : merged) {
             const PropModel& pm = props_.at(name);
             ids.push_back(renderer_.upload_mesh(builder.take(), pm.texture, pm.two_sided, false, pm.blended));
+        }
+        {   // painted walls, rails, kerbs and flags
+            const render::PaintedModel side = render::make_trackside(*shown_track_);
+            const render::TextureId tex = renderer_.upload_texture(side.texture.size(), side.texture.size(), side.texture.rgba().data());
+            ids.push_back(renderer_.upload_mesh(side.mesh, tex, false));
         }
         log_info("Track {}: {} props in {} meshes", shown_track_->id, placements.size(), ids.size());
         it = track_meshes_.emplace(shown_track_->id, std::pair(track, scenery)).first;

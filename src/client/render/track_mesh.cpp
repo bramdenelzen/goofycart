@@ -155,7 +155,7 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
         const vec3 a = t.vertices[tri.a], c1 = t.vertices[tri.b], c2 = t.vertices[tri.c];
         const vec3 centroid = (a + c1 + c2) / 3.0f;
         if (obstacle_of[ti] >= 0) {
-            if (skip_obstacles) continue;
+            if (skip_obstacles) continue; // drawn as props
             const auto& o = t.obstacles[size_t(obstacle_of[ti])];
             const auto [tex, color] = obstacle_look(t.theme, o.sides > 4);
             b.texture(tex, o.sides > 4 ? 2.0f : 2.0f * std::max(o.half.x, o.half.y));
@@ -176,6 +176,7 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
             continue;
         }
         const bool wall = tri.surface == sim::Surface::Wall;
+        if (wall && skip_obstacles) continue; // painted walls (trackside.cpp)
         const bool seam = std::max({tri.a, tri.b, tri.c}) / kStride == uint32_t(n - 1) &&
                           std::min({tri.a, tri.b, tri.c}) / kStride == 0;
         const bool pad = tri.surface == sim::Surface::BoostPad || tri.surface == sim::Surface::GlideRamp;
@@ -812,13 +813,15 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
         }
     }
     hills(b, t, th, rnd, mid, span, floor_y);
-    kerbs(b, t);
-    wall_rails(b, t, th);
+    if (!props) { // with props, the painted trackside draws these
+        kerbs(b, t);
+        wall_rails(b, t, th);
+    }
     start_gantry(b, t, th);
     grandstands(b, t, th, rnd);
     {
         const auto [left, right] = walls_of(t);
-        flags(b, t, th, left, right);
+        if (!props) flags(b, t, th, left, right);
         if (props) {
             wall_props(t, th, left, right, rnd, *props);
             roadside_islands(b, t, th, rnd, *props);
