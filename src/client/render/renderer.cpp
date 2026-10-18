@@ -17,6 +17,8 @@
 #include "mesh_vert.h"
 #include "shadow_vert.h"
 #include "ui_frag.h"
+#include "post_vert.h"
+#include "post_frag.h"
 #include "ui_vert.h"
 
 #include <stb_easy_font.h>
@@ -262,6 +264,7 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
     if (!create_pipeline()) return false;
     if (!create_shadow_pipeline()) return false;
     if (!create_ui_pipeline()) return false;
+    if (!create_post_pipeline()) return false;
     if (!create_swapchain()) return false;
     if (!create_offscreen()) return false;
     return true;
@@ -299,6 +302,10 @@ void Renderer::shutdown() {
     vkDestroyPipelineLayout(device_, pipeline_layout_, nullptr);
     vkDestroyPipeline(device_, ui_pipeline_, nullptr);
     vkDestroyPipelineLayout(device_, ui_layout_, nullptr);
+    vkDestroyPipeline(device_, post_pipeline_, nullptr);
+    vkDestroyPipelineLayout(device_, post_layout_, nullptr);
+    vkDestroyDescriptorSetLayout(device_, post_set_layout_, nullptr);
+    vkDestroySampler(device_, post_sampler_, nullptr);
     destroy_image(textures_);
     vkDestroySampler(device_, sampler_, nullptr);
     vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
@@ -357,10 +364,13 @@ bool Renderer::create_offscreen() {
     pixel_scale_ = scale;
     offscreen_extent_ = {std::max<uint32_t>(1, win.width / scale), std::max<uint32_t>(1, win.height / scale)};
     offscreen_color_ = create_image(offscreen_extent_, color_format_,
-                                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                                    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                     VK_IMAGE_ASPECT_COLOR_BIT);
-    offscreen_depth_ = create_image(offscreen_extent_, depth_format_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+    offscreen_depth_ = create_image(offscreen_extent_, depth_format_, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                                     VK_IMAGE_ASPECT_DEPTH_BIT);
+    post_color_ = create_image(offscreen_extent_, color_format_, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                               VK_IMAGE_ASPECT_COLOR_BIT);
+    if (!create_post_set()) return false;
     composite_extent_ = win;
     composite_ = create_image(composite_extent_, color_format_,
                               VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
@@ -369,6 +379,8 @@ bool Renderer::create_offscreen() {
 }
 
 void Renderer::destroy_offscreen() {
+    if (post_pool_) vkDestroyDescriptorPool(device_, post_pool_, nullptr), post_pool_ = VK_NULL_HANDLE, post_set_ = VK_NULL_HANDLE;
+    destroy_image(post_color_);
     destroy_image(offscreen_color_);
     destroy_image(offscreen_depth_);
     destroy_image(composite_);
@@ -1075,6 +1087,107 @@ void Renderer::destroy_buffer(Buffer& b) {
     b = {};
 }
 
+bool Renderer::create_post_pipeline() {
+    // The sampler for the scene and depth: clamped, no filtering tricks.
+    VkSamplerCreateInfo sc{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    sc.magFilter = sc.minFilter = VK_FILTER_NEAREST; // depth formats may not filter linearly
+    sc.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sc.addressModeU = sc.addressModeV = sc.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    GK_VK_CHECK(vkCreateSampler(device_, &sc, nullptr, &post_sampler_));
+    const VkDescriptorSetLayoutBinding bindings[2] = {
+        {0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+        {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+    };
+    VkDescriptorSetLayoutCreateInfo dsl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    dsl.bindingCount = 2;
+    dsl.pBindings = bindings;
+    GK_VK_CHECK(vkCreateDescriptorSetLayout(device_, &dsl, nullptr, &post_set_layout_));
+
+    VkShaderModule vs = make_shader(device_, k_post_vert, sizeof(k_post_vert));
+    VkShaderModule fs = make_shader(device_, k_post_frag, sizeof(k_post_frag));
+    if (!vs || !fs) return false;
+    VkPushConstantRange push{VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(mat4) + 2 * sizeof(vec4)};
+    const VkDescriptorSetLayout layouts[2] = {set_layout_, post_set_layout_};
+    VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    pl.setLayoutCount = 2;
+    pl.pSetLayouts = layouts;
+    pl.pushConstantRangeCount = 1;
+    pl.pPushConstantRanges = &push;
+    GK_VK_CHECK(vkCreatePipelineLayout(device_, &pl, nullptr, &post_layout_));
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main", nullptr};
+    stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main", nullptr};
+    VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+    VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+    vp.viewportCount = 1;
+    vp.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    rs.polygonMode = VK_POLYGON_MODE_FILL;
+    rs.cullMode = VK_CULL_MODE_NONE;
+    rs.lineWidth = 1.0f;
+    VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+    VkPipelineColorBlendAttachmentState cba{};
+    cba.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+    cb.attachmentCount = 1;
+    cb.pAttachments = &cba;
+    VkDynamicState dyn[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dy{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+    dy.dynamicStateCount = 2;
+    dy.pDynamicStates = dyn;
+    VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+    rendering.colorAttachmentCount = 1;
+    rendering.pColorAttachmentFormats = &color_format_;
+    VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+    gp.pNext = &rendering;
+    gp.stageCount = 2;
+    gp.pStages = stages;
+    gp.pVertexInputState = &vi;
+    gp.pInputAssemblyState = &ia;
+    gp.pViewportState = &vp;
+    gp.pRasterizationState = &rs;
+    gp.pMultisampleState = &ms;
+    gp.pDepthStencilState = &ds;
+    gp.pColorBlendState = &cb;
+    gp.pDynamicState = &dy;
+    gp.layout = post_layout_;
+    const VkResult r = vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &post_pipeline_);
+    vkDestroyShaderModule(device_, vs, nullptr);
+    vkDestroyShaderModule(device_, fs, nullptr);
+    if (r != VK_SUCCESS) {
+        log_error("Post pipeline creation failed");
+        return false;
+    }
+    return true;
+}
+
+bool Renderer::create_post_set() {
+    // One set pointing at this size's scene and depth images; remade on resize.
+    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
+    VkDescriptorPoolCreateInfo dp{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+    dp.maxSets = 1;
+    dp.poolSizeCount = 1;
+    dp.pPoolSizes = &size;
+    GK_VK_CHECK(vkCreateDescriptorPool(device_, &dp, nullptr, &post_pool_));
+    VkDescriptorSetAllocateInfo da{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+    da.descriptorPool = post_pool_;
+    da.descriptorSetCount = 1;
+    da.pSetLayouts = &post_set_layout_;
+    GK_VK_CHECK(vkAllocateDescriptorSets(device_, &da, &post_set_));
+    const VkDescriptorImageInfo ci{post_sampler_, offscreen_color_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    const VkDescriptorImageInfo di{post_sampler_, offscreen_depth_.view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[2]{};
+    writes[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, post_set_, 0, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &ci, nullptr, nullptr};
+    writes[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, post_set_, 1, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &di, nullptr, nullptr};
+    vkUpdateDescriptorSets(device_, 2, writes, 0, nullptr);
+    return true;
+}
+
 Renderer::Image Renderer::create_image(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage,
                                        VkImageAspectFlags aspect) {
     Image img;
@@ -1375,6 +1488,8 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
     time_ = float(double(SDL_GetTicks()) / 1000.0);
     FrameUniforms u{};
     u.view_proj = proj * view;
+    view_proj_ = u.view_proj;
+    near_z_ = camera.near_z, far_z_ = camera.far_z;
     {   // The nearest point lights, scaled by how far they reach.
         std::vector<std::pair<float, const PointLight*>> order;
         for (const PointLight& pl : lighting.lights) order.push_back({glm::distance(pl.pos, camera.position) - pl.radius, &pl});
@@ -1482,13 +1597,13 @@ void Renderer::end_frame() {
     // The previous frame's blit may still be reading the offscreen image; the
     // barrier's source scope covers that.
     image_barrier(cmd, offscreen_color_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                  VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                  VK_ACCESS_2_TRANSFER_READ_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                   VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     image_barrier(cmd, offscreen_depth_.image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
                   VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                  VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                  VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
                   VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
                   VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
 
@@ -1502,7 +1617,7 @@ void Renderer::end_frame() {
     depth.imageView = offscreen_depth_.view;
     depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depth.storeOp = volumetric_ ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE; // the post pass reads it
     depth.clearValue.depthStencil = {1.0f, 0};
     VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
     ri.renderArea = {{0, 0}, offscreen_extent_};
@@ -1637,12 +1752,58 @@ void Renderer::end_frame() {
     }
     vkCmdEndRendering(cmd);
 
-    // Scale the (possibly low-res) scene up into the full-size composite
-    // with nearest filtering: the pixel look is for the game only.
-    image_barrier(cmd, offscreen_color_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
-                  VK_ACCESS_2_TRANSFER_READ_BIT);
+    // Volumetric light and mist: a full-screen pass over the scene and its
+    // depth into post_color_, which then takes the scene's place.
+    VkImage scene_image = offscreen_color_.image;
+    if (volumetric_ && post_pipeline_ && post_set_) {
+        image_barrier(cmd, offscreen_color_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                      VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+        image_barrier(cmd, offscreen_depth_.image, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                      VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                      VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+        image_barrier(cmd, post_color_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                      VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                      VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        VkRenderingAttachmentInfo pc{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        pc.imageView = post_color_.view;
+        pc.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        pc.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        pc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        VkRenderingInfo pri{VK_STRUCTURE_TYPE_RENDERING_INFO};
+        pri.renderArea = {{0, 0}, offscreen_extent_};
+        pri.layerCount = 1;
+        pri.colorAttachmentCount = 1;
+        pri.pColorAttachments = &pc;
+        vkCmdBeginRendering(cmd, &pri);
+        VkViewport pvp{0, 0, float(offscreen_extent_.width), float(offscreen_extent_.height), 0.0f, 1.0f};
+        VkRect2D psc{{0, 0}, offscreen_extent_};
+        vkCmdSetViewport(cmd, 0, 1, &pvp);
+        vkCmdSetScissor(cmd, 0, 1, &psc);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline_);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_layout_, 0, 1, &f.set, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_layout_, 1, 1, &post_set_, 0, nullptr);
+        struct {
+            mat4 inv_view_proj;
+            vec4 params;
+            vec4 range;
+        } pp{glm::inverse(view_proj_), vec4(1.2f, 1.0f, float(offscreen_extent_.width) / float(std::max<uint32_t>(offscreen_extent_.height, 1)), 0.0f),
+             vec4(near_z_, far_z_, 0.0f, 0.0f)};
+        vkCmdPushConstants(cmd, post_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pp), &pp);
+        vkCmdDraw(cmd, 3, 1, 0, 0);
+        vkCmdEndRendering(cmd);
+        image_barrier(cmd, post_color_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                      VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+        scene_image = post_color_.image;
+    } else {
+        // Scale the (possibly low-res) scene up into the full-size composite
+        // with nearest filtering: the pixel look is for the game only.
+        image_barrier(cmd, offscreen_color_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                      VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                      VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                      VK_ACCESS_2_TRANSFER_READ_BIT);
+    }
     image_barrier(cmd, composite_.image, VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                   VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
                   VK_ACCESS_2_TRANSFER_WRITE_BIT);
@@ -1662,7 +1823,7 @@ void Renderer::end_frame() {
         blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         blit.dstOffsets[0] = {ox, oy, 0};
         blit.dstOffsets[1] = {ox + dw, oy + dh, 1};
-        vkCmdBlitImage(cmd, offscreen_color_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, composite_.image,
+        vkCmdBlitImage(cmd, scene_image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, composite_.image,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
     }
 

@@ -69,6 +69,7 @@ void World::tick(std::span<const KartInput> inputs) {
         }
     for (size_t i = 0; i < karts_.size(); ++i) {
         KartStepContext ctx{track_, tables_.constants, params_[i], int(i), frozen, &events_};
+        ctx.oil = over_oil(int(i));
         const float rb = params_[i].rubber_band;
         if (any_player && rb > 0.0f && !karts_[i].finished) {
             const float gap = std::clamp((lead - kart_race_distance(karts_[i], track_)) / 120.0f, -0.5f, 1.0f);
@@ -79,6 +80,7 @@ void World::tick(std::span<const KartInput> inputs) {
     if (countdown_left_ > 0 && --countdown_left_ == 0) {
         for (size_t i = 0; i < karts_.size(); ++i) {
             KartStepContext ctx{track_, tables_.constants, params_[i], int(i), false, &events_};
+            ctx.oil = over_oil(int(i));
             kart_on_go(karts_[i], ctx);
         }
     }
@@ -291,6 +293,7 @@ bool World::adopt_motion(int kart, const KartState& c, std::span<const KartInput
     k.draft = c.draft;
     for (const KartInput& in : replay) {
         KartStepContext ctx{track_, tables_.constants, params_[size_t(kart)], kart, countdown_left_ > 0, nullptr};
+        ctx.oil = over_oil(kart);
         kart_step(k, in, ctx);
     }
     return true;

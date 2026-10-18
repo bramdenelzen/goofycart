@@ -200,6 +200,7 @@ bool App::init() {
     if (const std::string sp = settings_path(); !sp.empty()) settings_.load(sp);
     if (options_.full_resolution) settings_.low_res = false;
     if (options_.pixel_look) settings_.low_res = true;
+    if (options_.volumetric) settings_.volumetric = true;
     apply_settings();
     if (const std::string url = !options_.master_url.empty() ? options_.master_url : settings_.master_url;
         settings_.crash_reports && !url.empty() && !pref_dir_.empty())
@@ -886,6 +887,7 @@ void App::leave_online() {
 
 void App::apply_settings() {
     renderer_.set_full_resolution(!settings_.low_res);
+    renderer_.set_volumetric(settings_.volumetric);
     show_help_ = settings_.show_help;
     input_.rumble_enabled = settings_.rumble;
     input_.binds = settings_.binds;

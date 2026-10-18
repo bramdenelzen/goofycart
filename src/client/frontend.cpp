@@ -161,8 +161,8 @@ void draw_online_status(render::Renderer& r, const std::string& text, bool faile
 // ---------------------------------------------------------------- options
 
 namespace {
-constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "CRASH REPORTS", "CONTROLS", "BACK"};
-constexpr int kOptionCount = 10;
+constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "VOLUMETRIC LIGHT", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "CRASH REPORTS", "CONTROLS", "BACK"};
+constexpr int kOptionCount = 11;
 } // namespace
 
 OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions& act) {
@@ -178,10 +178,11 @@ OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions&
     case 1: vol(st.music); break;
     case 2: vol(st.sfx); break;
     case 3: st.low_res = !st.low_res; break;
-    case 4: st.fullscreen = !st.fullscreen; break;
-    case 5: st.show_help = !st.show_help; break;
-    case 6: st.rumble = !st.rumble; break;
-    case 7: st.crash_reports = !st.crash_reports; break;
+    case 4: st.volumetric = !st.volumetric; break;
+    case 5: st.fullscreen = !st.fullscreen; break;
+    case 6: st.show_help = !st.show_help; break;
+    case 7: st.rumble = !st.rumble; break;
+    case 8: st.crash_reports = !st.crash_reports; break;
     default: return OptionsAction::None;
     }
     return OptionsAction::Changed;
@@ -205,7 +206,7 @@ void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st
                                 b < v ? ui::kGoldDeep : rgba(255, 255, 255, sel ? 90 : 40));
             }
         } else if (i < kOptionCount - 2) {
-            const bool on = i == 3 ? st.low_res : i == 4 ? st.fullscreen : i == 5 ? st.show_help : i == 6 ? st.rumble : st.crash_reports;
+            const bool on = i == 3 ? st.low_res : i == 4 ? st.volumetric : i == 5 ? st.fullscreen : i == 6 ? st.show_help : i == 7 ? st.rumble : st.crash_reports;
             ui::option_row(r, rx, ry, rw, kOptionRows[i], on ? "<  ON  >" : "<  OFF  >", sel);
         } else {
             ui::option_row(r, rx, ry, rw, kOptionRows[i], nullptr, sel);

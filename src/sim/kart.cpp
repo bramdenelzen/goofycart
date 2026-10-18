@@ -372,7 +372,7 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     float retention = s.drift == DriftState::Drifting ? glm::mix(k.drift_entry_slip_retention, k.drift_slip_retention, entry)
                                                       : k.road_slip_retention;
     if (s.surface == Surface::Ice) retention = glm::mix(0.97f, 0.85f, p.slip_traction);
-    else if (s.surface == Surface::Oil) retention = 0.985f; // an oil spill: the kart keeps sliding whichever way it was going
+    else if (s.surface == Surface::Oil || ctx.oil) retention = 0.985f; // oil: the kart keeps sliding whichever way it was going
     else if (s.surface == Surface::Sand) retention = glm::mix(0.85f, 0.6f, p.slip_traction);
     s.slide = lateral * retention;
 

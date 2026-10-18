@@ -82,6 +82,8 @@ public:
     void spawn_explosion(vec3 pos, int owner);
     void apply_hit(int kart, HitKind kind, int from);
     void throw_item(int kart, Item item, bool backwards, bool forwards);
+    // Whether a kart is on a dropped oil slick (slippery, like the oil surface).
+    bool over_oil(int kart) const;
 
     uint64_t tick_count() const { return tick_; }
     int countdown_left() const { return countdown_left_; }

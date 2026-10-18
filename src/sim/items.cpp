@@ -334,7 +334,7 @@ void World::throw_item(int i, Item item, bool backwards, bool forwards) {
         e.type = EntityType::OilSlick;
         e.pos = behind;
         e.vel = -fwd * 1.5f;
-        e.life = 1500;
+        e.life = 900;
         break;
     case Item::GreenShell:
     case Item::Fireball:
@@ -431,6 +431,18 @@ void World::apply_hit(int kart, HitKind kind, int from) {
         break;
     }
     emit(events_, KartEventType::Hit, kart, int(kind) | ((from + 1) << 8));
+}
+
+bool World::over_oil(int kart) const {
+    if (kart < 0 || size_t(kart) >= karts_.size()) return false;
+    const KartState& k = karts_[size_t(kart)];
+    if (!k.grounded) return false;
+    for (const ItemEntity& e : entities_) {
+        if (e.type != EntityType::OilSlick || !e.grounded) continue;
+        const vec3 d = k.pos - e.pos;
+        if (std::abs(d.y) < 1.5f && glm::length(vec2(d.x, d.z)) < 2.1f) return true;
+    }
+    return false;
 }
 
 void World::spawn_explosion(vec3 pos, int owner) {
@@ -674,11 +686,7 @@ void World::update_entities() {
             if (k.respawn_frames > 0 || k.ghost_frames > 0 || k.finished) continue;
             if (e.type == EntityType::RedShell && e.target >= 0 && j != e.target && e.age < 25) continue;
             if (glm::length(k.pos + k.up() * 0.4f - e.pos) > (e.type == EntityType::OilSlick ? 2.0f : kHitRadius)) continue;
-            if (e.type == EntityType::OilSlick) { // the puddle stays; the kart spins out
-                if (k.star_frames == 0 && k.bullet_frames == 0 && k.invincible_frames == 0 && k.spin_frames == 0 && k.tumble_frames == 0)
-                    apply_hit(j, HitKind::Spin, e.owner);
-                continue;
-            }
+            if (e.type == EntityType::OilSlick) continue; // the puddle stays; it makes the road slippery (over_oil)
             if (k.star_frames > 0 || k.bullet_frames > 0) {
                 dead[idx] = e.type != EntityType::Boomerang;
                 break;

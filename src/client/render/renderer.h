@@ -161,6 +161,9 @@ public:
     void request_screenshot(std::string path) { screenshot_path_ = std::move(path); }
 
     void set_full_resolution(bool on);
+    // Sun shafts and drifting mist, a post pass over the scene (post.frag).
+    void set_volumetric(bool on) { volumetric_ = on; }
+    bool volumetric() const { return volumetric_; }
     bool full_resolution() const { return options_.full_resolution; }
     VkExtent2D internal_extent() const { return offscreen_extent_; }
     // The 2D overlay is laid out in a virtual space kUiHeight pixels high
@@ -238,6 +241,8 @@ private:
     void destroy_offscreen();
     bool create_pipeline();
     bool create_ui_pipeline();
+    bool create_post_pipeline();
+    bool create_post_set();
     Buffer create_buffer(VkDeviceSize size, VkBufferUsageFlags usage, bool host_visible);
     void destroy_buffer(Buffer& b);
     Image create_image(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect);
@@ -310,6 +315,17 @@ private:
     std::vector<Vertex> decals_;
     TextureId particle_texture_ = 0;
     VkPipeline mesh_pipeline_add_ = VK_NULL_HANDLE;
+    // The volumetric post pass: scene + depth in, post_color_ out.
+    bool volumetric_ = false;
+    Image post_color_;
+    VkSampler post_sampler_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout post_set_layout_ = VK_NULL_HANDLE;
+    VkDescriptorPool post_pool_ = VK_NULL_HANDLE;
+    VkDescriptorSet post_set_ = VK_NULL_HANDLE;
+    VkPipelineLayout post_layout_ = VK_NULL_HANDLE;
+    VkPipeline post_pipeline_ = VK_NULL_HANDLE;
+    mat4 view_proj_{1.0f};
+    float near_z_ = 0.1f, far_z_ = 1000.0f;
     vec3 cam_right_{1, 0, 0}, cam_up_{0, 1, 0}, cam_pos_{0.0f};
     float time_ = 0.0f;
     static constexpr uint32_t kMaxParticles = 6000;

@@ -130,6 +130,7 @@ struct KartStepContext {
     bool frozen;                       // countdown: no driving yet
     std::vector<KartEvent>* events;
     float top_speed_scale = 1.0f;      // CPU rubber band
+    bool oil = false;                  // over a dropped oil slick this tick: the road is as slippery as a spill
 };
 
 void kart_spawn(KartState& s, const Track& track, int grid_slot);

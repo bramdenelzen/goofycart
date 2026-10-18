@@ -33,6 +33,7 @@ struct AppOptions {
     std::string screenshot_path;  // saved on the last frame when max_frames is set
     bool autodrive = false;       // the player kart drives itself (demos, screenshots)
     bool pixel_look = false;      // --pixel: the low-res look regardless of settings (screenshots)
+    bool volumetric = false;      // --volumetric: sun shafts and mist on regardless of settings (screenshots)
     int spawn_obstacle = -1;
     std::string demo_fx;          // testing: "explosion", "hit", "tumble" or "trick" on the player at frame 250
     int give_item = 0;            // testing: hand the player this item (sim::Item value) at the start      // testing: start lined up 14 m before this obstacle and drive straight at it
