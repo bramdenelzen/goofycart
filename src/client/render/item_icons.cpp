@@ -5,6 +5,7 @@
 #include "gk/sim/items.h"
 
 #include <cmath>
+#include <algorithm>
 
 namespace gk::render {
 namespace {

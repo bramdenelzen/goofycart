@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <iterator>
+#include <algorithm>
 
 namespace gk::net {
 

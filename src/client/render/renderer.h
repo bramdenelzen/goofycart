@@ -11,6 +11,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 struct SDL_Window;
 

@@ -3,6 +3,7 @@
 // (green, red, and the winged, spiked blue one).
 #include "gobby_assets.h"
 #include "gobby_util.h"
+#include <algorithm>
 
 namespace gk::render {
 namespace {

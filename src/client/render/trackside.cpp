@@ -6,6 +6,7 @@
 
 #include "gobby_util.h"
 #include "track_mesh.h"
+#include <algorithm>
 
 namespace gk::render {
 namespace {
