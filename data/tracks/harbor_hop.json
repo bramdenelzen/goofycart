@@ -3,170 +3,59 @@
   "name": "Harbor Hop",
   "theme": "harbor",
   "half_width": 7,
-  "_comment": "Square-cornered docks with crates and crane loads swinging over the quay, a high pier bridge over the start straight, a hairpin round the lighthouse and a glide down to the water.",
+  "_comment": "Square-cornered docks with crates and crane loads swinging over the quay, a high pier bridge over the start straight, a hairpin round the lighthouse and a glide down to the water. The drawbridge along the south quay lowers on a timer, the warehouse doors open for a while when someone hits the switch on the quay, and the tide floods the west docks from lap 3.",
   "points": [
-    [
-      0.0,
-      0,
-      0.0
-    ],
-    [
-      0.0,
-      0,
-      82.5
-    ],
-    [
-      7.5,
-      0,
-      127.5
-    ],
-    [
-      45.0,
-      0,
-      142.5
-    ],
-    [
-      82.5,
-      0,
-      117.0
-    ],
-    [
-      112.5,
-      0,
-      147.0
-    ],
-    [
-      150.0,
-      0,
-      144.0
-    ],
-    [
-      172.5,
-      1,
-      105.0
-    ],
-    [
-      150.0,
-      2,
-      72.0
-    ],
-    [
-      168.0,
-      3,
-      37.5
-    ],
-    [
-      150.0,
-      5,
-      0.0
-    ],
-    [
-      97.5,
-      9,
-      -7.5
-    ],
-    [
-      37.5,
-      12,
-      33.0
-    ],
-    [
-      -30.0,
-      12,
-      45.0
-    ],
-    [
-      -90.0,
-      10,
-      30.0
-    ],
-    [
-      -127.5,
-      7,
-      -15.0
-    ],
-    [
-      -165.0,
-      4,
-      -37.5
-    ],
-    [
-      -172.5,
-      2,
-      -97.5
-    ],
-    [
-      -135.0,
-      2,
-      -127.5
-    ],
-    [
-      -82.5,
-      2,
-      -112.5
-    ],
-    [
-      -45.0,
-      4,
-      -135.0
-    ],
-    [
-      22.5,
-      -3,
-      -150.0
-    ],
-    [
-      42.0,
-      -3,
-      -93.0
-    ],
-    [
-      7.5,
-      -1,
-      -45.0
-    ]
+    [0.0, 0, 0.0, 9.0],
+    [0.0, 0, 82.5, 9.0],
+    [7.5, 0, 127.5],
+    [45.0, 0, 142.5],
+    [82.5, 0, 117.0],
+    [112.5, 0, 147.0],
+    [150.0, 0, 144.0],
+    [172.5, 1, 105.0],
+    [150.0, 2, 72.0],
+    [168.0, 3, 37.5],
+    [150.0, 5, 0.0],
+    [97.5, 9, -7.5, 8.5],
+    [37.5, 12, 33.0, 9.0],
+    [-30.0, 12, 45.0, 9.5],
+    [-90.0, 10, 30.0, 9.0],
+    [-127.5, 7, -15.0],
+    [-165.0, 4, -37.5],
+    [-172.5, 2, -97.5, 8.5],
+    [-135.0, 2, -127.5, 6.5],
+    [-82.5, 2, -112.5, 6.0],
+    [-45.0, 4, -135.0],
+    [22.5, -3, -150.0, 9.0],
+    [42.0, -3, -93.0, 9.0],
+    [7.5, -1, -45.0]
   ],
   "features": [
     {
       "type": "trick_ramp",
-      "at": [
-        1,
-        0
-      ],
+      "at": [1, 0],
       "length": 10,
       "height": 1.4
     },
     {
       "type": "item_boxes",
-      "at": [
-        1,
-        25
-      ]
+      "at": [1, 25]
     },
     {
       "type": "obstacle",
-      "at": [
-        3,
-        10
-      ],
+      "at": [3, 10],
       "offset": 3.5,
       "shape": "block"
     },
     {
       "type": "obstacle",
-      "at": [
-        2,
-        8
-      ],
+      "at": [2, 8],
       "offset": -3.0,
       "shape": "block"
     },
     {
       "type": "obstacle",
-      "at": [
-        5,
-        10
-      ],
+      "at": [5, 10],
       "offset": 3.5,
       "shape": "block"
     },
@@ -180,48 +69,27 @@
     },
     {
       "type": "item_boxes",
-      "at": [
-        6,
-        10
-      ]
+      "at": [6, 10]
     },
     {
       "type": "boost_pad",
-      "at": [
-        7,
-        0
-      ],
+      "at": [7, 0],
       "length": 8,
-      "lanes": [
-        1,
-        2
-      ]
+      "lanes": [1, 2]
     },
     {
       "type": "item_boxes",
-      "at": [
-        11,
-        15
-      ]
+      "at": [11, 15]
     },
     {
       "type": "boost_pad",
-      "at": [
-        12,
-        10
-      ],
+      "at": [12, 10],
       "length": 8,
-      "lanes": [
-        0,
-        1
-      ]
+      "lanes": [0, 1]
     },
     {
       "type": "obstacle",
-      "at": [
-        14,
-        0
-      ],
+      "at": [14, 0],
       "offset": 3.0,
       "shape": "pillar",
       "width": 1.6,
@@ -230,10 +98,7 @@
     },
     {
       "type": "obstacle",
-      "at": [
-        15,
-        0
-      ],
+      "at": [15, 0],
       "offset": -3.0,
       "shape": "pillar",
       "width": 1.6,
@@ -242,17 +107,11 @@
     },
     {
       "type": "item_boxes",
-      "at": [
-        16,
-        0
-      ]
+      "at": [16, 0]
     },
     {
       "type": "glide_ramp",
-      "at": [
-        20,
-        0
-      ],
+      "at": [20, 0],
       "length": 16,
       "height": 3,
       "gap": 40
@@ -260,106 +119,141 @@
     {
       "type": "road",
       "surface": "water",
-      "from": [
-        21,
-        0
-      ],
-      "to": [
-        22,
-        10
-      ]
+      "from": [21, 0],
+      "to": [22, 10]
     },
     {
       "type": "item_boxes",
-      "at": [
-        22,
-        0
-      ]
+      "at": [22, 0]
     },
     {
       "type": "trick_ramp",
-      "at": [
-        22,
-        15
-      ],
+      "at": [22, 15],
       "length": 9,
       "height": 1.3
     },
     {
       "type": "boost_pad",
-      "at": [
-        23,
-        0
-      ],
+      "at": [23, 0],
       "length": 8,
-      "lanes": [
-        1,
-        2
-      ]
+      "lanes": [1, 2]
     },
     {
       "type": "mover",
-      "at": [
-        3,
-        20
-      ],
+      "at": [3, 20],
       "kind": "block",
       "width": 2.4,
       "length": 2.4,
       "height": 2.2,
-      "travel": [
-        5.5,
-        0,
-        0
-      ],
+      "travel": [5.5, 0, 0],
       "period": 2.8
     },
     {
       "type": "mover",
-      "at": [
-        5,
-        25
-      ],
+      "at": [5, 25],
       "kind": "block",
       "width": 2.4,
       "length": 2.4,
       "height": 2.2,
-      "travel": [
-        5.5,
-        0,
-        0
-      ],
+      "travel": [5.5, 0, 0],
       "period": 3.2,
       "phase": 0.5
     },
     {
       "type": "mover",
-      "at": [
-        21,
-        20
-      ],
+      "at": [21, 20],
       "kind": "platform",
       "width": 8,
       "length": 12,
       "height": 0.8,
-      "travel": [
-        0,
-        0.5,
-        0
-      ],
+      "travel": [0, 0.5, 0],
       "period": 2.4,
       "ramp": 3
     },
     {
       "type": "road",
       "surface": "oil",
-      "from": [
-        9,
-        10
+      "from": [9, 10],
+      "to": [9, 20]
+    },
+    {
+      "type": "switch",
+      "name": "quay switch",
+      "at": [5, 30],
+      "offset": -3.5,
+      "hold": 9
+    },
+    {
+      "type": "zone",
+      "from": [16, 0],
+      "to": [17, 35],
+      "surface": "water",
+      "side": "left",
+      "when": "tide"
+    }
+  ],
+  "gates": {
+    "drawbridge": {
+      "cycle": [16, 9, 4]
+    },
+    "warehouse": {
+      "switch": "quay switch"
+    },
+    "tide": {
+      "from_lap": 3
+    }
+  },
+  "branches": [
+    {
+      "name": "drawbridge",
+      "from": [2, 5],
+      "to": [6, 15],
+      "side": "right",
+      "points": [
+        [52, 1.5, 168, 5.5],
+        [88, 3.5, 175, 5.5],
+        [122, 1.5, 168, 5.5]
       ],
-      "to": [
-        9,
-        20
+      "half_width": 5.5,
+      "when": "drawbridge",
+      "vanish": true,
+      "cpu_share": 0.6,
+      "features": [
+        {
+          "type": "boost_pad",
+          "at": 70,
+          "length": 8,
+          "lanes": [1, 2]
+        }
+      ]
+    },
+    {
+      "name": "warehouse",
+      "from": [6, 25],
+      "to": [10, 35],
+      "side": "left",
+      "points": [
+        [144, 1.5, 88, 5],
+        [124, 2.5, 62, 5],
+        [122, 3.5, 34, 5]
+      ],
+      "half_width": 5,
+      "when": "warehouse",
+      "cpu_share": 0.5,
+      "features": [
+        {
+          "type": "item_boxes",
+          "at": 55
+        },
+        {
+          "type": "obstacle",
+          "at": 70,
+          "offset": -2.2,
+          "prop": "crate",
+          "width": 2,
+          "length": 2,
+          "height": 2
+        }
       ]
     }
   ]

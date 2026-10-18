@@ -1823,8 +1823,18 @@ void App::draw_gates(const sim::World& w) {
     const GateMeshes& g = it->second;
     for (const auto& [branch, meshes] : g.roads)
         if (t.branch_present(branch)) renderer_.draw(meshes.first, mat4(1.0f)), renderer_.draw(meshes.second, mat4(1.0f));
+    // Zones on a timer flicker for the second before they come on: a warning.
+    auto warning = [&](int gate) {
+        if (gate < 0 || t.gate_holds(gate)) return false;
+        const sim::Gate& gt = t.gates[size_t(gate)];
+        if (gt.when != sim::Gate::When::Cycle) return false;
+        const int period = std::max(gt.period, 1);
+        const int phase = ((w.race_ticks() - gt.offset) % period + period) % period;
+        const int until = gt.invert ? gt.open - phase : period - phase;
+        return until > 0 && until <= 60 && (w.race_ticks() / 6) % 2 == 0;
+    };
     for (size_t i = 0; i < t.zones.size() && i < g.zones.size(); ++i)
-        if (t.gate_holds(t.zones[i].gate)) renderer_.draw(g.zones[i], mat4(1.0f));
+        if (t.gate_holds(t.zones[i].gate) || warning(t.zones[i].gate)) renderer_.draw(g.zones[i], mat4(1.0f));
     for (size_t i = 0; i < t.switches.size() && i < g.switches.size(); ++i) {
         const auto& sw = t.switches[i];
         const bool on = i < w.switches().size() && w.switches()[i] > 0;

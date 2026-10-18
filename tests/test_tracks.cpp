@@ -53,6 +53,12 @@ TEST_CASE("every track is a clean lap for a CPU, and a 12-kart race finishes") {
         CHECK(std::count_if(def.features.begin(), def.features.end(),
                             [](const TrackFeature& f) { return f.kind == TrackFeature::Kind::TrickRamp; }) >= 2);
         CHECK(track.obstacles.size() >= 2);
+        // The new track format in use: side roads, things that change, roads that narrow and widen.
+        CHECK(track.branches.size() >= 1);
+        CHECK(track.gates.size() >= 2);
+        float narrow = 1e9f, wide = 0.0f;
+        for (const CenterSample& c : track.center) narrow = std::min(narrow, c.half_width), wide = std::max(wide, c.half_width);
+        CHECK(wide - narrow >= 2.0f);
 
         World w(std::move(track), tables, RaceConfig{.laps = 2, .countdown_frames = 180, .seed = 3});
         for (int i = 0; i < 12; ++i) {
@@ -121,6 +127,33 @@ TEST_CASE("where a track passes over itself there is room underneath") {
         crossings += crosses;
     }
     CHECK(crossings >= 4);
+}
+
+TEST_CASE("side roads keep clear of the rest of the track") {
+    // Away from its own fork and merge, a side road either keeps its
+    // distance from every other road or passes a bridge's height over or under it.
+    for (const TrackDef& def : catalog().tracks) {
+        CAPTURE(def.id);
+        const Track t = build_track(def);
+        for (const Track::Branch& b : t.branches) {
+            CAPTURE(b.name);
+            for (int k = 0; k < b.count; k += 2) {
+                const CenterSample& a = t.sample(b.first + k);
+                for (size_t j = 0; j < t.road.size(); j += 2) {
+                    const CenterSample& o = t.road[j];
+                    if (o.branch == a.branch) continue;
+                    float ds = std::abs(o.s - a.s);
+                    ds = std::min(ds, t.length - ds);
+                    if (ds < 70.0f) continue; // its own junctions, and the main road it runs beside
+                    const float d = glm::length(vec2(a.pos.x - o.pos.x, a.pos.z - o.pos.z));
+                    if (d > a.half_width + o.half_width + 4.0f) continue;
+                    CAPTURE(k);
+                    CAPTURE(j);
+                    CHECK(std::abs(a.pos.y - o.pos.y) >= 8.0f);
+                }
+            }
+        }
+    }
 }
 
 TEST_CASE("obstacles are solid from every side") {

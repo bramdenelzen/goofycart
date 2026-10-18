@@ -4,161 +4,53 @@
   "theme": "meadow",
   "ground": true,
   "half_width": 7.5,
-  "_comment": "A figure of eight through rolling farmland: up over the hills, tractors trundling across the back road, a crest jump, then the bridge over the start straight and a glide off it.",
+  "_comment": "A figure of eight through rolling farmland: up over the hills, tractors trundling across the back road, a crest jump, then the bridge over the start straight and a glide off it. An orchard lane cuts the far loop, the barn doors on the back road swing shut in turn, the ford floods from lap 2, hay bales land on the start straight from lap 2, and the last lap lays a dash strip down the final bend.",
   "points": [
-    [
-      0.0,
-      0,
-      -120.0
-    ],
-    [
-      0.0,
-      0,
-      -30.0
-    ],
-    [
-      0.0,
-      0,
-      60.0
-    ],
-    [
-      21.0,
-      1,
-      112.5
-    ],
-    [
-      -9.0,
-      2,
-      157.5
-    ],
-    [
-      18.0,
-      3,
-      202.5
-    ],
-    [
-      75.0,
-      4,
-      225.0
-    ],
-    [
-      142.5,
-      7,
-      210.0
-    ],
-    [
-      177.0,
-      10,
-      165.0
-    ],
-    [
-      150.0,
-      9,
-      123.0
-    ],
-    [
-      99.0,
-      8,
-      138.0
-    ],
-    [
-      72.0,
-      9,
-      93.0
-    ],
-    [
-      96.0,
-      11,
-      48.0
-    ],
-    [
-      78.0,
-      13,
-      6.0
-    ],
-    [
-      22.5,
-      13,
-      0.0
-    ],
-    [
-      -45.0,
-      13,
-      -3.0
-    ],
-    [
-      -105.0,
-      11,
-      -15.0
-    ],
-    [
-      -150.0,
-      8,
-      -48.0
-    ],
-    [
-      -162.0,
-      5,
-      -102.0
-    ],
-    [
-      -198.0,
-      7,
-      -144.0
-    ],
-    [
-      -162.0,
-      4,
-      -186.0
-    ],
-    [
-      -111.0,
-      2,
-      -162.0
-    ],
-    [
-      -78.0,
-      1,
-      -195.0
-    ],
-    [
-      -33.0,
-      0,
-      -183.0
-    ]
+    [0.0, 0, -120.0, 9.5],
+    [0.0, 0, -30.0, 9.5],
+    [0.0, 0, 60.0, 8.5],
+    [21.0, 1, 112.5, 7.5],
+    [-9.0, 2, 157.5],
+    [18.0, 3, 202.5],
+    [75.0, 4, 225.0],
+    [142.5, 7, 210.0],
+    [177.0, 10, 165.0],
+    [150.0, 9, 123.0],
+    [99.0, 8, 138.0],
+    [72.0, 9, 93.0],
+    [96.0, 11, 48.0],
+    [78.0, 13, 6.0, 6.5],
+    [22.5, 13, 0.0, 5.5],
+    [-45.0, 13, -3.0, 5.5],
+    [-105.0, 11, -15.0, 6.5],
+    [-150.0, 8, -48.0],
+    [-162.0, 5, -102.0],
+    [-198.0, 7, -144.0, 9.0],
+    [-162.0, 4, -186.0, 9.0],
+    [-111.0, 2, -162.0],
+    [-78.0, 1, -195.0],
+    [-33.0, 0, -183.0, 8.5]
   ],
   "features": [
     {
       "type": "trick_ramp",
-      "at": [
-        1,
-        10
-      ],
+      "at": [1, 10],
       "length": 10,
       "height": 1.4
     },
     {
       "type": "item_boxes",
-      "at": [
-        2,
-        0
-      ]
+      "at": [2, 0]
     },
     {
       "type": "obstacle",
-      "at": [
-        4,
-        0
-      ],
+      "at": [4, 0],
       "offset": 3.5,
       "shape": "block"
     },
     {
       "type": "obstacle",
-      "at": [
-        5,
-        0
-      ],
+      "at": [5, 0],
       "offset": -3.5,
       "shape": "block"
     },
@@ -172,46 +64,28 @@
     },
     {
       "type": "boost_pad",
-      "at": [
-        10,
-        0
-      ],
+      "at": [10, 0],
       "length": 8,
-      "lanes": [
-        1,
-        2
-      ]
+      "lanes": [1, 2]
     },
     {
       "type": "item_boxes",
-      "at": [
-        12,
-        0
-      ]
+      "at": [12, 0]
     },
     {
       "type": "glide_ramp",
-      "at": [
-        16,
-        0
-      ],
+      "at": [16, 0],
       "length": 16,
       "height": 2.5,
       "gap": 40
     },
     {
       "type": "item_boxes",
-      "at": [
-        18,
-        10
-      ]
+      "at": [18, 10]
     },
     {
       "type": "obstacle",
-      "at": [
-        20,
-        0
-      ],
+      "at": [20, 0],
       "offset": -3.0,
       "shape": "pillar",
       "width": 2.2,
@@ -220,10 +94,7 @@
     },
     {
       "type": "obstacle",
-      "at": [
-        21,
-        0
-      ],
+      "at": [21, 0],
       "offset": 3.0,
       "shape": "pillar",
       "width": 2.2,
@@ -232,81 +103,165 @@
     },
     {
       "type": "trick_ramp",
-      "at": [
-        22,
-        0
-      ],
+      "at": [22, 0],
       "length": 9,
       "height": 1.3
     },
     {
       "type": "boost_pad",
-      "at": [
-        23,
-        0
-      ],
+      "at": [23, 0],
       "length": 8,
-      "lanes": [
-        2,
-        3
-      ]
+      "lanes": [2, 3]
     },
     {
       "type": "mover",
-      "at": [
-        7,
-        15
-      ],
+      "at": [7, 15],
       "kind": "block",
       "width": 2.6,
       "length": 3.4,
       "height": 2.2,
-      "travel": [
-        6,
-        0,
-        0
-      ],
+      "travel": [6, 0, 0],
       "period": 3.2
     },
     {
       "type": "mover",
-      "at": [
-        8,
-        5
-      ],
+      "at": [8, 5],
       "kind": "block",
       "width": 2.6,
       "length": 3.4,
       "height": 2.2,
-      "travel": [
-        6,
-        0,
-        0
-      ],
+      "travel": [6, 0, 0],
       "period": 3.6,
       "phase": 0.5
     },
     {
       "type": "trick_ramp",
-      "at": [
-        12,
-        25
-      ],
+      "at": [12, 25],
       "length": 9,
       "height": 1.5
     },
     {
       "type": "obstacle",
-      "at": [
-        19,
-        10
-      ],
+      "at": [19, 10],
       "offset": -4.0,
       "shape": "block",
       "width": 2.2,
       "length": 2.2,
       "height": 1.4,
       "prop": "crate"
+    },
+    {
+      "type": "barrier",
+      "at": [17, 35],
+      "width": 6.5,
+      "offset": -3.5,
+      "when": "barn_left",
+      "thickness": 0.6,
+      "height": 2.6
+    },
+    {
+      "type": "barrier",
+      "at": [17, 35],
+      "width": 6.5,
+      "offset": 3.5,
+      "when": "barn_right",
+      "thickness": 0.6,
+      "height": 2.6
+    },
+    {
+      "type": "zone",
+      "from": [2, 15],
+      "to": [2, 45],
+      "surface": "water",
+      "when": "flood"
+    },
+    {
+      "type": "obstacle",
+      "at": [1, 35],
+      "offset": -4.5,
+      "width": 3.5,
+      "length": 2.0,
+      "height": 1.6,
+      "when": "hay"
+    },
+    {
+      "type": "obstacle",
+      "at": [1, 65],
+      "offset": 4.5,
+      "width": 3.5,
+      "length": 2.0,
+      "height": 1.6,
+      "when": "hay"
+    },
+    {
+      "type": "zone",
+      "from": [22, 30],
+      "to": [23, 15],
+      "surface": "boost",
+      "offset": 0,
+      "width": 4,
+      "when": "last_lap"
+    }
+  ],
+  "gates": {
+    "flood": {
+      "from_lap": 2
+    },
+    "hay": {
+      "from_lap": 2
+    },
+    "last_lap": {
+      "from_lap": 3
+    },
+    "barn_left": {
+      "cycle": [6, 3, 0]
+    },
+    "barn_right": {
+      "cycle": [6, 3, 3]
+    }
+  },
+  "branches": [
+    {
+      "name": "orchard lane",
+      "from": [5, 5],
+      "to": [10, 15],
+      "side": "left",
+      "points": [
+        [69.1, 3.8, 207.2, 4.5],
+        [98, 6, 186, 4.5],
+        [138.1, 8.5, 142.8, 4.5]
+      ],
+      "half_width": 4.5,
+      "verge_surface": "offroad_medium",
+      "cpu_share": 0.35,
+      "features": [
+        {
+          "type": "trick_ramp",
+          "at": 50,
+          "length": 8,
+          "height": 1.2
+        },
+        {
+          "type": "obstacle",
+          "at": 80,
+          "offset": -2.0,
+          "shape": "pillar",
+          "prop": "barrel",
+          "width": 1.6,
+          "length": 1.6,
+          "height": 1.6
+        },
+        {
+          "type": "obstacle",
+          "at": 100,
+          "offset": 2.0,
+          "shape": "pillar",
+          "prop": "barrel",
+          "width": 1.6,
+          "length": 1.6,
+          "height": 1.6
+        }
+      ]
     }
   ]
 }

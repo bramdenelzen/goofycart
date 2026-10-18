@@ -5,138 +5,40 @@
   "half_width": 6.5,
   "verge": 3,
   "verge_surface": "road",
-  "_comment": "Through the old town on the hill: a narrow market street lined with stalls to smash, the plaza round the fountain at the top, a long flight of stone steps down to the lower town, a glide over the canal and steps back up the hill.",
+  "_comment": "Through the old town on the hill: a narrow market street lined with stalls to smash, the plaza round the fountain at the top, a long flight of stone steps down to the lower town, a glide over the canal and steps back up the hill. From lap 2 the stalls pack up and the side street through the old town opens, market carts park round the plaza, and on the last lap the canal spills over the quay.",
   "points": [
-    [
-      -18.0,
-      6,
-      -66.0
-    ],
-    [
-      0.0,
-      6,
-      0.0
-    ],
-    [
-      0.0,
-      6,
-      45.0
-    ],
-    [
-      -21.0,
-      7,
-      82.5
-    ],
-    [
-      0.0,
-      8,
-      120.0
-    ],
-    [
-      30.0,
-      10,
-      147.0
-    ],
-    [
-      82.5,
-      12,
-      156.0
-    ],
-    [
-      127.5,
-      12,
-      144.0
-    ],
-    [
-      162.0,
-      10,
-      111.0
-    ],
-    [
-      174.0,
-      8,
-      63.0
-    ],
-    [
-      174.0,
-      7,
-      33.0
-    ],
-    [
-      174.0,
-      3,
-      -18.0
-    ],
-    [
-      174.0,
-      1.5,
-      -48.0
-    ],
-    [
-      150.0,
-      1,
-      -93.0
-    ],
-    [
-      112.5,
-      0,
-      -90.0
-    ],
-    [
-      82.5,
-      0,
-      -127.5
-    ],
-    [
-      30.0,
-      0,
-      -135.0
-    ],
-    [
-      -22.5,
-      0,
-      -150.0
-    ],
-    [
-      -67.5,
-      1.5,
-      -150.0
-    ],
-    [
-      -105.0,
-      3,
-      -120.0
-    ],
-    [
-      -90.0,
-      4.5,
-      -93.0
-    ],
-    [
-      -60.0,
-      6,
-      -105.0
-    ],
-    [
-      -42.0,
-      6,
-      -82.5
-    ]
+    [-18.0, 6, -66.0],
+    [0.0, 6, 0.0, 5.5],
+    [0.0, 6, 45.0, 5.5],
+    [-21.0, 7, 82.5, 6.0],
+    [0.0, 8, 120.0, 6.0],
+    [30.0, 10, 147.0],
+    [82.5, 12, 156.0, 9.0],
+    [127.5, 12, 144.0],
+    [162.0, 10, 111.0],
+    [174.0, 8, 63.0, 7.5],
+    [174.0, 7, 33.0, 7.5],
+    [174.0, 3, -18.0, 7.5],
+    [174.0, 1.5, -48.0],
+    [150.0, 1, -93.0],
+    [112.5, 0, -90.0],
+    [82.5, 0, -127.5],
+    [30.0, 0, -135.0, 8.0],
+    [-22.5, 0, -150.0, 8.0],
+    [-67.5, 1.5, -150.0],
+    [-105.0, 3, -120.0],
+    [-90.0, 4.5, -93.0],
+    [-60.0, 6, -105.0],
+    [-42.0, 6, -82.5, 6.0]
   ],
   "features": [
     {
       "type": "item_boxes",
-      "at": [
-        0,
-        30
-      ]
+      "at": [0, 30]
     },
     {
       "type": "obstacle",
-      "at": [
-        1,
-        22
-      ],
+      "at": [1, 22],
       "offset": 3.6,
       "shape": "block",
       "width": 2.2,
@@ -146,10 +48,7 @@
     },
     {
       "type": "obstacle",
-      "at": [
-        2,
-        10
-      ],
+      "at": [2, 10],
       "offset": -3.6,
       "shape": "block",
       "width": 2.2,
@@ -159,33 +58,21 @@
     },
     {
       "type": "trick_ramp",
-      "at": [
-        4,
-        15
-      ],
+      "at": [4, 15],
       "length": 9,
       "height": 1.2
     },
     {
       "type": "verge",
-      "from": [
-        5,
-        10
-      ],
-      "to": [
-        8,
-        0
-      ],
+      "from": [5, 10],
+      "to": [8, 0],
       "side": "both",
       "width": 9,
       "surface": "road"
     },
     {
       "type": "obstacle",
-      "at": [
-        6,
-        20
-      ],
+      "at": [6, 20],
       "offset": 0,
       "shape": "pillar",
       "width": 3.4,
@@ -194,61 +81,32 @@
     },
     {
       "type": "boost_pad",
-      "at": [
-        7,
-        10
-      ],
+      "at": [7, 10],
       "length": 8,
-      "lanes": [
-        1,
-        2
-      ]
+      "lanes": [1, 2]
     },
     {
       "type": "item_boxes",
-      "at": [
-        8,
-        4
-      ]
+      "at": [8, 4]
     },
     {
       "type": "stairs",
-      "from": [
-        10,
-        4
-      ],
-      "to": [
-        11,
-        0
-      ]
+      "from": [10, 4],
+      "to": [11, 0]
     },
     {
       "type": "boost_pad",
-      "at": [
-        12,
-        6
-      ],
+      "at": [12, 6],
       "length": 8,
-      "lanes": [
-        0,
-        1,
-        2,
-        3
-      ]
+      "lanes": [0, 1, 2, 3]
     },
     {
       "type": "item_boxes",
-      "at": [
-        13,
-        10
-      ]
+      "at": [13, 10]
     },
     {
       "type": "glide_ramp",
-      "at": [
-        15,
-        0
-      ],
+      "at": [15, 0],
       "length": 14,
       "height": 2.4,
       "gap": 30
@@ -256,66 +114,124 @@
     {
       "type": "road",
       "surface": "water",
-      "from": [
-        15,
-        30
-      ],
-      "to": [
-        16,
-        10
-      ]
+      "from": [15, 30],
+      "to": [16, 10]
     },
     {
       "type": "trick_ramp",
-      "at": [
-        17,
-        10
-      ],
+      "at": [17, 10],
       "length": 9,
       "height": 1.3
     },
     {
       "type": "item_boxes",
-      "at": [
-        19,
-        10
-      ]
+      "at": [19, 10]
     },
     {
       "type": "verge",
-      "from": [
-        18,
-        0
-      ],
-      "to": [
-        21,
-        0
-      ],
+      "from": [18, 0],
+      "to": [21, 0],
       "side": "both",
       "width": 6,
       "surface": "offroad_light"
     },
     {
       "type": "stairs",
-      "from": [
-        19,
-        0
-      ],
-      "to": [
-        20,
-        10
-      ]
+      "from": [19, 0],
+      "to": [20, 10]
     },
     {
       "type": "road",
       "surface": "oil",
-      "from": [
-        13,
-        18
+      "from": [13, 18],
+      "to": [13, 28]
+    },
+    {
+      "type": "obstacle",
+      "at": [6, 0],
+      "offset": 7.5,
+      "width": 3.0,
+      "length": 4.0,
+      "height": 1.8,
+      "when": "carts"
+    },
+    {
+      "type": "obstacle",
+      "at": [7, 0],
+      "offset": -7.5,
+      "width": 3.0,
+      "length": 4.0,
+      "height": 1.8,
+      "when": "carts"
+    },
+    {
+      "type": "zone",
+      "from": [13, 30],
+      "to": [14, 30],
+      "surface": "water",
+      "side": "right",
+      "when": "spill"
+    }
+  ],
+  "gates": {
+    "side_street": {
+      "from_lap": 2
+    },
+    "carts": {
+      "from_lap": 2
+    },
+    "spill": {
+      "from_lap": 3
+    }
+  },
+  "branches": [
+    {
+      "name": "side street",
+      "from": [2, 0],
+      "to": [9, 20],
+      "side": "left",
+      "points": [
+        [20, 6.5, 98, 4.5],
+        [62, 7.0, 101, 4.5],
+        [110, 7.5, 87, 4.5],
+        [142, 7.5, 76, 4.5]
       ],
-      "to": [
-        13,
-        28
+      "half_width": 4.5,
+      "when": "side_street",
+      "cpu_share": 0.55,
+      "verge": 2.5,
+      "features": [
+        {
+          "type": "obstacle",
+          "at": 45,
+          "offset": 2.2,
+          "prop": "crate",
+          "width": 2.0,
+          "length": 2.4,
+          "height": 1.5
+        },
+        {
+          "type": "obstacle",
+          "at": 75,
+          "offset": -2.2,
+          "prop": "crate",
+          "width": 2.0,
+          "length": 2.4,
+          "height": 1.5
+        },
+        {
+          "type": "obstacle",
+          "at": 105,
+          "offset": 2.2,
+          "prop": "crate",
+          "width": 2.0,
+          "length": 2.4,
+          "height": 1.5
+        },
+        {
+          "type": "item_boxes",
+          "at": 125
+        }
       ]
     }
   ]

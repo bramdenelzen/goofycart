@@ -6,155 +6,47 @@
   "half_width": 6.5,
   "verge": 4,
   "verge_surface": "offroad_heavy",
-  "_comment": "A chicane through the machinery, lava geysers bursting up through the road, a long gantry bridge over the start straight, a glide over the lava pool and open edges.",
+  "_comment": "A chicane through the machinery, lava geysers bursting up through the road, a long gantry bridge over the start straight, a glide over the lava pool and open edges. Pull the furnace lever and a conveyor belt shortcut opens up through the foundry; lava sloshes over one side of the rim road and then the other; on the last lap the volcano erupts across the inside of the far hairpin.",
   "points": [
-    [
-      0.0,
-      0.0,
-      0.0
-    ],
-    [
-      0.0,
-      0.0,
-      67.5
-    ],
-    [
-      15.0,
-      0.0,
-      112.5
-    ],
-    [
-      60.0,
-      1.5,
-      127.5
-    ],
-    [
-      87.0,
-      3.0,
-      93.0
-    ],
-    [
-      72.0,
-      4.5,
-      57.0
-    ],
-    [
-      105.0,
-      6.0,
-      27.0
-    ],
-    [
-      157.5,
-      7.5,
-      36.0
-    ],
-    [
-      177.0,
-      9.0,
-      75.0
-    ],
-    [
-      225.0,
-      10.5,
-      87.0
-    ],
-    [
-      255.0,
-      13.5,
-      45.0
-    ],
-    [
-      240.0,
-      16.5,
-      -15.0
-    ],
-    [
-      187.5,
-      19.5,
-      -42.0
-    ],
-    [
-      135.0,
-      19.5,
-      -18.0
-    ],
-    [
-      82.5,
-      19.5,
-      -45.0
-    ],
-    [
-      30.0,
-      19.5,
-      -15.0
-    ],
-    [
-      -22.5,
-      19.5,
-      30.0
-    ],
-    [
-      -67.5,
-      16.5,
-      57.0
-    ],
-    [
-      -120.0,
-      10.5,
-      33.0
-    ],
-    [
-      -142.5,
-      4.5,
-      -22.5
-    ],
-    [
-      -120.0,
-      3.0,
-      -75.0
-    ],
-    [
-      -75.0,
-      1.5,
-      -105.0
-    ],
-    [
-      -30.0,
-      0.0,
-      -82.5
-    ],
-    [
-      -7.5,
-      0.0,
-      -42.0
-    ]
+    [0.0, 0.0, 0.0, 8.5],
+    [0.0, 0.0, 67.5, 8.5],
+    [15.0, 0.0, 112.5],
+    [60.0, 1.5, 127.5, 6.0],
+    [87.0, 3.0, 93.0, 6.0],
+    [72.0, 4.5, 57.0, 6.0],
+    [105.0, 6.0, 27.0],
+    [157.5, 7.5, 36.0],
+    [177.0, 9.0, 75.0],
+    [225.0, 10.5, 87.0, 7.0],
+    [255.0, 13.5, 45.0],
+    [240.0, 16.5, -15.0],
+    [187.5, 19.5, -42.0],
+    [135.0, 19.5, -18.0],
+    [82.5, 19.5, -45.0],
+    [30.0, 19.5, -15.0],
+    [-22.5, 19.5, 30.0],
+    [-67.5, 16.5, 57.0],
+    [-120.0, 10.5, 33.0],
+    [-142.5, 4.5, -22.5, 8.0],
+    [-120.0, 3.0, -75.0],
+    [-75.0, 1.5, -105.0],
+    [-30.0, 0.0, -82.5],
+    [-7.5, 0.0, -42.0]
   ],
   "features": [
     {
       "type": "boost_pad",
-      "at": [
-        1,
-        0
-      ],
+      "at": [1, 0],
       "length": 8,
-      "lanes": [
-        1,
-        2
-      ]
+      "lanes": [1, 2]
     },
     {
       "type": "item_boxes",
-      "at": [
-        1,
-        30
-      ]
+      "at": [1, 30]
     },
     {
       "type": "obstacle",
-      "at": [
-        3,
-        10
-      ],
+      "at": [3, 10],
       "offset": -3.0,
       "shape": "block",
       "width": 2.5,
@@ -163,10 +55,7 @@
     },
     {
       "type": "obstacle",
-      "at": [
-        4,
-        10
-      ],
+      "at": [4, 10],
       "offset": 3.0,
       "shape": "block",
       "width": 2.5,
@@ -175,10 +64,7 @@
     },
     {
       "type": "obstacle",
-      "at": [
-        5,
-        10
-      ],
+      "at": [5, 10],
       "offset": -3.0,
       "shape": "block",
       "width": 2.5,
@@ -187,202 +73,200 @@
     },
     {
       "type": "item_boxes",
-      "at": [
-        6,
-        10
-      ]
+      "at": [6, 10]
     },
     {
       "type": "trick_ramp",
-      "at": [
-        7,
-        5
-      ],
+      "at": [7, 5],
       "length": 10,
       "height": 1.5
     },
     {
       "type": "no_walls",
-      "from": [
-        9,
-        0
-      ],
-      "to": [
-        10,
-        10
-      ],
+      "from": [9, 0],
+      "to": [10, 10],
       "side": "left"
     },
     {
       "type": "item_boxes",
-      "at": [
-        11,
-        0
-      ]
+      "at": [11, 0]
     },
     {
       "type": "boost_pad",
-      "at": [
-        12,
-        10
-      ],
+      "at": [12, 10],
       "length": 8,
-      "lanes": [
-        0,
-        1,
-        2,
-        3
-      ]
+      "lanes": [0, 1, 2, 3]
     },
     {
       "type": "obstacle",
-      "at": [
-        13,
-        20
-      ],
+      "at": [13, 20],
       "offset": 3.0,
       "shape": "block"
     },
     {
       "type": "obstacle",
-      "at": [
-        14,
-        20
-      ],
+      "at": [14, 20],
       "offset": -3.0,
       "shape": "block"
     },
     {
       "type": "item_boxes",
-      "at": [
-        15,
-        0
-      ]
+      "at": [15, 0]
     },
     {
       "type": "glide_ramp",
-      "at": [
-        16,
-        10
-      ],
+      "at": [16, 10],
       "length": 16,
       "height": 3,
       "gap": 40
     },
     {
       "type": "no_walls",
-      "from": [
-        19,
-        0
-      ],
-      "to": [
-        20,
-        20
-      ],
+      "from": [19, 0],
+      "to": [20, 20],
       "side": "right"
     },
     {
       "type": "item_boxes",
-      "at": [
-        20,
-        10
-      ]
+      "at": [20, 10]
     },
     {
       "type": "trick_ramp",
-      "at": [
-        21,
-        0
-      ],
+      "at": [21, 0],
       "length": 9,
       "height": 1.3
     },
     {
       "type": "mover",
-      "at": [
-        7,
-        25
-      ],
+      "at": [7, 25],
       "offset": -3.0,
       "kind": "block",
       "width": 2.6,
       "length": 2.6,
       "height": 2.6,
-      "travel": [
-        0,
-        3.4,
-        0
-      ],
+      "travel": [0, 3.4, 0],
       "period": 3.6,
       "phase": 0.0
     },
     {
       "type": "mover",
-      "at": [
-        8,
-        10
-      ],
+      "at": [8, 10],
       "offset": 3.0,
       "kind": "block",
       "width": 2.6,
       "length": 2.6,
       "height": 2.6,
-      "travel": [
-        0,
-        3.4,
-        0
-      ],
+      "travel": [0, 3.4, 0],
       "period": 3.6,
       "phase": 0.33
     },
     {
       "type": "mover",
-      "at": [
-        8,
-        30
-      ],
+      "at": [8, 30],
       "offset": -2.5,
       "kind": "block",
       "width": 2.6,
       "length": 2.6,
       "height": 2.6,
-      "travel": [
-        0,
-        3.4,
-        0
-      ],
+      "travel": [0, 3.4, 0],
       "period": 3.6,
       "phase": 0.66
     },
     {
       "type": "mover",
-      "at": [
-        13,
-        0
-      ],
+      "at": [13, 0],
       "offset": 0.0,
       "kind": "block",
       "width": 2.6,
       "length": 2.6,
       "height": 2.6,
-      "travel": [
-        0,
-        3.4,
-        0
-      ],
+      "travel": [0, 3.4, 0],
       "period": 3.6,
       "phase": 0.5
     },
     {
       "type": "road",
       "surface": "oil",
-      "from": [
-        4,
-        18
+      "from": [4, 18],
+      "to": [4, 28]
+    },
+    {
+      "type": "switch",
+      "name": "furnace lever",
+      "at": [7, 30],
+      "offset": -3.5,
+      "hold": 8
+    },
+    {
+      "type": "zone",
+      "from": [9, 15],
+      "to": [10, 0],
+      "surface": "lava",
+      "offset": -5.5,
+      "width": 4.5,
+      "when": "slosh_a"
+    },
+    {
+      "type": "zone",
+      "from": [10, 15],
+      "to": [11, 10],
+      "surface": "lava",
+      "offset": 5.0,
+      "width": 4.5,
+      "when": "slosh_b"
+    },
+    {
+      "type": "zone",
+      "from": [18, 25],
+      "to": [19, 25],
+      "surface": "lava",
+      "side": "right",
+      "when": "eruption"
+    }
+  ],
+  "gates": {
+    "conveyor": {
+      "switch": "furnace lever"
+    },
+    "slosh_a": {
+      "cycle": [7, 3, 0]
+    },
+    "slosh_b": {
+      "cycle": [7, 3, 3.5]
+    },
+    "eruption": {
+      "from_lap": 3
+    }
+  },
+  "branches": [
+    {
+      "name": "conveyor",
+      "from": [8, 10],
+      "to": [12, 10],
+      "side": "left",
+      "points": [
+        [220.1, 10.6, 72.8, 5],
+        [212, 14, 26, 5],
+        [210.9, 18.1, -20.1, 5]
       ],
-      "to": [
-        4,
-        28
+      "half_width": 5,
+      "when": "conveyor",
+      "cpu_share": 0.6,
+      "features": [
+        {
+          "type": "boost_pad",
+          "at": 35,
+          "length": 8
+        },
+        {
+          "type": "boost_pad",
+          "at": 75,
+          "length": 8
+        },
+        {
+          "type": "item_boxes",
+          "at": 55
+        }
       ]
     }
   ]

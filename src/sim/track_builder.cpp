@@ -186,6 +186,20 @@ struct Strip {
     uint32_t V(int sample, int col) const { return first_vertex + uint32_t(wrap(sample) * kStride + col); }
 };
 
+// Centripetal Catmull-Rom: no cusps or loops however unevenly the points
+// are spaced (the shared stretches are dense, the rest of a side road isn't).
+vec4 catmull_rom_centripetal(const vec4& p0, const vec4& p1, const vec4& p2, const vec4& p3, float t) {
+    auto knot = [](const vec4& a, const vec4& b) { return std::max(std::sqrt(glm::length(vec3(b) - vec3(a))), 1e-3f); };
+    const float t0 = 0.0f, t1 = t0 + knot(p0, p1), t2 = t1 + knot(p1, p2), t3 = t2 + knot(p2, p3);
+    const float u = glm::mix(t1, t2, t);
+    const vec4 a1 = (t1 - u) / (t1 - t0) * p0 + (u - t0) / (t1 - t0) * p1;
+    const vec4 a2 = (t2 - u) / (t2 - t1) * p1 + (u - t1) / (t2 - t1) * p2;
+    const vec4 a3 = (t3 - u) / (t3 - t2) * p2 + (u - t2) / (t3 - t2) * p3;
+    const vec4 b1 = (t2 - u) / (t2 - t0) * a1 + (u - t0) / (t2 - t0) * a2;
+    const vec4 b2 = (t3 - u) / (t3 - t1) * a2 + (u - t1) / (t3 - t1) * a3;
+    return (t2 - u) / (t2 - t1) * b1 + (u - t1) / (t2 - t1) * b2;
+}
+
 // Spline through `pts` (open), resampled every ~2 m.
 std::vector<vec4> resample_open(const std::vector<vec4>& pts, float& step, float& total) {
     const int nc = int(pts.size());
@@ -193,7 +207,7 @@ std::vector<vec4> resample_open(const std::vector<vec4>& pts, float& step, float
     for (int i = 0; i + 1 < nc; ++i) {
         const vec4 p0 = i > 0 ? pts[size_t(i - 1)] : 2.0f * pts[0] - pts[1];
         const vec4 p3 = i + 2 < nc ? pts[size_t(i + 2)] : 2.0f * pts[size_t(nc - 1)] - pts[size_t(nc - 2)];
-        for (int k = 0; k < 64; ++k) dense.push_back(catmull_rom(p0, pts[size_t(i)], pts[size_t(i + 1)], p3, float(k) / 64.0f));
+        for (int k = 0; k < 64; ++k) dense.push_back(catmull_rom_centripetal(p0, pts[size_t(i)], pts[size_t(i + 1)], p3, float(k) / 64.0f));
     }
     dense.push_back(pts.back());
     std::vector<float> ds(dense.size(), 0.0f);
@@ -356,7 +370,9 @@ Track build_track(const TrackDef& def) {
                 while (k + di_ >= 0 && k + di_ < nb && (di_ > 0 ? k + di_ <= k_stop : k + di_ >= k_stop) &&
                        glm::distance(edge_b(k + di_), edge_m(i)) < glm::distance(edge_b(k), edge_m(i)))
                     k += di_;
-                if (glm::distance(edge_m(i), edge_b(k)) > gap_max) {
+                // (The first pair always counts: where the shared stretch ends
+                // the roads touch, and a nose closes the V however fast they part.)
+                if (!j.main_edge.empty() && glm::distance(edge_m(i), edge_b(k)) > gap_max) {
                     j.nose = true;
                     return;
                 }
@@ -685,8 +701,8 @@ Track build_track(const TrackDef& def) {
             z.surface = f->surface;
             z.gate = f->gate;
             if (f->width > 0.0f) z.lo = f->offset - 0.5f * f->width, z.hi = f->offset + 0.5f * f->width;
-            else if (!f->left) z.lo = 0.0f;
-            else if (!f->right) z.hi = 0.0f;
+            else if (!f->left) z.lo = 0.4f; // half the road, leaving the line down the middle
+            else if (!f->right) z.hi = -0.4f;
             // On the loop a zone can't run over the start line: split it there.
             if (st.closed && a + count > st.n()) {
                 Track::Zone z2 = z;

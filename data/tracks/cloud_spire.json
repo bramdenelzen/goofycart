@@ -5,197 +5,69 @@
   "half_width": 7,
   "verge": 3,
   "verge_surface": "offroad_light",
-  "_comment": "A spiral up round the tall spire that passes over the start, pillars at the top, then two glides back down with drifting cloud platforms to land on.",
+  "_comment": "A spiral up round the tall spire that passes over the start, pillars at the top, then two glides back down with drifting cloud platforms to land on. A cloud bridge forms across the middle of the spiral every few seconds, a high cloud road arcs outside the last descent, and from lap 2 a rainbow dash strip runs down the home stretch.",
   "points": [
-    [
-      0.0,
-      0.0,
-      0.0
-    ],
-    [
-      0.0,
-      1.5,
-      67.5
-    ],
-    [
-      27.0,
-      4.5,
-      120.0
-    ],
-    [
-      82.5,
-      7.5,
-      138.0
-    ],
-    [
-      135.0,
-      10.5,
-      108.0
-    ],
-    [
-      144.0,
-      13.5,
-      52.5
-    ],
-    [
-      117.0,
-      16.5,
-      9.0
-    ],
-    [
-      63.0,
-      19.5,
-      -12.0
-    ],
-    [
-      15.0,
-      22.5,
-      12.0
-    ],
-    [
-      -27.0,
-      24.0,
-      67.5
-    ],
-    [
-      -12.0,
-      25.5,
-      132.0
-    ],
-    [
-      42.0,
-      27.0,
-      177.0
-    ],
-    [
-      108.0,
-      27.0,
-      192.0
-    ],
-    [
-      157.5,
-      25.5,
-      165.0
-    ],
-    [
-      180.0,
-      22.5,
-      120.0
-    ],
-    [
-      225.0,
-      18.0,
-      127.5
-    ],
-    [
-      255.0,
-      13.5,
-      82.5
-    ],
-    [
-      243.0,
-      10.5,
-      22.5
-    ],
-    [
-      210.0,
-      7.5,
-      -30.0
-    ],
-    [
-      165.0,
-      4.5,
-      -45.0
-    ],
-    [
-      127.5,
-      3.0,
-      -82.5
-    ],
-    [
-      75.0,
-      1.5,
-      -105.0
-    ],
-    [
-      33.0,
-      0.0,
-      -90.0
-    ],
-    [
-      6.0,
-      0.0,
-      -48.0
-    ]
+    [0.0, 0.0, 0.0],
+    [0.0, 1.5, 67.5],
+    [27.0, 4.5, 120.0],
+    [82.5, 7.5, 138.0],
+    [135.0, 10.5, 108.0],
+    [144.0, 13.5, 52.5],
+    [117.0, 16.5, 9.0],
+    [63.0, 19.5, -12.0],
+    [15.0, 22.5, 12.0],
+    [-27.0, 24.0, 67.5, 8.0],
+    [-12.0, 25.5, 132.0],
+    [42.0, 27.0, 177.0, 9.0],
+    [108.0, 27.0, 192.0, 9.0],
+    [157.5, 25.5, 165.0],
+    [180.0, 22.5, 120.0],
+    [225.0, 18.0, 127.5],
+    [255.0, 13.5, 82.5],
+    [243.0, 10.5, 22.5],
+    [210.0, 7.5, -30.0],
+    [165.0, 4.5, -45.0, 6.0],
+    [127.5, 3.0, -82.5, 6.0],
+    [75.0, 1.5, -105.0],
+    [33.0, 0.0, -90.0, 8.0],
+    [6.0, 0.0, -48.0]
   ],
   "features": [
     {
       "type": "boost_pad",
-      "at": [
-        1,
-        0
-      ],
+      "at": [1, 0],
       "length": 8,
-      "lanes": [
-        1,
-        2
-      ]
+      "lanes": [1, 2]
     },
     {
       "type": "item_boxes",
-      "at": [
-        1,
-        30
-      ]
+      "at": [1, 30]
     },
     {
       "type": "trick_ramp",
-      "at": [
-        3,
-        0
-      ],
+      "at": [3, 0],
       "length": 9,
       "height": 1.3
     },
     {
       "type": "no_walls",
-      "from": [
-        4,
-        0
-      ],
-      "to": [
-        6,
-        0
-      ],
+      "from": [4, 0],
+      "to": [6, 0],
       "side": "left"
     },
     {
       "type": "item_boxes",
-      "at": [
-        5,
-        0
-      ]
+      "at": [5, 0]
     },
     {
       "type": "boost_pad",
-      "at": [
-        7,
-        0
-      ],
+      "at": [7, 0],
       "length": 8,
-      "lanes": [
-        0,
-        1,
-        2,
-        3
-      ]
+      "lanes": [0, 1, 2, 3]
     },
     {
       "type": "obstacle",
-      "at": [
-        9,
-        10
-      ],
+      "at": [9, 10],
       "offset": 3.0,
       "shape": "pillar",
       "width": 2.2,
@@ -204,10 +76,7 @@
     },
     {
       "type": "obstacle",
-      "at": [
-        10,
-        0
-      ],
+      "at": [10, 0],
       "offset": -3.0,
       "shape": "pillar",
       "width": 2.2,
@@ -216,10 +85,7 @@
     },
     {
       "type": "obstacle",
-      "at": [
-        11,
-        0
-      ],
+      "at": [11, 0],
       "offset": 3.0,
       "shape": "pillar",
       "width": 2.2,
@@ -228,109 +94,136 @@
     },
     {
       "type": "item_boxes",
-      "at": [
-        9,
-        30
-      ]
+      "at": [9, 30]
     },
     {
       "type": "item_boxes",
-      "at": [
-        12,
-        20
-      ]
+      "at": [12, 20]
     },
     {
       "type": "glide_ramp",
-      "at": [
-        13,
-        0
-      ],
+      "at": [13, 0],
       "length": 18,
       "height": 3,
       "gap": 45
     },
     {
       "type": "item_boxes",
-      "at": [
-        15,
-        20
-      ]
+      "at": [15, 20]
     },
     {
       "type": "trick_ramp",
-      "at": [
-        16,
-        0
-      ],
+      "at": [16, 0],
       "length": 10,
       "height": 1.5
     },
     {
       "type": "glide_ramp",
-      "at": [
-        17,
-        0
-      ],
+      "at": [17, 0],
       "length": 16,
       "height": 2.5,
       "gap": 40
     },
     {
       "type": "item_boxes",
-      "at": [
-        20,
-        0
-      ]
+      "at": [20, 0]
     },
     {
       "type": "boost_pad",
-      "at": [
-        21,
-        0
-      ],
+      "at": [21, 0],
       "length": 8,
-      "lanes": [
-        1,
-        2
-      ]
+      "lanes": [1, 2]
     },
     {
       "type": "mover",
-      "at": [
-        14,
-        15
-      ],
+      "at": [14, 15],
       "kind": "platform",
       "width": 7,
       "length": 12,
       "height": 0.9,
-      "travel": [
-        5,
-        0,
-        0
-      ],
+      "travel": [5, 0, 0],
       "period": 3.4,
       "ramp": 3,
       "boost": true
     },
     {
       "type": "mover",
-      "at": [
-        19,
-        10
-      ],
+      "at": [19, 10],
       "kind": "platform",
       "width": 7,
       "length": 12,
       "height": 0.9,
-      "travel": [
-        0,
-        0,
-        6
-      ],
+      "travel": [0, 0, 6],
       "period": 3.0,
       "ramp": 3
+    },
+    {
+      "type": "zone",
+      "from": [21, 10],
+      "to": [23, 20],
+      "surface": "boost",
+      "offset": 0,
+      "width": 3.5,
+      "when": "rainbow"
+    }
+  ],
+  "gates": {
+    "cloud_bridge": {
+      "cycle": [14, 8, 2]
+    },
+    "rainbow": {
+      "from_lap": 2
+    }
+  },
+  "branches": [
+    {
+      "name": "cloud bridge",
+      "from": [5, 0],
+      "to": [8, 10],
+      "side": "left",
+      "points": [
+        [118, 15.5, 42, 6],
+        [80, 18.5, 28, 6],
+        [44, 21.5, 16, 6]
+      ],
+      "half_width": 6,
+      "when": "cloud_bridge",
+      "vanish": true,
+      "cpu_share": 0.7,
+      "features": [
+        {
+          "type": "boost_pad",
+          "at": 60,
+          "length": 8,
+          "lanes": [1, 2]
+        }
+      ]
+    },
+    {
+      "name": "high cloud road",
+      "from": [19, 25],
+      "to": [23, 0],
+      "side": "right",
+      "points": [
+        [121.1, 2.6, -100.7, 6],
+        [92.4, 5.8, -125.8, 6],
+        [43.9, 4.7, -124.6, 6],
+        [14.6, -0.1, -91.1, 6]
+      ],
+      "half_width": 6,
+      "cpu_share": 0.45,
+      "features": [
+        {
+          "type": "trick_ramp",
+          "at": 55,
+          "length": 9,
+          "height": 1.4
+        },
+        {
+          "type": "item_boxes",
+          "at": 85
+        }
+      ]
     }
   ]
 }

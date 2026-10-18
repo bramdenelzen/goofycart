@@ -105,6 +105,9 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     const Track& t = world.track();
     if (t.center.empty() || t.line.size() != t.road.size()) return autopilot(k, t, skill.lookahead);
     const uint32_t route = cpu_route(world, kart);
+    // On the mouth of a side road that's shut: drive as if on the main road beside it.
+    int cur = k.sample;
+    if (const int b = t.sample(cur).branch; b >= 0 && !t.branch_open(b)) cur = t.main_sample(cur);
 
     KartInput in;
     in.accelerate = true;
@@ -124,9 +127,9 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
 
     // ---- where to aim: racing line, nudged for item boxes and obstacles
     const float look = skill.lookahead + speed * 0.4f;
-    int target_sample = t.advance(k.sample, std::max(1, int(std::ceil(look / spacing))), route);
+    int target_sample = t.advance(cur, std::max(1, int(std::ceil(look / spacing))), route);
     // On the wrong side of an obstacle ahead: aim at the gap beside it.
-    for (int i = t.next(k.sample, route), guard = 0; i != target_sample && guard < 200; i = t.next(i, route), ++guard) {
+    for (int i = t.next(cur, route), guard = 0; i != target_sample && guard < 200; i = t.next(i, route), ++guard) {
         if (!t.line[size_t(i)].blocked) continue;
         const float lat = glm::dot(k.pos - t.sample(i).pos, t.sample(i).right);
         if (lat < t.line[size_t(i)].lo - 0.3f || lat > t.line[size_t(i)].hi + 0.3f) target_sample = t.advance(i, 2, route);
@@ -179,7 +182,7 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     // Obstacles between here and the target: aim so the straight path there
     // passes them on the open side.
     float lo = lp.lo, hi = lp.hi;
-    for (int i = t.next(k.sample, route), guard = 0; i != target_sample && guard < 200; i = t.next(i, route), ++guard) {
+    for (int i = t.next(cur, route), guard = 0; i != target_sample && guard < 200; i = t.next(i, route), ++guard) {
         const Track::LinePoint& b = t.line[size_t(i)];
         if (!b.blocked) continue;
         if (std::max(lo, b.lo) > std::min(hi, b.hi)) { // can't satisfy both: the nearer obstacle wins
@@ -189,6 +192,31 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         lo = std::max(lo, b.lo), hi = std::min(hi, b.hi);
     }
     offset = std::clamp(offset, lo, hi);
+    // Lava (or any out-of-bounds zone) that's on between here and the target:
+    // keep to the side of the road it leaves clear.
+    // One on a timer counts from a little before it comes on.
+    auto lava_soon = [&](int gate) {
+        if (t.gate_holds(gate)) return true;
+        const Gate& g = t.gates[size_t(gate)];
+        if (g.when != Gate::When::Cycle) return false;
+        const int period = std::max(g.period, 1);
+        const int phase = ((world.race_ticks() - g.offset) % period + period) % period;
+        const int until = g.invert ? g.open - phase : period - phase;
+        return until > 0 && until < 110;
+    };
+    bool dodging_lava = false;
+    for (const Track::Zone& z : t.zones) {
+        if (z.surface != Surface::OutOfBounds || !lava_soon(z.gate)) continue;
+        bool ahead = false;
+        for (int i = cur, guard = 0; guard < 30 && !ahead; i = t.next(i, route), ++guard) ahead = i >= z.first && i < z.first + z.count;
+        if (!ahead) continue;
+        const float here = glm::dot(k.pos - t.sample(cur).pos, t.sample(cur).right);
+        const bool in_path = !(offset < z.lo - 3.0f || offset > z.hi + 3.0f) || !(here < z.lo - 2.0f || here > z.hi + 2.0f);
+        if (!in_path) continue;
+        dodging_lava = true;
+        if (z.lo - 3.0f > lo - 1.5f && (z.hi + 3.0f > hi + 1.5f || offset - z.lo < z.hi - offset)) offset = z.lo - 3.0f;
+        else if (z.hi + 3.0f < hi + 1.5f) offset = z.hi + 3.0f;
+    }
     // Barriers standing up ahead (gates shut, a door down): pass on the open side.
     for (const Track::Barrier& b : t.barriers) {
         if (!t.barrier_up(b)) continue;
@@ -247,8 +275,8 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
             // Reversing turns the nose the other way to the stick: swing it
             // towards the target, or away from the side that's blocked.
             // The open side of the road: towards the middle of the CPU band.
-            const CenterSample& here = t.sample(k.sample);
-            const Track::LinePoint& band = t.line[size_t(t.advance(k.sample, 3, route))];
+            const CenterSample& here = t.sample(cur);
+            const Track::LinePoint& band = t.line[size_t(t.advance(cur, 3, route))];
             const float lat = glm::dot(k.pos - here.pos, here.right), mid = 0.5f * (band.lo + band.hi);
             const float want = std::abs(mid - lat) > 0.8f ? sign(mid - lat) : side_hit > 0.0f ? -1.0f : 1.0f;
             in.steer = -want;
@@ -259,28 +287,28 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     // ---- drifting
     // Drift into any corner that keeps turning the same way for a while, even
     // a gentle one: chaining mini-turbos is where the time is.
-    const int ahead4 = t.advance(k.sample, int(4.0f / spacing), route);
+    const int ahead4 = t.advance(cur, int(4.0f / spacing), route);
     const float turn = turn_ahead(t, ahead4, 30.0f, spacing, route);
     const float turn_long = turn_ahead(t, ahead4, 55.0f, spacing, route);
     const bool going_right_way = to.z > 0.5f;
     // A drift can't turn gentler than this; only drift where the corner needs most of it.
     const float min_drift_yaw = p.turn_rate * drift_turn_target(c, p, -1.0f) * speed_fac;
-    const float near_turn = turn_ahead(t, t.next(k.sample, route), 14.0f, spacing, route);
+    const float near_turn = turn_ahead(t, t.next(cur, route), 14.0f, spacing, route);
     const float corner_yaw = std::abs(near_turn) / 14.0f * speed;
-    const bool want_drift = skill.drifts && k.grounded && going_right_way && speed > c.min_drift_speed + 3.0f &&
+    const bool want_drift = skill.drifts && !dodging_lava && k.grounded && going_right_way && speed > c.min_drift_speed + 3.0f &&
                             std::abs(turn) > 0.3f && near_turn * turn > 0.0f && turn_long * sign(turn) > 0.45f && corner_yaw > 0.85f * min_drift_yaw &&
                             !is_offroad(k.surface) && k.bullet_frames == 0 && k.boost_frames == 0;
     // Room left before the inside edge of the road, for a drift towards `dir`.
     auto room_inside = [&](float dir) {
-        const CenterSample& here = t.sample(k.sample);
-        const Track::LinePoint& band = t.line[size_t(k.sample)];
+        const CenterSample& here = t.sample(cur);
+        const Track::LinePoint& band = t.line[size_t(cur)];
         const float lat = glm::dot(k.pos - here.pos, here.right);
         return dir < 0.0f ? lat - band.lo : band.hi - lat;
     };
     if (k.drift == DriftState::Drifting) {
         const float dir = float(k.drift_dir);
         float rel = drift_rel_for(c, p, yaw_needed * dir / (p.turn_rate * speed_fac)); // +1 = into the turn
-        const float rest = turn_ahead(t, k.sample, 12.0f, spacing, route) * dir;
+        const float rest = turn_ahead(t, cur, 12.0f, spacing, route) * dir;
         const int tier = k.mt_tier(c);
         // Let go once the wanted mini-turbo is ready (and drift again if the
         // corner goes on), when the drift turns tighter than the line, or
@@ -289,7 +317,7 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         const bool losing_line = rel < (tier >= 1 ? -1.4f : -1.8f);
         const bool straight = rest < 0.05f;
         const bool edge = room_inside(dir) < -0.9f; // the band already keeps 1.6 m off the edge
-        if (cash_in || losing_line || straight || edge || !going_right_way) {
+        if (cash_in || losing_line || straight || edge || !going_right_way || dodging_lava) {
             in.drift = false;
         } else {
             // Lean in to charge faster while there's room on the inside.
@@ -319,7 +347,7 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     // ---- items
     if (!world.racing() || k.finished) return in;
     const bool react = int((tick / 6u + uint32_t(kart) * 5u) % 8u) < skill.reaction;
-    const bool straight_ahead = std::abs(turn_ahead(t, k.sample, 25.0f, spacing, route)) < 0.35f;
+    const bool straight_ahead = std::abs(turn_ahead(t, cur, 25.0f, spacing, route)) < 0.35f;
     const bool can_boost = k.grounded && !k.gliding && k.boost_frames == 0 && (straight_ahead || is_offroad(k.surface));
     if (k.golden_frames > 0) {
         if (can_boost) in.item = !k.item_button_prev;

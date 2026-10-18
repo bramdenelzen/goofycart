@@ -5,127 +5,41 @@
   "half_width": 8,
   "verge": 3,
   "verge_surface": "offroad_light",
-  "_comment": "Up from the quay onto the high pier, over the start road, across the moving crane decks, then down the switchbacks to the water and a glide home.",
+  "_comment": "Up from the quay onto the high pier, over the start road, across the moving crane decks, then down the switchbacks to the water and a glide home. Hit the crane switch and the container yard opens a way through the stacks, where the cranes lower containers one side and then the other; the tide creeps over the waterfront from lap 2, and on the last lap containers land on the pier.",
   "points": [
-    [
-      0.0,
-      0.0,
-      0.0
-    ],
-    [
-      0.0,
-      0.0,
-      90.0
-    ],
-    [
-      30.0,
-      1.4,
-      144.0
-    ],
-    [
-      90.0,
-      5.6,
-      162.0
-    ],
-    [
-      144.0,
-      11.2,
-      129.0
-    ],
-    [
-      153.0,
-      14.0,
-      69.0
-    ],
-    [
-      114.0,
-      14.0,
-      18.0
-    ],
-    [
-      48.0,
-      14.0,
-      -9.0
-    ],
-    [
-      -18.0,
-      14.0,
-      -15.0
-    ],
-    [
-      -78.0,
-      12.6,
-      -6.0
-    ],
-    [
-      -120.0,
-      9.8,
-      27.0
-    ],
-    [
-      -114.0,
-      8.4,
-      78.0
-    ],
-    [
-      -156.0,
-      5.6,
-      108.0
-    ],
-    [
-      -198.0,
-      2.8,
-      63.0
-    ],
-    [
-      -183.0,
-      1.4,
-      -12.0
-    ],
-    [
-      -123.0,
-      0.0,
-      -66.0
-    ],
-    [
-      -48.0,
-      0.0,
-      -78.0
-    ],
-    [
-      -9.0,
-      0.0,
-      -39.0
-    ]
+    [0.0, 0.0, 0.0, 9.0],
+    [0.0, 0.0, 90.0, 9.0],
+    [30.0, 1.4, 144.0],
+    [90.0, 5.6, 162.0],
+    [144.0, 11.2, 129.0, 7.0],
+    [153.0, 14.0, 69.0],
+    [114.0, 14.0, 18.0],
+    [48.0, 14.0, -9.0, 9.5],
+    [-18.0, 14.0, -15.0, 9.5],
+    [-78.0, 12.6, -6.0],
+    [-120.0, 9.8, 27.0],
+    [-114.0, 8.4, 78.0, 6.5],
+    [-156.0, 5.6, 108.0, 6.5],
+    [-198.0, 2.8, 63.0],
+    [-183.0, 1.4, -12.0],
+    [-123.0, 0.0, -66.0, 8.0],
+    [-48.0, 0.0, -78.0],
+    [-9.0, 0.0, -39.0]
   ],
   "features": [
     {
       "type": "boost_pad",
-      "at": [
-        0,
-        20
-      ],
+      "at": [0, 20],
       "length": 8,
-      "lanes": [
-        0,
-        1,
-        2,
-        3
-      ]
+      "lanes": [0, 1, 2, 3]
     },
     {
       "type": "item_boxes",
-      "at": [
-        1,
-        0
-      ]
+      "at": [1, 0]
     },
     {
       "type": "obstacle",
-      "at": [
-        1,
-        30
-      ],
+      "at": [1, 30],
       "offset": -4,
       "shape": "block",
       "width": 2.4,
@@ -135,10 +49,7 @@
     },
     {
       "type": "obstacle",
-      "at": [
-        1,
-        30
-      ],
+      "at": [1, 30],
       "offset": 4,
       "shape": "block",
       "width": 2.4,
@@ -148,209 +59,218 @@
     },
     {
       "type": "trick_ramp",
-      "at": [
-        3,
-        10
-      ],
+      "at": [3, 10],
       "length": 9,
       "height": 1.5
     },
     {
       "type": "item_boxes",
-      "at": [
-        4,
-        10
-      ]
+      "at": [4, 10]
     },
     {
       "type": "mover",
-      "at": [
-        5,
-        10
-      ],
+      "at": [5, 10],
       "kind": "platform",
       "width": 7,
       "length": 12,
       "height": 0.9,
-      "travel": [
-        0,
-        0,
-        5
-      ],
+      "travel": [0, 0, 5],
       "period": 3.0,
       "ramp": 3
     },
     {
       "type": "mover",
-      "at": [
-        6,
-        10
-      ],
+      "at": [6, 10],
       "kind": "platform",
       "width": 6,
       "length": 11,
       "height": 0.9,
-      "travel": [
-        4.5,
-        0,
-        0
-      ],
+      "travel": [4.5, 0, 0],
       "period": 3.4,
       "ramp": 3,
       "boost": true
     },
     {
       "type": "mover",
-      "at": [
-        6,
-        32
-      ],
+      "at": [6, 32],
       "kind": "block",
       "width": 2.4,
       "length": 2.4,
       "height": 2.2,
-      "travel": [
-        5.5,
-        0,
-        0
-      ],
+      "travel": [5.5, 0, 0],
       "period": 2.6,
       "phase": 0.25
     },
     {
       "type": "item_boxes",
-      "at": [
-        7,
-        10
-      ]
+      "at": [7, 10]
     },
     {
       "type": "trick_ramp",
-      "at": [
-        8,
-        10
-      ],
+      "at": [8, 10],
       "length": 9,
       "height": 1.4
     },
     {
       "type": "obstacle",
-      "at": [
-        9,
-        20
-      ],
+      "at": [9, 20],
       "offset": 4.2,
       "prop": "tires"
     },
     {
       "type": "obstacle",
-      "at": [
-        9,
-        20
-      ],
+      "at": [9, 20],
       "offset": -4.2,
       "prop": "tires"
     },
     {
       "type": "item_boxes",
-      "at": [
-        11,
-        0
-      ]
+      "at": [11, 0]
     },
     {
       "type": "mover",
-      "at": [
-        12,
-        5
-      ],
+      "at": [12, 5],
       "kind": "block",
       "width": 2.6,
       "length": 2.6,
       "height": 2.2,
-      "travel": [
-        5,
-        0,
-        0
-      ],
+      "travel": [5, 0, 0],
       "period": 3.0
     },
     {
       "type": "glide_ramp",
-      "at": [
-        13,
-        10
-      ],
+      "at": [13, 10],
       "length": 12,
       "height": 2.2,
       "gap": 24
     },
     {
       "type": "item_boxes",
-      "at": [
-        15,
-        0
-      ]
+      "at": [15, 0]
     },
     {
       "type": "mover",
-      "at": [
-        16,
-        0
-      ],
+      "at": [16, 0],
       "kind": "platform",
       "width": 6,
       "length": 12,
       "height": 0.8,
-      "travel": [
-        4.5,
-        0,
-        0
-      ],
+      "travel": [4.5, 0, 0],
       "period": 3.2,
       "ramp": 3,
       "phase": 0.5
     },
     {
       "type": "boost_pad",
-      "at": [
-        17,
-        5
-      ],
+      "at": [17, 5],
       "length": 8,
-      "lanes": [
-        1,
-        2
-      ]
+      "lanes": [1, 2]
     },
     {
       "type": "mover",
-      "at": [
-        3,
-        30
-      ],
+      "at": [3, 30],
       "kind": "block",
       "width": 2.4,
       "length": 2.4,
       "height": 2.2,
-      "travel": [
-        5.5,
-        0,
-        0
-      ],
+      "travel": [5.5, 0, 0],
       "period": 2.9,
       "phase": 0.3
     },
     {
       "type": "road",
       "surface": "oil",
-      "from": [
-        7,
-        30
+      "from": [7, 30],
+      "to": [8, 2]
+    },
+    {
+      "type": "switch",
+      "name": "crane switch",
+      "at": [3, 35],
+      "offset": 3.0,
+      "hold": 9
+    },
+    {
+      "type": "zone",
+      "from": [15, 10],
+      "to": [16, 30],
+      "surface": "water",
+      "side": "right",
+      "when": "tide"
+    },
+    {
+      "type": "obstacle",
+      "at": [7, 30],
+      "offset": -5.0,
+      "width": 3.0,
+      "length": 6.0,
+      "height": 2.6,
+      "when": "drop"
+    },
+    {
+      "type": "obstacle",
+      "at": [8, 30],
+      "offset": 5.0,
+      "width": 3.0,
+      "length": 6.0,
+      "height": 2.6,
+      "when": "drop"
+    }
+  ],
+  "gates": {
+    "yard": {
+      "switch": "crane switch"
+    },
+    "container_a": {
+      "cycle": [6, 3, 0]
+    },
+    "container_b": {
+      "cycle": [6, 3, 3]
+    },
+    "tide": {
+      "from_lap": 2
+    },
+    "drop": {
+      "from_lap": 3
+    }
+  },
+  "branches": [
+    {
+      "name": "container yard",
+      "from": [4, 10],
+      "to": [7, 0],
+      "side": "left",
+      "points": [
+        [132, 13.8, 82, 5.5],
+        [108, 14, 58, 5.5],
+        [84, 14, 38, 5.5]
       ],
-      "to": [
-        8,
-        2
+      "half_width": 5.5,
+      "when": "yard",
+      "cpu_share": 0.55,
+      "features": [
+        {
+          "type": "barrier",
+          "at": 50,
+          "width": 4.6,
+          "offset": -2.6,
+          "thickness": 2.4,
+          "height": 2.6,
+          "when": "container_a"
+        },
+        {
+          "type": "barrier",
+          "at": 75,
+          "width": 4.6,
+          "offset": 2.6,
+          "thickness": 2.4,
+          "height": 2.6,
+          "when": "container_b"
+        },
+        {
+          "type": "item_boxes",
+          "at": 95
+        }
       ]
     }
   ]

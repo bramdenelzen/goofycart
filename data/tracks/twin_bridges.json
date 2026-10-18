@@ -5,162 +5,71 @@
   "ground": true,
   "half_width": 8,
   "verge": 4,
-  "_comment": "A figure of eight on two levels through the hills: up round the big hill, over the start on a high bridge, down past sliding platforms and bumper blocks, a glide over the creek and back under the bridge.",
+  "_comment": "A figure of eight on two levels through the hills: up round the big hill, over the start on a high bridge, down past sliding platforms and bumper blocks, a glide over the creek and back under the bridge. A hill trail with two jumps cuts over the top of the big hill, from lap 2 a twin bridge rises beside the high one, and the creek floods its banks on the last lap.",
   "points": [
-    [
-      0.0,
-      0.0,
-      0.0
-    ],
-    [
-      0.0,
-      0.0,
-      105.0
-    ],
-    [
-      15.0,
-      1.5,
-      165.0
-    ],
-    [
-      67.5,
-      4.5,
-      198.0
-    ],
-    [
-      127.5,
-      9.0,
-      183.0
-    ],
-    [
-      159.0,
-      13.5,
-      129.0
-    ],
-    [
-      144.0,
-      16.5,
-      69.0
-    ],
-    [
-      84.0,
-      18.0,
-      36.0
-    ],
-    [
-      0.0,
-      18.0,
-      42.0
-    ],
-    [
-      -72.0,
-      16.5,
-      39.0
-    ],
-    [
-      -129.0,
-      12.0,
-      0.0
-    ],
-    [
-      -135.0,
-      7.5,
-      -72.0
-    ],
-    [
-      -87.0,
-      4.5,
-      -123.0
-    ],
-    [
-      -18.0,
-      1.5,
-      -126.0
-    ],
-    [
-      21.0,
-      0.0,
-      -67.5
-    ]
+    [0.0, 0.0, 0.0, 9.0],
+    [0.0, 0.0, 105.0, 8.5],
+    [15.0, 1.5, 165.0],
+    [67.5, 4.5, 198.0, 7.0],
+    [127.5, 9.0, 183.0],
+    [159.0, 13.5, 129.0, 7.0],
+    [144.0, 16.5, 69.0],
+    [84.0, 18.0, 36.0],
+    [0.0, 18.0, 42.0, 9.5],
+    [-72.0, 16.5, 39.0],
+    [-129.0, 12.0, 0.0, 8.0],
+    [-135.0, 7.5, -72.0],
+    [-87.0, 4.5, -123.0, 9.0],
+    [-18.0, 1.5, -126.0, 7.5],
+    [21.0, 0.0, -67.5]
   ],
   "features": [
     {
       "type": "boost_pad",
-      "at": [
-        0,
-        25
-      ],
+      "at": [0, 25],
       "length": 8,
-      "lanes": [
-        1,
-        2
-      ]
+      "lanes": [1, 2]
     },
     {
       "type": "item_boxes",
-      "at": [
-        1,
-        5
-      ]
+      "at": [1, 5]
     },
     {
       "type": "mover",
-      "at": [
-        1,
-        30
-      ],
+      "at": [1, 30],
       "kind": "platform",
       "width": 6,
       "length": 12,
       "height": 0.8,
-      "travel": [
-        4.5,
-        0,
-        0
-      ],
+      "travel": [4.5, 0, 0],
       "period": 3.2,
       "ramp": 3
     },
     {
       "type": "trick_ramp",
-      "at": [
-        3,
-        0
-      ],
+      "at": [3, 0],
       "length": 9,
       "height": 1.4
     },
     {
       "type": "obstacle",
-      "at": [
-        4,
-        10
-      ],
+      "at": [4, 10],
       "offset": 4.5,
       "prop": "tires"
     },
     {
       "type": "obstacle",
-      "at": [
-        4,
-        24
-      ],
+      "at": [4, 24],
       "offset": -4.0,
       "prop": "tires"
     },
     {
       "type": "item_boxes",
-      "at": [
-        5,
-        10
-      ]
+      "at": [5, 10]
     },
     {
       "type": "obstacle",
-      "at": [
-        6,
-        15
-      ],
+      "at": [6, 15],
       "offset": 0,
       "shape": "block",
       "width": 2.2,
@@ -170,97 +79,61 @@
     },
     {
       "type": "trick_ramp",
-      "at": [
-        7,
-        10
-      ],
+      "at": [7, 10],
       "length": 9,
       "height": 1.5
     },
     {
       "type": "mover",
-      "at": [
-        8,
-        15
-      ],
+      "at": [8, 15],
       "kind": "platform",
       "width": 6,
       "length": 11,
       "height": 0.8,
-      "travel": [
-        5,
-        0,
-        0
-      ],
+      "travel": [5, 0, 0],
       "period": 3.6,
       "ramp": 3,
       "boost": true
     },
     {
       "type": "item_boxes",
-      "at": [
-        9,
-        15
-      ]
+      "at": [9, 15]
     },
     {
       "type": "mover",
-      "at": [
-        10,
-        15
-      ],
+      "at": [10, 15],
       "kind": "block",
       "width": 2.6,
       "length": 2.6,
       "height": 2.2,
-      "travel": [
-        5.5,
-        0,
-        0
-      ],
+      "travel": [5.5, 0, 0],
       "period": 2.8
     },
     {
       "type": "mover",
-      "at": [
-        10,
-        40
-      ],
+      "at": [10, 40],
       "kind": "block",
       "width": 2.6,
       "length": 2.6,
       "height": 2.2,
-      "travel": [
-        5.5,
-        0,
-        0
-      ],
+      "travel": [5.5, 0, 0],
       "period": 2.8,
       "phase": 0.5
     },
     {
       "type": "glide_ramp",
-      "at": [
-        11,
-        5
-      ],
+      "at": [11, 5],
       "length": 12,
       "height": 2.2,
       "gap": 26
     },
     {
       "type": "item_boxes",
-      "at": [
-        12,
-        20
-      ]
+      "at": [12, 20]
     },
     {
       "type": "obstacle",
-      "at": [
-        13,
-        10
-      ],
+      "at": [13, 10],
       "offset": -3.8,
       "shape": "block",
       "width": 2.2,
@@ -270,33 +143,93 @@
     },
     {
       "type": "obstacle",
-      "at": [
-        13,
-        30
-      ],
+      "at": [13, 30],
       "offset": 3.8,
       "prop": "tires"
     },
     {
       "type": "boost_pad",
-      "at": [
-        14,
-        15
-      ],
+      "at": [14, 15],
       "length": 8,
-      "lanes": [
-        0,
-        3
-      ]
+      "lanes": [0, 3]
     },
     {
       "type": "trick_ramp",
-      "at": [
-        5,
-        30
-      ],
+      "at": [5, 30],
       "length": 9,
       "height": 1.5
+    },
+    {
+      "type": "zone",
+      "from": [12, 10],
+      "to": [12, 60],
+      "surface": "water",
+      "when": "creek"
+    }
+  ],
+  "gates": {
+    "twin": {
+      "from_lap": 2
+    },
+    "creek": {
+      "from_lap": 3
+    }
+  },
+  "branches": [
+    {
+      "name": "hill trail",
+      "from": [3, 30],
+      "to": [6, 30],
+      "side": "left",
+      "points": [
+        [104, 11, 140, 5],
+        [112, 13.5, 108, 5],
+        [140.3, 15.2, 101.9, 5]
+      ],
+      "half_width": 5,
+      "verge_surface": "offroad_medium",
+      "cpu_share": 0.45,
+      "features": [
+        {
+          "type": "trick_ramp",
+          "at": 45,
+          "length": 8,
+          "height": 1.3
+        },
+        {
+          "type": "trick_ramp",
+          "at": 85,
+          "length": 8,
+          "height": 1.3
+        },
+        {
+          "type": "item_boxes",
+          "at": 65
+        }
+      ]
+    },
+    {
+      "name": "twin bridge",
+      "from": [7, 20],
+      "to": [9, 20],
+      "side": "right",
+      "points": [
+        [30, 15, 10, 6],
+        [0, 13, 6, 6],
+        [-38, 14.5, 9, 6]
+      ],
+      "half_width": 6,
+      "when": "twin",
+      "vanish": true,
+      "cpu_share": 0.5,
+      "features": [
+        {
+          "type": "boost_pad",
+          "at": 60,
+          "length": 8,
+          "lanes": [1, 2]
+        }
+      ]
     }
   ]
 }

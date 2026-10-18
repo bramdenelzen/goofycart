@@ -164,6 +164,18 @@ void draw(const TrackDef& def, const std::string& out_dir) {
     for (const Track::Branch& b : t.branches)
         std::printf("  branch %s: %d samples (%.0f m) from main %d to %d%s%s\n", b.name.c_str(), b.count, float(b.count) * 2.0f, b.fork, b.merge,
                     b.gate >= 0 ? ", gated" : "", b.vanish ? ", vanishes" : "");
+    // Side-road bends tighter than the road is wide fold the road over itself.
+    for (const Track::Branch& b : t.branches)
+        for (int k = 2; k + 2 < b.count; ++k) {
+            const CenterSample &p0 = t.sample(b.first + k - 2), &p1 = t.sample(b.first + k), &p2 = t.sample(b.first + k + 2);
+            const vec2 d1 = glm::normalize(vec2(p1.pos.x - p0.pos.x, p1.pos.z - p0.pos.z)), d2 = glm::normalize(vec2(p2.pos.x - p1.pos.x, p2.pos.z - p1.pos.z));
+            const float ang = std::acos(std::clamp(glm::dot(d1, d2), -1.0f, 1.0f));
+            const float radius = ang > 1e-4f ? 4.0f / ang : 1e9f;
+            if (radius < p1.half_width + 4.0f) {
+                std::printf("  FOLD: branch %s bends %.0f m wide at %d m (sample %d)\n", b.name.c_str(), radius, k * 2, b.first + k);
+                k += 4;
+            }
+        }
     std::printf("  %zu gates, %zu switches, %zu barriers, %zu zones, %zu obstacles, %zu movers\n", t.gates.size(), t.switches.size(),
                 t.barriers.size(), t.zones.size(), t.obstacles.size(), t.movers.size());
     // Parts of the road that come close from above must be a bridge's

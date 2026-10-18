@@ -356,7 +356,9 @@ int Track::nearest_sample(vec3 p, int hint) const {
             if (d < best_bd) best_bd = d, best_b = i;
         }
         if (best_b < 0) return main_best;
-        // Neighbours along the branch can sit deeper inside it than the nearest one.
+        // A shut side road only claims a kart that's clearly left the main road.
+        const int b = road[size_t(best_b)].branch;
+        if (!branch_open(b) && outside(main_best) < 1.0f) return main_best;
         return outside(best_b) < outside(main_best) ? best_b : main_best;
     };
     int best = 0;
@@ -409,8 +411,15 @@ int Track::respawn_sample_before(int sample) const {
         const int b = road[size_t(i)].branch;
         return b < 0 || branch_open(b);
     };
+    auto safe = [&](int i) { // not into lava that's on, nor just before it
+        for (int k = 0, j = i; k < 12; ++k, j = next(j)) {
+            const auto z = zone_surface(road[size_t(j)].pos, j);
+            if (z && *z == Surface::OutOfBounds) return false;
+        }
+        return true;
+    };
     for (int k = 0, i = sample; k < n; ++k, i = prev(i))
-        if (road[size_t(i)].respawn_ok && road[size_t(i)].has_floor && there(i)) return i;
+        if (road[size_t(i)].respawn_ok && road[size_t(i)].has_floor && there(i) && safe(i)) return i;
     return 0;
 }
 
