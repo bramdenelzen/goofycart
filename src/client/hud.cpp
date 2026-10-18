@@ -311,6 +311,7 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
         const char* label = "BOOST";
         switch (k.boost) {
         case sim::BoostKind::MiniTurbo: label = "MINI-TURBO"; break;
+        case sim::BoostKind::Slipstream: label = "SLIPSTREAM!"; break;
         case sim::BoostKind::SuperMiniTurbo: label = "SUPER MINI-TURBO"; break;
         case sim::BoostKind::UltraMiniTurbo: label = "ULTRA MINI-TURBO"; break;
         case sim::BoostKind::Trick: label = "TRICK BOOST"; break;

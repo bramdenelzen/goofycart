@@ -90,6 +90,7 @@ public:
 private:
     void collide_karts();
     void collide_props();
+    void update_slipstream();
     // items.cpp
     void items_before_step(std::vector<KartInput>& inputs);
     void items_after_step();

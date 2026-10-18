@@ -12,7 +12,7 @@
 namespace gk::sim {
 
 enum class DriftState : uint8_t { None, Hop, Drifting };
-enum class BoostKind : uint8_t { None, MiniTurbo, SuperMiniTurbo, UltraMiniTurbo, Trick, BoostPad, GlideRamp, RocketStart, Mushroom, Star, Bullet };
+enum class BoostKind : uint8_t { None, MiniTurbo, SuperMiniTurbo, UltraMiniTurbo, Trick, BoostPad, GlideRamp, RocketStart, Mushroom, Star, Bullet, Slipstream };
 
 // Things the client turns into sounds, sparks and rumble. The server sends
 // gameplay-relevant ones over the reliable lane.
@@ -71,7 +71,8 @@ struct KartState {
     float glide_pitch = 0.0f;      // radians, + nose up
 
     int respawn_frames = 0;        // > 0 while the kart is carried back to the track
-    int stuck_frames = 0;          // trying to drive but not moving: wedged, rescued after a while
+    int stuck_frames = 0;
+    uint8_t draft = 0;             // frames tucked in behind another kart: a slipstream boost when full          // trying to drive but not moving: wedged, rescued after a while
     int invincible_frames = 0;
     int stun_frames = 0;           // burnout or spin-out: no driving
     int last_safe_sample = 0;

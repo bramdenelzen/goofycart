@@ -82,6 +82,7 @@ void World::tick(std::span<const KartInput> inputs) {
             kart_on_go(karts_[i], ctx);
         }
     }
+    if (!frozen) update_slipstream();
     if (!frozen) collide_props();
     collide_karts();
     if (config_.items && !frozen) items_after_step();
@@ -123,6 +124,36 @@ vec3 World::loose_tire_pos(int obstacle, int i) const {
     const float t = std::min(1.0f, float(p.down) / 32.0f);
     const float out = (1.6f + 1.3f * float(i)) * (1.0f - (1.0f - t) * (1.0f - t)); // rolls out and settles
     return o.pos + o.up * 0.3f + dir * out;
+}
+
+void World::update_slipstream() {
+    constexpr int kFull = 75;            // 1.25 s in the tow
+    constexpr int kBoostFrames = 75;
+    constexpr float kMult = 1.12f;
+    for (size_t i = 0; i < karts_.size(); ++i) {
+        KartState& k = karts_[i];
+        bool towed = false;
+        if (k.grounded && k.speed > 15.0f && k.boost_frames == 0 && k.respawn_frames == 0 && !k.knocked()) {
+            const vec3 f = k.forward();
+            for (size_t j = 0; j < karts_.size() && !towed; ++j) {
+                if (j == i || karts_[j].respawn_frames > 0) continue;
+                const vec3 d = karts_[j].pos - k.pos;
+                const float along = glm::dot(d, f);
+                if (along < 2.5f || along > 16.0f || std::abs(d.y) > 1.5f) continue;
+                const float side = glm::length(d - f * along - k.up() * glm::dot(d, k.up()));
+                towed = side < 1.2f + along * 0.05f; // the wake widens a little behind a kart
+            }
+        }
+        if (towed) {
+            if (++k.draft >= kFull) {
+                k.draft = 0;
+                kart_give_boost(k, BoostKind::Slipstream, kBoostFrames, kMult, false);
+                events_.push_back({KartEventType::Boost, int(i), int(BoostKind::Slipstream)});
+            }
+        } else {
+            k.draft = uint8_t(std::max(0, int(k.draft) - 3));
+        }
+    }
 }
 
 void World::collide_props() {
@@ -245,6 +276,19 @@ bool World::adopt_motion(int kart, const KartState& c, std::span<const KartInput
     k.visual_drift_yaw = c.visual_drift_yaw;
     k.wall_bump = c.wall_bump;
     k.stuck_frames = c.stuck_frames;
+    // Boosts the kart earned by how it was driven (drift, slipstream, pads)
+    // go with the movement; item boosts are the server's (they cost an item).
+    const auto driven = [](BoostKind b) {
+        return b == BoostKind::None || b == BoostKind::MiniTurbo || b == BoostKind::SuperMiniTurbo || b == BoostKind::UltraMiniTurbo ||
+               b == BoostKind::Trick || b == BoostKind::BoostPad || b == BoostKind::GlideRamp || b == BoostKind::Slipstream;
+    };
+    if (driven(k.boost) && driven(c.boost)) {
+        k.boost = c.boost;
+        k.boost_frames = c.boost_frames;
+        k.boost_mult = std::clamp(c.boost_mult, 1.0f, 1.6f);
+        k.boost_ignores_offroad = c.boost_ignores_offroad;
+    }
+    k.draft = c.draft;
     for (const KartInput& in : replay) {
         KartStepContext ctx{track_, tables_.constants, params_[size_t(kart)], kart, countdown_left_ > 0, nullptr};
         kart_step(k, in, ctx);

@@ -168,6 +168,7 @@ void write_kart(Writer& w, const sim::KartState& s) {
         w.u8(uint8_t(std::clamp(s.roulette, 0, 255)));
     }
     w.u8(s.lucky_index);
+    w.u8(s.draft);
     // Item effect timers: a mask of the running ones, then each as u16.
     const int timers[] = {s.spin_frames, s.tumble_frames, s.shrink_frames, s.star_frames, s.bullet_frames, s.ghost_frames,
                           s.ink_frames, s.golden_frames, s.fire_frames, s.chomper_frames, s.chomper_cooldown};
@@ -242,6 +243,7 @@ sim::KartState read_kart(Reader& r) {
         s.roulette = r.u8();
     }
     s.lucky_index = r.u8();
+    s.draft = r.u8();
     int* timers[] = {&s.spin_frames, &s.tumble_frames, &s.shrink_frames, &s.star_frames, &s.bullet_frames, &s.ghost_frames,
                      &s.ink_frames, &s.golden_frames, &s.fire_frames, &s.chomper_frames, &s.chomper_cooldown};
     const uint16_t mask = r.u16();

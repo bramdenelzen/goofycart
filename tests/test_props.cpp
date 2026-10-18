@@ -198,3 +198,25 @@ TEST_CASE("a moving block is solid") {
     for (int i = 0; i < 90; ++i) w.tick(in);
     CHECK(w.karts()[0].pos.z < 20.0f - 1.5f); // stopped at its face, not through it
 }
+
+TEST_CASE("tucking in behind a kart charges a slipstream boost") {
+    World w(test::flat_track(), test::tables(), RaceConfig{.laps = 1 << 30, .countdown_frames = 1});
+    const auto parts = test::parts();
+    for (int i = 0; i < 2; ++i) w.add_kart(test::default_params(w.tables(), parts));
+    w.tick(std::vector<KartInput>(2));
+    for (int i = 0; i < 2; ++i) {
+        KartState& k = w.karts_mut()[size_t(i)];
+        k.pos = {0, 0, i == 0 ? 30.0f : 22.0f};
+        k.rot = quat(1, 0, 0, 0);
+        k.speed = 22.0f;
+        k.sample = w.track().nearest_sample(k.pos);
+    }
+    std::vector<KartInput> in(2, KartInput{.accelerate = true});
+    bool boosted = false;
+    for (int t = 0; t < 240 && !boosted; ++t) {
+        w.tick(in);
+        for (const KartEvent& e : w.events()) boosted |= e.kart == 1 && e.type == KartEventType::Boost && e.value == int(BoostKind::Slipstream);
+    }
+    CHECK(boosted);
+    CHECK(w.karts()[0].boost != BoostKind::Slipstream); // the leader gets nothing
+}
