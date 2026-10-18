@@ -108,7 +108,7 @@ Track build_track(const TrackDef& def) {
     std::vector<VergeSpan> verges;
     std::vector<float> box_rows;
     std::vector<float> trick_heights, glide_heights;
-    std::vector<std::pair<float, const TrackFeature*>> obstacles;
+    std::vector<std::pair<float, const TrackFeature*>> obstacles, movers;
     for (const TrackFeature& f : def.features) {
         const float a = s_of(f.at);
         switch (f.kind) {
@@ -136,6 +136,7 @@ Track build_track(const TrackDef& def) {
             if (std::abs(f.offset) < 0.5f * f.width + 1.0f) no_respawn.push_back(range(a - 8.0f, a + 8.0f)); // covers the centre
             break;
         case TrackFeature::Kind::Stairs: t.stairs.push_back({a, s_of(f.to)}); break;
+        case TrackFeature::Kind::Mover: movers.push_back({a, &f}); break;
         case TrackFeature::Kind::NoWalls:
             if (f.left) no_walls_l.push_back(range(a, s_of(f.to)));
             if (f.right) no_walls_r.push_back(range(a, s_of(f.to)));
@@ -282,6 +283,23 @@ Track build_track(const TrackDef& def) {
         t.obstacles.push_back(o);
     }
 
+    // Movers: placed in the road's frame at their sample.
+    for (const auto& [s_at, f] : movers) {
+        Track::Mover m;
+        m.sample = sample_at(s_at);
+        const CenterSample& c = t.center[size_t(m.sample)];
+        m.kind = f->block ? Track::Mover::Kind::Block : Track::Mover::Kind::Platform;
+        m.forward = c.tangent, m.right = c.right, m.up = c.up;
+        m.half = vec3(0.5f * f->width, 0.5f * f->height, 0.5f * f->length);
+        m.base = c.pos + c.right * f->offset;
+        m.travel = c.right * f->travel.x + c.up * f->travel.y + c.tangent * f->travel.z;
+        m.period = std::max(30, int(std::round(f->period * 60.0f)));
+        m.phase = f->phase;
+        m.ramp = f->block ? 0.0f : std::min(f->ramp, m.half.z);
+        m.deck = f->boost ? Surface::BoostPad : Surface::Road;
+        t.movers.push_back(m);
+    }
+
     // Out-of-bounds floor far below the track.
     float min_y = 1e9f;
     for (const vec4& c : ctrl) min_y = std::min(min_y, c.y);
@@ -418,6 +436,7 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
             else if (type == "no_walls") tf.kind = K::NoWalls;
             else if (type == "obstacle") tf.kind = K::Obstacle;
             else if (type == "stairs") tf.kind = K::Stairs; // the road between from and to drawn as steps
+            else if (type == "mover") tf.kind = K::Mover;
             else throw std::runtime_error("unknown feature type " + type);
             tf.at = parse_pos(f.contains("at") ? f["at"] : f.at("from"));
             if (f.contains("to")) tf.to = parse_pos(f["to"]);
@@ -441,6 +460,17 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
                     if (!f.contains("length")) tf.length = 1.7f;
                     if (!f.contains("height")) tf.height = 1.1f;
                 }
+            }
+            if (tf.kind == K::Mover) {
+                tf.block = f.value("kind", std::string("platform")) == "block";
+                tf.width = f.value("width", tf.block ? 3.0f : 6.0f);
+                tf.length = f.value("length", tf.block ? 3.0f : 12.0f);
+                tf.height = f.value("height", tf.block ? 2.4f : 0.8f);
+                if (f.contains("travel")) tf.travel = {f["travel"][0].get<float>(), f["travel"][1].get<float>(), f["travel"][2].get<float>()};
+                tf.period = f.value("period", 4.0f);
+                tf.phase = f.value("phase", 0.0f);
+                tf.ramp = f.value("ramp", 2.5f);
+                tf.boost = f.value("boost", false);
             }
             if (f.contains("lanes")) {
                 tf.lanes = 0;

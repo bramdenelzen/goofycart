@@ -1077,6 +1077,79 @@ void App::draw_held_item(sim::Item item, int uses, const mat4& kart, bool traili
     }
 }
 
+namespace {
+// A mover's mesh in its own frame: x across, y up, z along the road.
+render::MeshData make_mover_mesh(const sim::Track::Mover& m) {
+    render::MeshBuilder b;
+    auto face = [&](std::initializer_list<vec3> pts, vec3 out, uint32_t c) {
+        std::vector<vec3> p(pts);
+        if (glm::dot(glm::cross(p[1] - p[0], p[2] - p[0]), out) < 0.0f) std::reverse(p.begin(), p.end());
+        if (p.size() == 3) b.tri(p[0], p[1], p[2], c);
+        else b.quad(p[0], p[1], p[2], p[3], c);
+    };
+    const float hx = m.half.x, h = 2.0f * m.half.y, hz = m.half.z;
+    if (m.kind == sim::Track::Mover::Kind::Block) {
+        // A bumper block: red, a white band, a yellow cap.
+        b.box({0, 0.5f * h, 0}, {hx, 0.5f * h, hz}, render::rgba(215, 55, 45));
+        b.box({0, 0.5f * h, 0}, {hx + 0.04f, 0.12f * h, hz + 0.04f}, render::rgba(250, 250, 250));
+        b.box({0, h - 0.08f, 0}, {hx + 0.06f, 0.1f, hz + 0.06f}, render::rgba(255, 205, 40));
+        return b.take();
+    }
+    const float r = std::max(m.ramp, 0.01f);
+    const bool boost = m.deck == sim::Surface::BoostPad;
+    const uint32_t deck = boost ? render::rgba(255, 150, 40) : render::rgba(150, 162, 182), side = render::rgba(80, 92, 118),
+                   ramp = boost ? render::rgba(240, 120, 30) : render::rgba(130, 140, 160);
+    const float zs[4] = {-hz, -hz + r, hz - r, hz}, ys[4] = {0.0f, h, h, 0.0f};
+    for (int i = 0; i < 3; ++i) {
+        const vec3 up = glm::normalize(vec3(0, zs[i + 1] - zs[i], -(ys[i + 1] - ys[i])));
+        face({{-hx, ys[i], zs[i]}, {hx, ys[i], zs[i]}, {hx, ys[i + 1], zs[i + 1]}, {-hx, ys[i + 1], zs[i + 1]}}, up, i == 1 ? deck : ramp);
+    }
+    for (float sx : {-1.0f, 1.0f}) {
+        const float x = sx * hx;
+        face({{x, 0, zs[1]}, {x, h, zs[1]}, {x, h, zs[2]}, {x, 0, zs[2]}}, {sx, 0, 0}, side);
+        face({{x, 0, zs[0]}, {x, h, zs[1]}, {x, 0, zs[1]}}, {sx, 0, 0}, side);
+        face({{x, 0, zs[2]}, {x, h, zs[2]}, {x, 0, zs[3]}}, {sx, 0, 0}, side);
+        // Hazard stripes along both edges of the deck.
+        const float w = 0.4f, seg = 0.7f;
+        int k = 0;
+        for (float z = zs[1]; z < zs[2] - 0.01f; z += seg, ++k) {
+            const float z1 = std::min(z + seg, zs[2]);
+            const float x0 = x - sx * w;
+            face({{x0, h + 0.012f, z}, {x, h + 0.012f, z}, {x, h + 0.012f, z1}, {x0, h + 0.012f, z1}}, {0, 1, 0},
+                 k % 2 ? render::rgba(30, 30, 36) : render::rgba(255, 200, 30));
+        }
+    }
+    // Chevrons on the deck pointing both ways along it.
+    for (float dz : {-1.0f, 1.0f})
+        for (int i = 0; i < 2; ++i) {
+            const float zc = dz * (hz - r - 1.2f - 1.0f * float(i)), y = h + 0.015f;
+            face({{-hx * 0.45f, y, zc - dz * 0.6f}, {0, y, zc}, {0, y, zc + dz * 0.35f}, {-hx * 0.45f, y, zc - dz * 0.25f}}, {0, 1, 0},
+                 render::rgba(240, 245, 255));
+            face({{hx * 0.45f, y, zc - dz * 0.6f}, {0, y, zc}, {0, y, zc + dz * 0.35f}, {hx * 0.45f, y, zc - dz * 0.25f}}, {0, 1, 0},
+                 render::rgba(240, 245, 255));
+        }
+    return b.take();
+}
+} // namespace
+
+void App::draw_movers(const sim::World& w, float alpha) {
+    const sim::Track& t = w.track();
+    auto& meshes = mover_meshes_[t.id];
+    if (meshes.size() != t.movers.size()) {
+        meshes.clear();
+        for (const auto& m : t.movers) meshes.push_back(renderer_.upload_mesh(make_mover_mesh(m)));
+    }
+    const double tick = double(w.tick_count()) - 1.0 + double(alpha);
+    for (size_t i = 0; i < t.movers.size(); ++i) {
+        const auto& m = t.movers[i];
+        // -right: keep the frame right-handed so faces stay outward.
+        const mat4 model(vec4(-m.right, 0.0f), vec4(m.up, 0.0f), vec4(m.forward, 0.0f), vec4(t.mover_pos(i, tick), 1.0f));
+        renderer_.draw(meshes[i], model);
+        if (m.kind == sim::Track::Mover::Kind::Platform)
+            renderer_.draw(shadow_mesh_, glm::scale(glm::translate(model, vec3(0, 0.02f, 0)), vec3(m.half.x * 0.9f, 1.0f, m.half.z * 0.7f)));
+    }
+}
+
 render::MeshId App::single_prop(const std::string& name) {
     if (auto it = single_props_.find(name); it != single_props_.end()) return it->second;
     const auto pm = props_.find(name);
@@ -1273,6 +1346,7 @@ void App::render(float alpha, float dt) {
         const auto& karts = w->karts();
         draw_items(*w);
         draw_breakables(*w);
+        draw_movers(*w, alpha);
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
         if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;

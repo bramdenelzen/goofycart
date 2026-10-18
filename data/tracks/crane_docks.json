@@ -1,0 +1,327 @@
+{
+  "id": "crane_docks",
+  "name": "Crane Docks",
+  "theme": "harbor",
+  "half_width": 8,
+  "verge": 3,
+  "verge_surface": "offroad_light",
+  "_comment": "Up from the quay onto the high pier, over the start road, across the moving crane decks, then down the switchbacks to the water and a glide home.",
+  "points": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      60
+    ],
+    [
+      20,
+      1,
+      96
+    ],
+    [
+      60,
+      4,
+      108
+    ],
+    [
+      96,
+      8,
+      86
+    ],
+    [
+      102,
+      10,
+      46
+    ],
+    [
+      76,
+      10,
+      12
+    ],
+    [
+      32,
+      10,
+      -6
+    ],
+    [
+      -12,
+      10,
+      -10
+    ],
+    [
+      -52,
+      9,
+      -4
+    ],
+    [
+      -80,
+      7,
+      18
+    ],
+    [
+      -76,
+      6,
+      52
+    ],
+    [
+      -104,
+      4,
+      72
+    ],
+    [
+      -132,
+      2,
+      42
+    ],
+    [
+      -122,
+      1,
+      -8
+    ],
+    [
+      -82,
+      0,
+      -44
+    ],
+    [
+      -32,
+      0,
+      -52
+    ],
+    [
+      -6,
+      0,
+      -26
+    ]
+  ],
+  "features": [
+    {
+      "type": "boost_pad",
+      "at": [
+        0,
+        20
+      ],
+      "length": 8,
+      "lanes": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        1,
+        0
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        1,
+        30
+      ],
+      "offset": -4,
+      "shape": "block",
+      "width": 2.4,
+      "length": 2.4,
+      "height": 1.6,
+      "prop": "crate"
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        1,
+        30
+      ],
+      "offset": 4,
+      "shape": "block",
+      "width": 2.4,
+      "length": 2.4,
+      "height": 1.6,
+      "prop": "crate"
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        3,
+        10
+      ],
+      "length": 9,
+      "height": 1.5
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        4,
+        10
+      ]
+    },
+    {
+      "type": "mover",
+      "at": [
+        5,
+        10
+      ],
+      "kind": "platform",
+      "width": 7,
+      "length": 12,
+      "height": 0.9,
+      "travel": [
+        0,
+        0,
+        5
+      ],
+      "period": 3.0,
+      "ramp": 3
+    },
+    {
+      "type": "mover",
+      "at": [
+        6,
+        10
+      ],
+      "kind": "platform",
+      "width": 6,
+      "length": 11,
+      "height": 0.9,
+      "travel": [
+        4.5,
+        0,
+        0
+      ],
+      "period": 3.4,
+      "ramp": 3,
+      "boost": true
+    },
+    {
+      "type": "mover",
+      "at": [
+        6,
+        32
+      ],
+      "kind": "block",
+      "width": 2.4,
+      "length": 2.4,
+      "height": 2.2,
+      "travel": [
+        5.5,
+        0,
+        0
+      ],
+      "period": 2.6,
+      "phase": 0.25
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        7,
+        10
+      ]
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        8,
+        10
+      ],
+      "length": 9,
+      "height": 1.4
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        9,
+        20
+      ],
+      "offset": 4.2,
+      "prop": "tires"
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        9,
+        20
+      ],
+      "offset": -4.2,
+      "prop": "tires"
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        11,
+        0
+      ]
+    },
+    {
+      "type": "mover",
+      "at": [
+        12,
+        5
+      ],
+      "kind": "block",
+      "width": 2.6,
+      "length": 2.6,
+      "height": 2.2,
+      "travel": [
+        5,
+        0,
+        0
+      ],
+      "period": 3.0
+    },
+    {
+      "type": "glide_ramp",
+      "at": [
+        13,
+        10
+      ],
+      "length": 12,
+      "height": 2.2,
+      "gap": 24
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        15,
+        0
+      ]
+    },
+    {
+      "type": "mover",
+      "at": [
+        16,
+        0
+      ],
+      "kind": "platform",
+      "width": 6,
+      "length": 12,
+      "height": 0.8,
+      "travel": [
+        4.5,
+        0,
+        0
+      ],
+      "period": 3.2,
+      "ramp": 3,
+      "phase": 0.5
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        17,
+        5
+      ],
+      "length": 8,
+      "lanes": [
+        1,
+        2
+      ]
+    }
+  ]
+}

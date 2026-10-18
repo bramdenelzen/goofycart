@@ -14,7 +14,7 @@ struct TrackPos {
 
 // One piece of a track layout. Which fields matter depends on the kind.
 struct TrackFeature {
-    enum class Kind { TrickRamp, GlideRamp, BoostPad, Road, Verge, ItemBoxes, NoWalls, Obstacle, Stairs };
+    enum class Kind { TrickRamp, GlideRamp, BoostPad, Road, Verge, ItemBoxes, NoWalls, Obstacle, Stairs, Mover };
     Kind kind = Kind::Road;
     TrackPos at, to;        // ramps, pads and boxes use `at`; ranges use at..to
     float length = 8.0f;    // ramps, pads and obstacles (m, along the road)
@@ -24,6 +24,14 @@ struct TrackFeature {
     float offset = 0.0f;    // obstacles: from the centre line, + to the right (m)
     int sides = 4;          // obstacles: 4 a block, 8 a round pillar
     std::string prop;       // obstacles: "solid", "crate", "barrel", "crystal", "tires" or "" (by theme)
+    // Movers: "platform" or "block"; swing in the road's frame (across, up,
+    // along, metres), seconds per swing, phase 0..1, ramp length (m).
+    bool block = false;
+    vec3 travel{0.0f};
+    float period = 4.0f;
+    float phase = 0.0f;
+    float ramp = 2.0f;
+    bool boost = false;     // movers: the platform's deck is a dash panel
     int lanes = 0b1111;     // boost pads: which of the 4 lanes (bit 0 = leftmost)
     bool left = true, right = true; // verges and walls: which side
     Surface surface = Surface::Road;

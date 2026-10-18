@@ -27,6 +27,15 @@
         "canyon_run",
         "neon_raceway"
       ]
+    },
+    {
+      "name": "Gizmo Cup",
+      "tracks": [
+        "twin_bridges",
+        "crane_docks",
+        "cloud_spire",
+        "market_mile"
+      ]
     }
   ]
 }

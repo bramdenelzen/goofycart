@@ -92,6 +92,8 @@ private:
     void draw_items(const sim::World& w);
     // Crates, barrels and tire stacks that break and come back.
     void draw_breakables(const sim::World& w);
+    void draw_movers(const sim::World& w, float alpha);
+    std::map<std::string, std::vector<render::MeshId>> mover_meshes_; // per track, one per mover
     render::MeshId single_prop(const std::string& name);
     mat4 fit_prop(const std::string& name, const mat4& transform) const;
     void draw_held_item(sim::Item item, int uses, const mat4& kart, bool trailing);

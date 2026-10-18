@@ -14,6 +14,7 @@
 #include <Jolt/RegisterTypes.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <mutex>
 #include <stdexcept>
@@ -123,12 +124,74 @@ vec3 Track::line_point(int sample) const {
     return line.empty() ? c.pos : c.pos + c.right * line[size_t(wrap(sample))].offset;
 }
 
+vec3 Track::mover_pos(size_t i, double tick) const {
+    const Mover& m = movers[i];
+    const double t = tick / double(std::max(m.period, 1)) + double(m.phase);
+    return m.base + m.travel * float(std::sin(t * 2.0 * 3.14159265358979));
+}
+
+float Track::mover_top(const Mover& m, float x, float z) const {
+    if (std::abs(x) > m.half.x || std::abs(z) > m.half.z) return -1.0f;
+    const float h = 2.0f * m.half.y;
+    if (m.kind == Mover::Kind::Platform && m.ramp > 0.0f) {
+        const float in = m.half.z - std::abs(z);
+        if (in < m.ramp) return h * in / m.ramp;
+    }
+    return h;
+}
+
 std::optional<RayHit> Track::raycast(vec3 origin, vec3 dir, float max_dist) const {
-    return collision_ ? collision_->raycast(origin, dir, max_dist) : std::nullopt;
+    std::optional<RayHit> best = collision_ ? collision_->raycast(origin, dir, max_dist) : std::nullopt;
+    for (size_t i = 0; i < movers.size(); ++i) {
+        const Mover& m = movers[i];
+        const float down = -glm::dot(dir, m.up);
+        if (down < 0.5f) continue; // only the wheel probes look for floors here
+        const vec3 rel = origin - mover_pos(i, mover_time);
+        const float x = glm::dot(rel, m.right), y = glm::dot(rel, m.up), z = glm::dot(rel, m.forward);
+        const float top = mover_top(m, x, z);
+        if (top < 0.0f || y < top - 0.3f) continue; // off it, or starting inside it
+        const float d = (y - top) / down;
+        if (d < 0.0f || d > max_dist || (best && best->distance <= d)) continue;
+        RayHit hit;
+        hit.distance = d;
+        hit.point = origin + dir * d;
+        hit.surface = m.kind == Mover::Kind::Platform ? m.deck : Surface::Road;
+        hit.normal = m.up;
+        if (m.kind == Mover::Kind::Platform && m.ramp > 0.0f && m.half.z - std::abs(z) < m.ramp)
+            hit.normal = glm::normalize(m.up + m.forward * ((z > 0.0f ? 1.0f : -1.0f) * 2.0f * m.half.y / m.ramp));
+        best = hit;
+    }
+    return best;
 }
 
 void Track::collide_sphere(vec3 c, float radius, std::vector<WallContact>& out) const {
     if (collision_) collision_->collide_sphere(c, radius, out);
+    for (size_t i = 0; i < movers.size(); ++i) {
+        const Mover& m = movers[i];
+        const vec3 rel = c - mover_pos(i, mover_time);
+        const vec3 l(glm::dot(rel, m.right), glm::dot(rel, m.up), glm::dot(rel, m.forward));
+        // The solid under the sphere: a box, its height following the ramps.
+        const float zc = std::clamp(l.z, -m.half.z, m.half.z);
+        const float top = mover_top(m, std::clamp(l.x, -m.half.x, m.half.x), zc);
+        if (top <= 0.05f) continue;
+        const vec3 q(std::clamp(l.x, -m.half.x, m.half.x), std::clamp(l.y, 0.0f, top), zc);
+        vec3 d = l - q;
+        float dist = glm::length(d);
+        if (dist >= radius) continue;
+        vec3 n_local;
+        float depth;
+        if (dist > 1e-4f) {
+            n_local = d / dist;
+            depth = radius - dist;
+        } else { // centre inside: out through the nearest side
+            const float px = m.half.x - std::abs(l.x), pz = m.half.z - std::abs(l.z), py = top - l.y;
+            if (py < px && py < pz) n_local = {0, 1, 0}, depth = py + radius;
+            else if (px < pz) n_local = {l.x > 0.0f ? 1.0f : -1.0f, 0, 0}, depth = px + radius;
+            else n_local = {0, 0, l.z > 0.0f ? 1.0f : -1.0f}, depth = pz + radius;
+        }
+        const vec3 n = glm::normalize(m.right * n_local.x + m.up * n_local.y + m.forward * n_local.z);
+        out.push_back({n, depth, Surface::Wall});
+    }
 }
 
 int Track::nearest_sample(vec3 p, int hint) const {

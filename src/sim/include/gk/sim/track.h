@@ -87,6 +87,29 @@ public:
     };
     std::vector<Obstacle> obstacles;
 
+    // Things that move on a loop: platforms karts drive and land on (with
+    // sloped ends), and solid blocks to dodge. Where they are depends only on
+    // the world tick, so prediction and rollback need no extra state.
+    struct Mover {
+        enum class Kind : uint8_t { Platform, Block };
+        Kind kind = Kind::Platform;
+        vec3 base{0.0f};               // centre of the base at the middle of the swing
+        vec3 forward{0, 0, 1}, right{1, 0, 0}, up{0, 1, 0};
+        vec3 half{2.0f, 0.4f, 3.0f};   // across, height / 2, along (m)
+        vec3 travel{0.0f};             // swing amplitude, world metres: base +- travel
+        int period = 240;              // ticks per swing there and back
+        float phase = 0.0f;            // 0..1 offset into the swing
+        float ramp = 0.0f;             // platforms: length of each sloped end (m)
+        Surface deck = Surface::Road;  // platforms: BoostPad makes a moving dash panel
+        int sample = 0;
+    };
+    std::vector<Mover> movers;
+    // The world tick the movers stand at for collision (set by the World).
+    double mover_time = 0.0;
+    vec3 mover_pos(size_t i, double tick) const;
+    // Height of a mover's top above its base at local (x, z), or < 0 off it.
+    float mover_top(const Mover& m, float x, float z) const;
+
     // The CPU drivers' racing line, one entry per centre sample, built by
     // finalize(): lateral offset along `right`, the drivable band around the
     // centre and the line's signed curvature (1/m, positive turning right).

@@ -26,11 +26,11 @@ const TrackCatalog& catalog() {
 
 } // namespace
 
-TEST_CASE("the track catalog has three cups of four") {
+TEST_CASE("the track catalog has four cups of four") {
     const TrackCatalog& c = catalog();
-    REQUIRE(c.cups.size() == 3);
+    REQUIRE(c.cups.size() == 4);
     for (const Cup& cup : c.cups) CHECK(cup.tracks.size() == 4);
-    CHECK(c.tracks.size() == 9);
+    CHECK(c.tracks.size() == 11);
     std::string err;
     TrackDef bad;
     CHECK_FALSE(parse_track_def(R"({"id":"x","name":"x","points":[[0,0,0]]})", bad, &err));

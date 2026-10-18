@@ -1,0 +1,292 @@
+{
+  "id": "twin_bridges",
+  "name": "Twin Bridges",
+  "theme": "meadow",
+  "half_width": 8,
+  "verge": 4,
+  "_comment": "A figure of eight on two levels: up round the hill, over the start on a high bridge, down past sliding platforms and bumper blocks, a glide over the creek and back under the bridge.",
+  "points": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      70
+    ],
+    [
+      10,
+      1,
+      110
+    ],
+    [
+      45,
+      3,
+      132
+    ],
+    [
+      85,
+      6,
+      122
+    ],
+    [
+      106,
+      9,
+      86
+    ],
+    [
+      96,
+      11,
+      46
+    ],
+    [
+      56,
+      12,
+      24
+    ],
+    [
+      0,
+      12,
+      28
+    ],
+    [
+      -48,
+      11,
+      26
+    ],
+    [
+      -86,
+      8,
+      0
+    ],
+    [
+      -90,
+      5,
+      -48
+    ],
+    [
+      -58,
+      3,
+      -82
+    ],
+    [
+      -12,
+      1,
+      -84
+    ],
+    [
+      14,
+      0,
+      -45
+    ]
+  ],
+  "features": [
+    {
+      "type": "boost_pad",
+      "at": [
+        0,
+        25
+      ],
+      "length": 8,
+      "lanes": [
+        1,
+        2
+      ]
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        1,
+        5
+      ]
+    },
+    {
+      "type": "mover",
+      "at": [
+        1,
+        30
+      ],
+      "kind": "platform",
+      "width": 6,
+      "length": 12,
+      "height": 0.8,
+      "travel": [
+        4.5,
+        0,
+        0
+      ],
+      "period": 3.2,
+      "ramp": 3
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        3,
+        0
+      ],
+      "length": 9,
+      "height": 1.4
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        4,
+        10
+      ],
+      "offset": 4.5,
+      "prop": "tires"
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        4,
+        24
+      ],
+      "offset": -4.0,
+      "prop": "tires"
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        5,
+        10
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        6,
+        15
+      ],
+      "offset": 0,
+      "shape": "block",
+      "width": 2.2,
+      "length": 2.2,
+      "height": 1.6,
+      "prop": "crate"
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        7,
+        10
+      ],
+      "length": 9,
+      "height": 1.5
+    },
+    {
+      "type": "mover",
+      "at": [
+        8,
+        15
+      ],
+      "kind": "platform",
+      "width": 6,
+      "length": 11,
+      "height": 0.8,
+      "travel": [
+        5,
+        0,
+        0
+      ],
+      "period": 3.6,
+      "ramp": 3,
+      "boost": true
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        9,
+        15
+      ]
+    },
+    {
+      "type": "mover",
+      "at": [
+        10,
+        15
+      ],
+      "kind": "block",
+      "width": 2.6,
+      "length": 2.6,
+      "height": 2.2,
+      "travel": [
+        5.5,
+        0,
+        0
+      ],
+      "period": 2.8
+    },
+    {
+      "type": "mover",
+      "at": [
+        10,
+        40
+      ],
+      "kind": "block",
+      "width": 2.6,
+      "length": 2.6,
+      "height": 2.2,
+      "travel": [
+        5.5,
+        0,
+        0
+      ],
+      "period": 2.8,
+      "phase": 0.5
+    },
+    {
+      "type": "glide_ramp",
+      "at": [
+        11,
+        5
+      ],
+      "length": 12,
+      "height": 2.2,
+      "gap": 26
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        12,
+        20
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        13,
+        10
+      ],
+      "offset": -3.8,
+      "shape": "block",
+      "width": 2.2,
+      "length": 3,
+      "height": 1.6,
+      "prop": "crate"
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        13,
+        30
+      ],
+      "offset": 3.8,
+      "prop": "tires"
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        14,
+        15
+      ],
+      "length": 8,
+      "lanes": [
+        0,
+        3
+      ]
+    }
+  ]
+}

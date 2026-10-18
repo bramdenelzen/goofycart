@@ -42,7 +42,6 @@ void draw_minimap(render::Renderer& r, const sim::World& w, int player) {
     const float scale = box / std::max(span.x, span.y);
     const vec2 origin = vec2(x0, y0) + (vec2(box) - span * scale) * 0.5f;
     auto to_map = [&](vec3 p) { return origin + (vec2(p.x, p.z) - lo) * scale; };
-    r.ui_round_rect(x0 - 4.0f, y0 - 4.0f, box + 8.0f, box + 8.0f, 12.0f, rgba(10, 14, 40, 35), rgba(10, 14, 40, 60));
 
     // The road, lowest parts first so bridges are drawn over what they cross:
     // a dark outline pass, then the road shaded lighter with height.
@@ -305,7 +304,7 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
 
     // Mini-turbo charge bar, bottom centre
     if (k.drift == sim::DriftState::Drifting) {
-        const float bw = 140.0f, bh = 8.0f, bx = W * 0.5f - bw * 0.5f, by = H - 26.0f;
+        const float bw = 140.0f, bh = 8.0f, bx = W * 0.5f - bw * 0.5f, by = H - 64.0f;
         const float full = kc.mt_thresholds[2];
         r.ui_round_rect(bx - 2, by - 2, bw + 4, bh + 4, 6, rgba(10, 14, 40, 200));
         const float fill = std::min(1.0f, k.mt_charge / full);

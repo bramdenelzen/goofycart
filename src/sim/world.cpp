@@ -28,6 +28,7 @@ int World::add_kart(const KartParams& params) {
 
 void World::restore(const WorldState& s) {
     tick_ = s.tick;
+    track_.mover_time = double(tick_);
     countdown_left_ = s.countdown_left;
     race_ticks_ = s.race_ticks;
     for (size_t i = 0; i < karts_.size() && i < s.karts.size(); ++i) karts_[i] = s.karts[i];
@@ -44,6 +45,20 @@ void World::tick(std::span<const KartInput> inputs) {
     step_inputs_.assign(karts_.size(), KartInput{});
     for (size_t i = 0; i < karts_.size() && i < inputs.size(); ++i) step_inputs_[i] = inputs[i];
     if (config_.items && !frozen) items_before_step(step_inputs_);
+    // Movers step to this tick; karts riding a platform go along with it.
+    for (size_t m = 0; m < track_.movers.size(); ++m) {
+        const Track::Mover& mv = track_.movers[m];
+        const vec3 before = track_.mover_pos(m, double(tick_ - 1)), after = track_.mover_pos(m, double(tick_));
+        if (mv.kind != Track::Mover::Kind::Platform) continue;
+        for (KartState& k : karts_) {
+            if (!k.grounded || k.respawn_frames > 0) continue;
+            const vec3 rel = k.pos - before;
+            const float x = glm::dot(rel, mv.right), y = glm::dot(rel, mv.up), z = glm::dot(rel, mv.forward);
+            const float top = track_.mover_top(mv, x, z);
+            if (top > 0.05f && std::abs(y - top) < 0.35f) k.pos += after - before;
+        }
+    }
+    track_.mover_time = double(tick_);
     // Rubber band: CPU karts close up on the leading player who is still racing.
     float lead = -1e9f;
     bool any_player = false;
