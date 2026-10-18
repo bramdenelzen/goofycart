@@ -680,6 +680,21 @@ void Renderer::make_particle_texture() {
         const float pick = std::abs(h(p.x * 911.0f + p.y * 377.0f));
         return Px{pick < density ? -1.0f : 1.0f, 1.0f};
     });
+    // Drift spark stars: spiky, uneven points, a white-hot middle. Three
+    // variants (with Burst) that the wheels flick between.
+    auto spiky = [pi](int points, float inner, float wobble, int seed) {
+        return [=](vec2 p) {
+            const float a = std::atan2(p.y, p.x), r = glm::length(p);
+            const float seg = 2.0f * pi / float(points);
+            const int i = int(std::floor((a + pi) / seg));
+            const float k = std::abs(std::fmod(a + pi, seg) / seg - 0.5f) * 2.0f; // 1 at a point
+            const float len = 0.95f - wobble * std::abs(std::sin(float(i * 7 + seed) * 1.7f)); // points of different lengths
+            const float edge = glm::mix(inner, len, std::pow(k, 2.0f));
+            return Px{(r - edge) * 0.7f, r < inner * 0.75f ? 1.0f : 0.82f};
+        };
+    };
+    cell(14, true, spiky(6, 0.34f, 0.3f, 3));
+    cell(15, true, spiky(8, 0.3f, 0.35f, 11));
     if (const char* dump = std::getenv("GK_DUMP_PARTICLES")) stbi_write_png(dump, S, S, 4, px.data(), S * 4); // to check the art
     particle_texture_ = upload_texture(S, S, px.data());
 }

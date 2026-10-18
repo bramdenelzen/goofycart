@@ -1136,37 +1136,19 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
         }
     }
 
-    // Drift sparks: chunky sparkles and flicked dots in the charge colour,
-    // a hot white centre, kicked out from the rear wheels.
+    // Drift sparks: a spiky star at each rear wheel in the charge colour.
     if (s.drift == sim::DriftState::Drifting && s.mt_charge >= kc.spark_threshold) {
         const vec3 c = vec3(to_tint(tier_color(s.mt_tier(kc))));
         for (float side : {-1.0f, 1.0f}) {
             const vec3 wheel = at({side * 0.68f, 0.14f, -0.95f});
-            // Curved flame licks flicking off the wheel, like drawn drift sparks.
-            for (int i = 0, n = count(near ? 26.0f : 8.0f); i < n; ++i) {
-                Particle p;
-                p.pos = wheel;
-                p.carry = vel * 0.95f;
-                p.vel = p.carry + dir({side * (0.8f + 1.2f * R()), 1.5f + 1.5f * R(), -2.0f - 2.0f * R()});
-                p.life = 0.12f + 0.1f * R();
-                p.size0 = 0.24f, p.size1 = 0.14f;
-                p.sprite = Sp::Flame, p.stretch = 0.035f;
-                p.color0 = vec4(glm::mix(c, vec3(1.0f), 0.35f), 1.0f), p.color1 = vec4(c, 1.0f);
-                particles_.emit(p);
-            }
-            for (int i = 0, n = count(near ? 14.0f : 4.0f); i < n; ++i) {
-                Particle p;
-                p.pos = wheel;
-                p.carry = vel * 0.9f;
-                p.vel = p.carry + dir({side * (1.0f + 2.0f * R()), 2.0f + 2.5f * R(), -1.0f - 1.5f * R()});
-                p.life = 0.2f + 0.15f * R();
-                p.size0 = p.size1 = 0.09f + 0.05f * R();
-                p.sprite = R() < 0.5f ? Sp::Sparkle : Sp::Dot;
-                p.pop = 0.15f, p.angle = R() * 6.28f;
-                p.color0 = p.color1 = vec4(glm::mix(c, vec3(1.0f), 0.3f), 1.0f);
-                p.gravity = 14.0f;
-                particles_.emit(p);
-            }
+            // One spiky star stuck to the wheel, swapping shape, angle and size
+            // a dozen times a second: a flickering cartoon spark.
+            const int swap = int(double(SDL_GetTicks()) / 1000.0 * 14.0) + index * 3 + (side > 0.0f ? 1 : 0);
+            const uint32_t h = uint32_t(swap) * 2654435761u;
+            const Sp shapes[3] = {Sp::Spark6, Sp::Spark8, Sp::Burst};
+            const float size = 0.26f + 0.08f * float((h >> 16) % 100) / 100.0f + 0.04f * float(s.mt_tier(kc));
+            renderer_.particle(wheel + s.up() * 0.12f, size, vec4(glm::mix(c, vec3(1.0f), 0.15f), 1.0f), false, vec3(0.0f), 0.0f,
+                               shapes[h % 3], float((h >> 8) % 628) / 100.0f);
         }
     }
     // Tyre smoke: round white cartoon puffs that pop out and shrink away.

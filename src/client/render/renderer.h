@@ -86,7 +86,7 @@ public:
     // otherwise it is blended by alpha (smoke, dust). `stretch` > 0 drags it
     // along `velocity` into a streak.
     // Shapes in the particle atlas: hard-edged, cartoon style.
-    enum class Sprite : uint8_t { Puff, Star, Sparkle, Flame, Solid, Ring, Dot, Confetti, Burst, Streak, Rock, Puff2, Drop, Tread };
+    enum class Sprite : uint8_t { Puff, Star, Sparkle, Flame, Solid, Ring, Dot, Confetti, Burst, Streak, Rock, Puff2, Drop, Tread, Spark6, Spark8 };
     void particle(vec3 pos, float size, vec4 color, bool additive, vec3 velocity = vec3(0.0f), float stretch = 0.0f,
                   Sprite sprite = Sprite::Puff, float angle = 0.0f);
     // A flat quad lying in the world (skid marks): corners in order, drawn
