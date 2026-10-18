@@ -19,6 +19,11 @@
 #include <cctype>
 #include <cstdio>
 #include <fstream>
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace gk {
 namespace {
@@ -692,7 +697,13 @@ void App::start_hosting() {
     std::filesystem::create_directories(dir, ec);
     std::filesystem::remove(info, ec);
     const std::string port = std::to_string(net::kDefaultPort);
-    const char* args[] = {server.c_str(), "--port", port.c_str(), "--upnp", "--info-file", info.c_str(), "--workdir", dir.c_str(), nullptr};
+#if defined(_WIN32)
+    const std::string self_pid = std::to_string(_getpid());
+#else
+    const std::string self_pid = std::to_string(getpid());
+#endif
+    const char* args[] = {server.c_str(), "--port", port.c_str(), "--upnp", "--info-file", info.c_str(), "--workdir", dir.c_str(),
+                          "--parent-pid", self_pid.c_str(), nullptr};
     // In the background, with no stdio: a windowed Windows game has no console
     // handles to inherit (DuplicateHandle fails), and this also keeps the
     // server from opening a console window of its own.

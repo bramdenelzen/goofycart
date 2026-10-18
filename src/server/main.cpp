@@ -26,13 +26,51 @@
 #include <memory>
 #include <thread>
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <cerrno>
+#include <csignal>
+#include <unistd.h>
+#endif
+
 namespace {
 std::atomic<bool> g_quit{false};
 void on_signal(int) { g_quit = true; }
+
+// The game that started this server, so a crashed or killed game doesn't
+// leave its server holding the port.
+class Parent {
+public:
+    explicit Parent(long pid) {
+#if defined(_WIN32)
+        if (pid > 0) handle_ = OpenProcess(SYNCHRONIZE, FALSE, DWORD(pid));
+#else
+        pid_ = pid;
+#endif
+    }
+    bool gone() const {
+#if defined(_WIN32)
+        return handle_ && WaitForSingleObject(handle_, 0) == WAIT_OBJECT_0;
+#else
+        return pid_ > 0 && kill(pid_t(pid_), 0) != 0 && errno == ESRCH; // the server may be detached, so not getppid()
+#endif
+    }
+
+private:
+#if defined(_WIN32)
+    HANDLE handle_ = nullptr;
+#else
+    long pid_ = 0;
+#endif
+};
 } // namespace
 
 int main(int argc, char** argv) {
     bool upnp = false;
+    long parent_pid = 0;
     std::string info_file, workdir;
     long max_ticks = -1; // run forever by default
     bool fast = false;   // step as fast as possible (tests)
@@ -63,6 +101,7 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--upnp") == 0) upnp = true;         // ask the router to forward the port
         else if (std::strcmp(argv[i], "--info-file") == 0) info_file = next(); // write the addresses to share here
         else if (std::strcmp(argv[i], "--workdir") == 0) workdir = next();     // where crash reports go
+        else if (std::strcmp(argv[i], "--parent-pid") == 0) parent_pid = std::atol(next()); // quit when this process ends
         else if (std::strcmp(argv[i], "--cc") == 0) {
             const int cc = std::atoi(next());
             cfg.engine = cc <= 50 ? gk::sim::EngineClass::cc50 : cc <= 100 ? gk::sim::EngineClass::cc100
@@ -158,6 +197,7 @@ int main(int argc, char** argv) {
         // Per 30-second window: the slowest tick and the bandwidth, for sizing.
         double worst_tick_ms = 0.0;
         uint64_t sent_before = 0, received_before = 0;
+        const Parent parent(parent_pid);
         while (!g_quit && (max_ticks < 0 || ticks < max_ticks)) {
             const auto tick_start = clock::now();
             net.service(room);
@@ -166,6 +206,10 @@ int main(int argc, char** argv) {
             worst_tick_ms = std::max(worst_tick_ms, std::chrono::duration<double, std::milli>(clock::now() - tick_start).count());
             if (master) master->sync(room);
             ++ticks;
+            if (ticks % 60 == 0 && parent.gone()) {
+                gk::log_info("the game that started this server has closed; stopping");
+                break;
+            }
             if (ticks % (60 * 30) == 0) {
                 const double kb = 1.0 / (30.0 * 1024.0);
                 const uint64_t sent = net.bytes_sent(), received = net.bytes_received();
