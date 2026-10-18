@@ -45,6 +45,10 @@ PaintedModel make_gobby_kart(uint32_t paint_rgba8);
 // A tyre and rim for a tyre part's look: radius 0.5 on the X axis, hub +X.
 PaintedModel make_gobby_tire(const sim::PartLook& look);
 
+// Meowie, the plush cat driver (gobby_meowie.cpp): in the seat's space,
+// origin at the hips, facing +Z.
+PaintedModel make_meowie();
+
 // Items after Albert's reference paintings (gobby_items2.cpp).
 PaintedModel make_glass_item_box();
 PaintedModel make_banana_peel();

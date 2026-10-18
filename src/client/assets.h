@@ -51,6 +51,9 @@ public:
     void add_builtin_tire(const std::string& part_id, const render::PaintedModel& model, render::Renderer& renderer) {
         tires_[part_id] = upload_painted(model, renderer);
     }
+    void add_builtin_driver(const std::string& part_id, const render::PaintedModel& model, render::Renderer& renderer) {
+        drivers_[part_id] = upload_painted(model, renderer);
+    }
     static GpuModel upload_painted(const render::PaintedModel& model, render::Renderer& renderer);
 
     const GpuModel* driver(const std::string& part_id) const { return find(drivers_, part_id); }

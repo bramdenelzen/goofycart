@@ -173,6 +173,7 @@ bool App::init() {
         render::parallel_for(int(tires.size()), [&](int i) { tires[size_t(i)] = render::make_gobby_tire(parts_.tires[size_t(i)].look); });
         for (size_t i = 0; i < tires.size(); ++i) assets_.add_builtin_tire(parts_.tires[i].id, tires[i], renderer_);
     }
+    assets_.add_builtin_driver("meowie", render::make_meowie(), renderer_);
     const int ms_items = lap();
     // Map props: kept on the CPU to merge per track, with one texture each.
     for (auto& [name, model] : render::make_gobby_props()) {
@@ -2331,7 +2332,9 @@ void App::render_menu(float dt) {
     const int mesh = online_ ? std::max(online_->seat(), 0) : std::clamp(options_.karts, 1, 12) - 1;
     const mat4 kart_m = glm::translate(mat4(1.0f), k.pos) * glm::mat4_cast(k.rot);
     renderer_.draw(shadow_mesh_, glm::scale(glm::translate(kart_m, vec3(0, 0.03f, -0.02f)), vec3(1.15f, 1.0f, 1.55f)));
-    if (const GpuModel* preview = options_.preview_model.empty() ? nullptr : assets_.item(options_.preview_model)) {
+    const GpuModel* preview = options_.preview_model.empty() ? nullptr : assets_.item(options_.preview_model);
+    if (!preview && !options_.preview_model.empty()) preview = assets_.driver(options_.preview_model); // drivers too
+    if (preview) {
         draw_model(*preview, kart_m);
         // The kart's axes, for checking a model's orientation: red +X, green +Y, blue +Z.
         renderer_.draw(spark_mesh_, glm::scale(glm::translate(kart_m, vec3(1.5f, 0.1f, 0)), vec3(2.0f)), vec4(3, 0, 0, 1));

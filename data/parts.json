@@ -3,6 +3,7 @@
   "drivers": [
     {"id": "pip", "name": "Pip", "points": [2, 3, 3, 5, 1, 7, 7, 7, 5, 5, 6], "look": {"color": "#f0c8a0", "color2": "#8040c0", "shape": "cap", "size": 0.85}},
     {"id": "gobby", "name": "Gobby", "points": [5, 5, 5, 4, 5, 5, 5, 5, 4, 3, 4], "look": {"color": "#88c060", "color2": "#e04030", "shape": "cap", "size": 1.0}},
+    {"id": "meowie", "name": "Meowie", "points": [2, 2, 3, 5, 1, 7, 7, 7, 5, 6, 6], "look": {"color": "#ffffff", "color2": "#ffb0c8", "shape": "ears", "size": 0.8}},
     {"id": "mossa", "name": "Mossa", "points": [6, 6, 6, 3, 6, 4, 4, 4, 4, 2, 3], "look": {"color": "#a0d0a0", "color2": "#2f7a4a", "shape": "beanie", "size": 1.05}},
     {"id": "brute", "name": "Brute", "points": [8, 7, 7, 2, 9, 2, 3, 3, 3, 1, 1], "look": {"color": "#c08060", "color2": "#505060", "shape": "horns", "size": 1.25}},
     {"id": "tiko", "name": "Tiko", "points": [2, 3, 3, 5, 1, 7, 7, 7, 5, 5, 6], "look": {"color": "#ffd870", "color2": "#3090e0", "shape": "ears", "size": 0.8}},
