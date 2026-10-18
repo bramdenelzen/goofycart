@@ -484,6 +484,11 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
         const vec3 top = t.vertices[size_t(i * kStride + (side > 0 ? 8 : 7))];
         const vec3 outward = c.right * float(side);
         out.push_back({"lamp_post", oriented(c, top + outward * 0.35f - c.up * 0.05f, -outward, 0.9f)});
+        if (th.scenery == S::City) { // the lamp's head reaches about 0.9 m over the road; its light falls further in
+            const vec3 pool = c.pos + c.right * float(side) * (c.half_width - 2.5f) + c.up * 0.02f;
+            const int k = (i / lamp_every) % 3;
+            out.push_back({k == 0 ? "pool_warm" : k == 1 ? "pool_pink" : "pool_cyan", glm::translate(mat4(1.0f), pool)});
+        }
     }
     // Billboards where the road runs straight for a while.
     for (int i = 30; i < n - 30; i += 70) {
@@ -943,7 +948,16 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
             b.sphere(p + vec3(rnd() * 16.0f - 8.0f, rnd() * 3.0f, rnd() * 10.0f - 5.0f), 5.0f + rnd() * 5.0f,
                      rgba(250, 250, 255), 14, 10);
     }
-    if (th.scenery == S::City || th.scenery == S::Lava) {
+    if (th.scenery == S::City && props) { // a starry sky and a moon
+        for (int i = 0; i < 420; ++i) {
+            const float a = rnd() * 2.0f * kPi, e = 0.08f + std::asin(rnd()) * 0.95f;
+            const vec3 p = mid + vec3(std::cos(a) * std::cos(e), std::sin(e), std::sin(a) * std::cos(e)) * 650.0f;
+            const float r = rnd() < 0.08f ? 1.8f + rnd() * 1.2f : 0.6f + rnd() * 0.9f;
+            props->push_back({"night_star", glm::scale(glm::translate(mat4(1.0f), p), vec3(r))});
+        }
+        const vec3 moon_dir = glm::normalize(vec3(-0.35f, 0.55f, -0.45f));
+        props->push_back({"moon", glm::scale(glm::translate(mat4(1.0f), mid + moon_dir * 600.0f), vec3(30.0f))});
+    } else if (th.scenery == S::City || th.scenery == S::Lava) {
         for (int i = 0; i < 160; ++i) {
             const float a = rnd() * 2.0f * kPi, e = 0.15f + rnd() * 1.2f;
             const float d = 700.0f;

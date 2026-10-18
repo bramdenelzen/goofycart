@@ -83,6 +83,25 @@ void Canvas::custom(const UvRect& r, const std::function<vec4(float, float)>& f)
     paint(r, [&](float u, float v) { return f(u, v); });
 }
 
+void Canvas::emission_from_brightness(const UvRect& r, float lo, float hi) {
+    const int px0 = std::clamp(int(r.x0 * float(size_)), 0, size_), px1 = std::clamp(int(std::ceil(r.x1 * float(size_))), 0, size_);
+    const int py0 = std::clamp(int(r.y0 * float(size_)), 0, size_), py1 = std::clamp(int(std::ceil(r.y1 * float(size_))), 0, size_);
+    for (int y = py0; y < py1; ++y)
+        for (int x = px0; x < px1; ++x) {
+            uint8_t* p = &rgba_[(size_t(y) * size_t(size_) + size_t(x)) * 4];
+            const float l = (0.3f * p[0] + 0.59f * p[1] + 0.11f * p[2]) / 255.0f;
+            const float e = smooth01((l - lo) / std::max(hi - lo, 1e-3f));
+            p[3] = uint8_t(std::clamp(1.0f - e, 0.0f, 1.0f) * 255.0f + 0.5f);
+        }
+}
+
+void Canvas::emission_fill(const UvRect& r, float emission) {
+    const int px0 = std::clamp(int(r.x0 * float(size_)), 0, size_), px1 = std::clamp(int(std::ceil(r.x1 * float(size_))), 0, size_);
+    const int py0 = std::clamp(int(r.y0 * float(size_)), 0, size_), py1 = std::clamp(int(std::ceil(r.y1 * float(size_))), 0, size_);
+    for (int y = py0; y < py1; ++y)
+        for (int x = px0; x < px1; ++x) rgba_[(size_t(y) * size_t(size_) + size_t(x)) * 4 + 3] = uint8_t(std::clamp(1.0f - emission, 0.0f, 1.0f) * 255.0f + 0.5f);
+}
+
 void Canvas::fill(const UvRect& r, vec4 color) {
     paint(r, [&](float, float) { return color; });
 }

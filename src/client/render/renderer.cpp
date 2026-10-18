@@ -881,7 +881,7 @@ void Renderer::destroy_image(Image& img) {
     img = {};
 }
 
-MeshId Renderer::upload_mesh(const MeshData& mesh, TextureId texture, bool two_sided, bool unlit, bool blended) {
+MeshId Renderer::upload_mesh(const MeshData& mesh, TextureId texture, bool two_sided, bool unlit, bool blended, bool glow) {
     // Low-poly meshes are small, so host-visible memory is fine; a staging
     // path can come later if a track ever needs it.
     GpuMesh g;
@@ -898,6 +898,7 @@ MeshId Renderer::upload_mesh(const MeshData& mesh, TextureId texture, bool two_s
     g.two_sided = two_sided;
     g.unlit = unlit;
     g.blended = blended;
+    g.glow = glow && texture != 0;
     meshes_.push_back(g);
     return static_cast<MeshId>(meshes_.size() - 1);
 }
@@ -966,7 +967,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
         const mat4 lp = glm::ortho(-half, half, -half, half, 1.0f, 320.0f);
         light_vp_ = lp * lv;
         u.light_vp = light_vp_;
-        u.shadow = vec4(lighting.shadows ? 1.0f : 0.0f, 1.0f / float(kShadowSize), 0, 0);
+        u.shadow = vec4(lighting.shadows ? 1.0f : 0.0f, 1.0f / float(kShadowSize), lighting.sun, 0);
     }
     std::memcpy(f.uniforms.mapped, &u, sizeof(u));
     vmaFlushAllocation(allocator_, f.uniforms.alloc, 0, VK_WHOLE_SIZE);
@@ -1099,7 +1100,7 @@ void Renderer::end_frame() {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 1, 1, &textures2d_[m.texture].set, 0, nullptr);
             bound_texture = m.texture;
         }
-        push.flags = glm::ivec4(m.texture ? 1 : 0, m.unlit ? 1 : 0, 0, 0);
+        push.flags = glm::ivec4(m.texture ? 1 : 0, m.unlit ? 1 : 0, m.glow ? 1 : 0, 0);
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
         vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);

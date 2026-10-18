@@ -38,6 +38,7 @@ struct SceneLighting {
     vec3 sky = {0.53f, 0.74f, 0.95f};
     float fog_density = 0.006f;
     bool shadows = true;
+    float sun = 1.0f; // strength of the direct light: 1 sun, ~0.35 moon
 };
 
 struct RendererOptions {
@@ -63,7 +64,9 @@ public:
     // `blended` draws it see-through by alpha, after the opaque meshes and
     // without writing depth (glass, shadows); draws with a tint alpha below
     // 1 go there too.
-    MeshId upload_mesh(const MeshData& mesh, TextureId texture = 0, bool two_sided = false, bool unlit = false, bool blended = false);
+    // `glow`: the texture's alpha marks self-lit parts (0 = fully lit from within).
+    MeshId upload_mesh(const MeshData& mesh, TextureId texture = 0, bool two_sided = false, bool unlit = false, bool blended = false,
+                       bool glow = false);
 
     // Per-frame: begin, queue draws, end. begin_frame returns false when the
     // frame must be skipped (minimised window, swapchain being rebuilt).
@@ -112,6 +115,7 @@ private:
         bool two_sided = false;
         bool unlit = false;
         bool blended = false;
+        bool glow = false;
     };
     struct Texture2D {
         Image image;

@@ -217,6 +217,8 @@ PaintedModel lamp_post() {
     b.sphere({1.0f, 5.32f, 0}, 0.2f, kWhite, 14, 10);
     t.gradient_v(lamp, col(255, 250, 215), col(255, 225, 150));
     t.glow(lamp, {0.5f, 0.4f}, 0.4f, vec4(1.0f, 1.0f, 1.0f, 0.6f), 1.0f);
+    t.emission_fill(lamp, 0.9f);
+    m.glow = true;
     m.mesh = b.take();
     m.finish();
     return m;
@@ -445,6 +447,8 @@ PaintedModel building(uint32_t seed, vec4 wall, vec4 lit) {
     t.band_v(face, 0.0f, 0.03f, shade(wall, 0.6f), 0.0f);
     t.band_v(face, 0.94f, 1.0f, shade(wall, 0.7f), 0.0f);
     t.vignette(face, 0.2f, 0.04f);
+    t.emission_from_brightness(face, 0.5f, 0.7f); // lit windows glow
+    m.glow = true;
     m.mesh = b.take();
     m.finish();
     return m;
@@ -710,6 +714,8 @@ PaintedModel lantern() {
     for (int i = 1; i < 5; ++i) t.band_v(r_paper, float(i) / 5.0f - 0.01f, float(i) / 5.0f + 0.01f, col(150, 50, 30, 0.6f), 0.005f);
     t.glow(r_paper, {0.5f, 0.5f}, 0.5f, vec4(1.0f, 0.95f, 0.7f, 0.35f), 1.0f);
     t.fill(r_cap, col(40, 35, 35));
+    t.emission_fill(r_paper, 0.6f);
+    m.glow = true;
     m.mesh = b.take();
     m.finish();
     return m;
@@ -811,6 +817,59 @@ PaintedModel neon_sign(vec4 glow_col, uint32_t seed) {
     if (seed % 2) t.star(r, {0.5f, 0.5f}, 0.3f, glow_col);
     else for (int k = 0; k < 3; ++k) t.ellipse(r, {0.28f + 0.22f * float(k), 0.5f}, {0.07f, 0.22f}, glow_col, 0.03f);
     t.gradient_u(r_post, col(80, 80, 95), col(30, 30, 40));
+    t.emission_from_brightness(r, 0.35f, 0.55f);
+    m.glow = true;
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+// A star: a tiny self-lit diamond. The sky is made of scaled copies.
+PaintedModel night_star() {
+    PaintedModel m;
+    m.texture = Canvas(16, col(255, 255, 255));
+    MeshBuilder b;
+    b.uv_region(0.0f, 0.0f, 1.0f, 1.0f);
+    b.sphere({0, 0, 0}, 1.0f, kWhite, 4, 2);
+    m.texture.fill({0, 0, 1, 1}, col(255, 250, 225));
+    m.texture.emission_fill({0, 0, 1, 1}, 1.0f);
+    m.glow = true;
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+PaintedModel moon() {
+    PaintedModel m;
+    m.texture = Canvas(256, col(255, 255, 255));
+    MeshBuilder b;
+    Canvas& t = m.texture;
+    const UvRect r{0, 0, 1, 1};
+    region(b, r);
+    b.sphere({0, 0, 0}, 1.0f, kWhite, 16, 10);
+    t.fill(r, col(240, 238, 222));
+    t.spots(r, 9, 0.07f, col(200, 198, 185), 77, 0.5f);
+    t.spots(r, 6, 0.04f, col(215, 212, 198), 79, 0.5f);
+    t.emission_fill(r, 0.95f);
+    m.glow = true;
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+// A soft pool of lamplight on the ground, 8 m across: drawn see-through.
+PaintedModel light_pool(vec4 c) {
+    PaintedModel m;
+    m.texture = Canvas(64, vec4(c.r, c.g, c.b, 0.0f));
+    MeshBuilder b;
+    b.quad_uv({-4, 0.04f, -4}, {-4, 0.04f, 4}, {4, 0.04f, 4}, {4, 0.04f, -4}, {0, 0}, {0, 1}, {1, 1}, {1, 0}, kWhite);
+    m.texture.custom({0, 0, 1, 1}, [c](float u, float v) {
+        const float d = std::hypot(u - 0.5f, v - 0.5f) * 2.0f;
+        const float a = std::max(0.0f, 1.0f - d);
+        return vec4(c.r, c.g, c.b, 0.45f * a * a);
+    });
+    m.unlit = true;
+    m.blended = true;
     m.mesh = b.take();
     m.finish();
     return m;
@@ -868,6 +927,11 @@ std::map<std::string, PaintedModel> make_gobby_props() {
     out["windmill"] = windmill();
     out["igloo"] = igloo();
     out["neon_pink"] = neon_sign(col(255, 80, 200), 1);
+    out["night_star"] = night_star();
+    out["moon"] = moon();
+    out["pool_warm"] = light_pool(col(255, 200, 110));
+    out["pool_pink"] = light_pool(col(255, 90, 210));
+    out["pool_cyan"] = light_pool(col(70, 220, 255));
     out["neon_cyan"] = neon_sign(col(60, 230, 255), 2);
     return out;
 }

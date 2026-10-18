@@ -18,6 +18,8 @@ struct PaintedModel {
     Canvas texture{512};
     bool two_sided = false;
     bool blended = false; // see-through by texture alpha
+    bool glow = false;    // texture alpha marks self-lit parts (windows, neon, lamps)
+    bool unlit = false;   // drawn as painted, no lighting (light pools)
     MeshData glass;       // drawn see-through, after `mesh` (same texture)
     vec3 bounds_min{0.0f}, bounds_max{0.0f};
     void finish();

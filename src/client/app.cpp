@@ -146,7 +146,7 @@ bool App::init() {
     // Map props: kept on the CPU to merge per track, with one texture each.
     for (auto& [name, model] : render::make_gobby_props()) {
         const render::TextureId tex = renderer_.upload_texture(model.texture.size(), model.texture.size(), model.texture.rgba().data());
-        props_.emplace(name, PropModel{std::move(model.mesh), tex, model.two_sided, model.blended, model.bounds_min, model.bounds_max});
+        props_.emplace(name, PropModel{std::move(model.mesh), tex, model.two_sided, model.blended, model.bounds_min, model.bounds_max, model.glow, model.unlit});
     }
     if (assets_.load(sim::data_path("../assets/models"), renderer_)) log_info("Model pack loaded from assets/models");
     if (!options_.export_assets.empty()) {
@@ -338,7 +338,7 @@ void App::show_track(const std::string& id) {
         std::vector<render::MeshId>& ids = track_props_[shown_track_->id];
         for (auto& [name, builder] : merged) {
             const PropModel& pm = props_.at(name);
-            ids.push_back(renderer_.upload_mesh(builder.take(), pm.texture, pm.two_sided, false, pm.blended));
+            ids.push_back(renderer_.upload_mesh(builder.take(), pm.texture, pm.two_sided, pm.unlit, pm.blended, pm.glow));
         }
         {   // painted walls, rails, kerbs and flags
             const render::PaintedModel side = render::make_trackside(*shown_track_);
@@ -356,6 +356,11 @@ void App::show_track(const std::string& id) {
     light_.sky = th.sky;
     light_.fog_density = th.fog_density;
     light_.ambient = th.ambient;
+    if (shown_track_->theme == "night") { // moonlight: dim, blue, from high up
+        light_.light_dir = glm::normalize(vec3(-0.35f, 0.8f, -0.45f));
+        light_.sun = 0.32f;
+        light_.ambient = 0.3f;
+    }
 }
 
 void App::start_race() {

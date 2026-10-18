@@ -62,7 +62,12 @@ void main() {
     float ambient = frame.light_dir.w;
     vec3 albedo;
     float alpha = v_color.a;
-    if (draw.flags.x == 1) {
+    float emission = 0.0;
+    if (draw.flags.z == 1) { // glow texture: alpha 1 = plain surface, 0 = lit from within
+        vec4 t = texture(albedo_tex, v_uv);
+        albedo = v_color.rgb * t.rgb * 1.25;
+        emission = 1.0 - t.a;
+    } else if (draw.flags.x == 1) {
         vec4 t = texture(albedo_tex, v_uv);
         if (t.a < 0.08) discard; // cut-outs: leaves, hair, grilles
         albedo = v_color.rgb * t.rgb * 1.25; // game albedos expect a brighter pipeline
@@ -79,15 +84,18 @@ void main() {
     float up = n.y * 0.5 + 0.5;
     vec3 amb = ambient * mix(vec3(0.85, 0.82, 0.8), mix(vec3(1.0), frame.sky_color.rgb * 1.4, 0.35), up);
     // Sun and sky: the sun is strong enough that its shadows read clearly.
-    vec3 lit = albedo * (amb * 0.78 + (1.05 - ambient * 0.55) * diffuse * vec3(1.0, 0.97, 0.9));
+    float sun = frame.shadow.z; // 1 by day, low under the moon
+    vec3 sun_col = mix(vec3(0.55, 0.65, 1.0), vec3(1.0, 0.97, 0.9), clamp(sun, 0.0, 1.0));
+    vec3 lit = albedo * (amb * 0.78 + (1.05 - ambient * 0.55) * diffuse * sun * sun_col);
 
     // A broad glossy highlight and a thin rim: plastic and paint, not matte.
     vec3 h = normalize(l + v);
     float spec = pow(max(dot(n, h), 0.0), 36.0) * 0.28 * step(0.0, ndl) * diffuse;
     float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.12 * (0.5 + 0.5 * ndl);
-    lit += (spec + rim) * mix(vec3(1.0), frame.sky_color.rgb, 0.3);
+    lit += (spec + rim) * mix(vec3(1.0), frame.sky_color.rgb, 0.3) * max(sun, 0.3);
+    lit = mix(lit, albedo * 1.7, emission); // windows, neon and lamps light themselves
 
     float dist = length(v_world - frame.camera_pos.xyz);
-    float fog = 1.0 - exp(-dist * frame.fog_color.a);
+    float fog = (1.0 - exp(-dist * frame.fog_color.a)) * (1.0 - 0.85 * emission); // lights shine through the haze
     out_color = vec4(mix(lit, frame.fog_color.rgb, clamp(fog, 0.0, 1.0)), alpha);
 }

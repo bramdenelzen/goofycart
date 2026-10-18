@@ -284,6 +284,11 @@ PaintedModel make_gobby_kart(uint32_t paint_rgba8) {
     t.gradient_v(r_tail, col(255, 90, 80), col(170, 20, 20));
     t.glow(r_tail, {0.4f, 0.3f}, 0.3f, vec4(1.0f, 0.8f, 0.8f, 0.6f), 1.0f);
 
+    // Head, tail and indicator lights light themselves.
+    t.emission_fill(r_glass, 0.85f);
+    t.emission_fill(r_tail, 0.7f);
+    t.emission_fill(r_amber, 0.6f);
+    m.glow = true;
     m.mesh = b.take();
     m.finish();
     return m;

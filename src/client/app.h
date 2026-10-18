@@ -178,6 +178,7 @@ private:
         render::TextureId texture = 0;
         bool two_sided = false, blended = false;
         vec3 lo{0.0f}, hi{0.0f};
+        bool glow = false, unlit = false;
     };
     std::map<std::string, PropModel> props_;           // painted map props, merged per track
     std::map<std::string, std::vector<render::MeshId>> track_props_;

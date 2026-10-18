@@ -67,6 +67,11 @@ public:
     // Paints any function of (u, v) in rect units; returns RGBA to blend.
     void custom(const UvRect& r, const std::function<vec4(float, float)>& f);
 
+    // For glow textures: sets the alpha of every pixel in the rect so that
+    // brightness above `lo` glows, fully from `hi` (alpha 1 - emission).
+    void emission_from_brightness(const UvRect& r, float lo, float hi);
+    void emission_fill(const UvRect& r, float emission);
+
     // Per-pixel access, uv in rect units.
     vec4 get(const UvRect& r, float u, float v) const;
     void blend_px(int x, int y, vec4 color);

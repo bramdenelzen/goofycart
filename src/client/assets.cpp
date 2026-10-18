@@ -140,7 +140,7 @@ GpuModel AssetLibrary::upload(const ModelSpec& spec, const std::string& dir, ren
 GpuModel AssetLibrary::upload_painted(const render::PaintedModel& model, render::Renderer& renderer) {
     GpuModel out;
     const render::TextureId tex = renderer.upload_texture(model.texture.size(), model.texture.size(), model.texture.rgba().data());
-    out.meshes.push_back(renderer.upload_mesh(model.mesh, tex, model.two_sided, false, model.blended));
+    out.meshes.push_back(renderer.upload_mesh(model.mesh, tex, model.two_sided, model.unlit, model.blended, model.glow));
     if (!model.glass.indices.empty()) out.meshes.push_back(renderer.upload_mesh(model.glass, tex, true, false, true));
     out.bounds_min = model.bounds_min;
     out.bounds_max = model.bounds_max;
