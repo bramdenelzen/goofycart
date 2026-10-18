@@ -3,7 +3,8 @@
 Every track is a JSON file in `data/tracks/`, named by its id and listed in a
 cup in `data/tracks/tracks.json`. `gk_trackmap data/tracks/tracks.json out/ [id] [--race]`
 draws each one from above (main road green line, side roads cyan, barriers
-orange, switches yellow, zones hatched) and with `--race` runs a 12-CPU race on it.
+orange, switches yellow, zones hatched, tunnels as a dark ribbed stripe) and
+with `--race` runs a 12-CPU race on it.
 
 ## The main loop
 
@@ -43,6 +44,7 @@ they are metres from where the branch leaves.
 | `barrier` | a wall that stands while its gate holds | `at`, `when`, `width` (0 = whole road), `offset`, `thickness`, `height` |
 | `switch` | a pad; driving over it presses it | `at`, `name`, `offset`, `width`, `hold` (seconds) |
 | `zone` | the road's surface changes while its gate holds | `from`, `to`, `surface`, `when`, `side` or `offset` + `width` |
+| `tunnel` | a roofed stretch: an arched vault over the road | `from`, `to`, `height` (m, default 7), `style` |
 
 Zone surfaces: `water`, `ice`, `oil`, `sand`, `offroad_*`, `boost` (a dash
 strip) and `lava` (out of bounds: a respawn).
@@ -66,6 +68,34 @@ CPUs drive through deep water like road. Harbor Hop's dip under the west
 quay is the example.
 
 An `obstacle` with a `when` becomes a barrier, since the fixed road can't change.
+
+A `tunnel` roofs the road from `from` to `to`, on the main loop or a branch:
+
+```json
+{"type": "tunnel", "from": [17, 13], "to": [19, -6], "height": 7.5, "style": "rock"}
+```
+
+The road's walls carry on up into an arch whose crown is `height` metres
+(at least 3.5) over the middle of the road; the walls rise straight to 55%
+of that and the arch spans the road and its verges. A tunnel always has its
+walls, even over a `no_walls` stretch. `style` is `rock`, `masonry`, `ice`,
+`concrete` or `lava`; left out, the theme picks one (snow ice, volcano lava,
+night concrete, market and harbor masonry, else rock).
+
+* In the race: the roof stops jumps (a kart bumps off it and comes back
+  down) and folds the glider away, so keep glide ramps and big trick ramps
+  out of tunnels. Karts aren't dropped back onto the road inside one or
+  within 2 m of its ends; a respawn goes back before it.
+* In the game: a thick shell outside with a portal at each end, lamps along
+  the crown every 14 m (lighting the inside in the style's colour), the
+  daylight fading while the camera is inside, the chase camera kept under
+  the roof, and the stretch dashed on the minimap.
+* Keep tunnels off a branch's first and last `junction` metres, and clear of
+  other roads passing within the arch.
+
+Dune Drift's quarry tunnel and Frost Pass's ice cave are branches with
+tunnels; Canyon Run, Lava Works (a lava tube) and Neon Raceway (an underpass)
+have one on the main loop.
 
 ## Gates: what changes during a race
 

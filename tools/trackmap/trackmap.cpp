@@ -121,6 +121,17 @@ void draw(const TrackDef& def, const std::string& out_dir) {
         const vec2 p = to_px(t.line_point(int(i)));
         img.put(int(p.x), int(p.y), t.road[i].branch < 0 ? 0x30ff60 : 0x30e0ff, t.road[i].pos.y + 0.1f);
     }
+    // Tunnels: a dark roof stripe down the middle with ribs across it.
+    for (const Track::Tunnel& tn : t.tunnels)
+        for (int k = 0; k < tn.count; ++k) {
+            const CenterSample& c = t.road[size_t(tn.first + k)];
+            const float span = tn.half_span.empty() ? c.half_width : tn.half_span[size_t(k)];
+            for (float o = -span; o <= span; o += 0.5f)
+                if (std::abs(o) < 1.0f || k % 4 == 0) {
+                    const vec2 p = to_px(c.pos + c.right * o);
+                    img.put(int(p.x), int(p.y), 0x282830, c.pos.y + 0.3f);
+                }
+        }
     // Zones (tinted), barriers (red-orange bars) and switches (yellow discs).
     for (const Track::Zone& z : t.zones)
         for (int i = z.first; i < z.first + z.count; ++i) {

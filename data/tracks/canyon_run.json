@@ -190,6 +190,13 @@
       "length": 3.0,
       "height": 2.0,
       "when": "rockfall"
+    },
+    {
+      "type": "tunnel",
+      "from": [17, 13],
+      "to": [19, -6],
+      "height": 7.5,
+      "style": "rock"
     }
   ],
   "gates": {

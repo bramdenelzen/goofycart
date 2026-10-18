@@ -41,6 +41,8 @@ MeshData make_scenery_mesh(const sim::Track& track, std::vector<PropPlacement>* 
 // The terrain's height at (x, z) exactly as its mesh is triangulated, for
 // tracks with `ground`; NaN where there is none.
 std::function<float(float, float)> make_terrain_sampler(const sim::Track& track);
+// The colour of the lamps in the tunnel nearest `pos` (its style's, or the theme's).
+vec3 tunnel_light_color(const sim::Track& track, vec3 pos);
 
 // Where a volcano track's lava shows: the pool (the out-of-bounds floor)
 // where the ground dips below it, by the shader's 4 m bubble cells, and the

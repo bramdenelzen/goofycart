@@ -77,7 +77,7 @@ struct Strip {
     std::vector<VergeSpan> verges;
     std::vector<float> box_rows;
     std::vector<std::pair<float, const TrackFeature*>> obstacles, movers, barriers, switches;
-    std::vector<std::pair<Range, const TrackFeature*>> zones;
+    std::vector<std::pair<Range, const TrackFeature*>> zones, tunnels;
 
     int n() const { return int(c.size()); }
     Range range(float a, float b) const { return Range{a, b, closed ? total : kOpenRoad}; }
@@ -128,6 +128,10 @@ struct Strip {
             break;
         case TrackFeature::Kind::Switch: switches.push_back({a, &f}); break;
         case TrackFeature::Kind::Zone: zones.push_back({range(a, b), &f}); break;
+        case TrackFeature::Kind::Tunnel:
+            tunnels.push_back({range(a, b), &f});
+            no_respawn.push_back(range(a - 2.0f, b + 2.0f)); // the roof is no place to drop a kart onto
+            break;
         }
     }
 
@@ -154,8 +158,12 @@ struct Strip {
             if (v.r.contains(s) && (right ? v.right : v.left)) return {v.width, v.surface};
         return {verge, verge_surface};
     }
+    bool in_tunnel(float s) const {
+        return std::any_of(tunnels.begin(), tunnels.end(), [&](const auto& t) { return t.first.contains(s); });
+    }
     bool walled(float s, bool right) const {
-        return !in_any(right ? no_walls_r : no_walls_l, s) && !in_any(right ? open_r : open_l, s);
+        if (in_any(right ? open_r : open_l, s)) return false;
+        return in_tunnel(s) || !in_any(right ? no_walls_r : no_walls_l, s); // a tunnel always has its walls
     }
 
     // Centre samples from the resampled spline: frames, widths, floors.
@@ -762,6 +770,34 @@ Track build_track(const TrackDef& def) {
             z.first = st.first + a, z.count = std::max(1, count);
             t.zones.push_back(z);
         }
+        for (const auto& [r, f] : st.tunnels) {
+            Track::Tunnel tn;
+            tn.height = f->height;
+            tn.style = f->name;
+            const int a = st.sample_at(r.a);
+            int count = int(std::round((r.b - r.a) / st.step)) + 1;
+            if (!st.closed) count = std::min(count, st.n() - a);
+            auto spans = [&](int from, int n) {
+                std::vector<float> out;
+                for (int k = 0; k < n; ++k) {
+                    const int i = st.wrap(from + k);
+                    const vec3 c = st.c[size_t(i)].pos;
+                    out.push_back(std::max(glm::distance(t.vertices[st.V(i, 0)], c), glm::distance(t.vertices[st.V(i, kCols - 1)], c)));
+                }
+                return out;
+            };
+            // On the loop a tunnel can't run over the start line: split it there.
+            if (st.closed && a + count > st.n()) {
+                Track::Tunnel t2 = tn;
+                t2.first = st.first, t2.count = a + count - st.n();
+                t2.half_span = spans(0, t2.count);
+                t.tunnels.push_back(t2);
+                count = st.n() - a;
+            }
+            tn.first = st.first + a, tn.count = std::max(1, count);
+            tn.half_span = spans(a, tn.count);
+            t.tunnels.push_back(tn);
+        }
         // Item box rows: four boxes across the road.
         for (float s_box : st.box_rows) {
             if (st.closed) s_box = std::fmod(std::fmod(s_box, st.total) + st.total, st.total);
@@ -945,6 +981,7 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     else if (type == "barrier") tf.kind = K::Barrier;
     else if (type == "switch") tf.kind = K::Switch;
     else if (type == "zone") tf.kind = K::Zone;
+    else if (type == "tunnel") tf.kind = K::Tunnel;
     else throw std::runtime_error("unknown feature type " + type);
     if (on_branch && tf.kind == K::Stairs) throw std::runtime_error("stairs only on the main loop");
     auto pos = [&](const nlohmann::json& j) { return on_branch ? TrackPos{0.0f, j.get<float>()} : parse_pos(j); };
@@ -983,6 +1020,11 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
         tf.name = f.at("name").get<std::string>();
         tf.width = f.value("width", 5.0f);
         tf.hold = f.value("hold", 10.0f);
+    }
+    if (tf.kind == K::Tunnel) {
+        tf.height = f.value("height", 7.0f);
+        tf.name = f.value("style", std::string());
+        if (tf.height < 3.5f) throw std::runtime_error("a tunnel needs a roof at least 3.5 m up");
     }
     if (tf.kind == K::Zone) {
         tf.width = f.value("width", 0.0f); // 0: the whole road (or one side of it)

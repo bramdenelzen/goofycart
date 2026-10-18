@@ -423,6 +423,7 @@ void App::show_track(const std::string& id) {
                 else if (p.name == "neon_pink") l.pos = vec3(p.transform * vec4(0.0f, 1.6f, 0.6f, 1.0f)), l.color = vec3(1.0f, 0.35f, 0.8f), l.radius = 14.0f, l.intensity = 1.1f;
                 else if (p.name == "neon_cyan") l.pos = vec3(p.transform * vec4(0.0f, 1.6f, 0.6f, 1.0f)), l.color = vec3(0.3f, 0.9f, 1.0f), l.radius = 14.0f, l.intensity = 1.1f;
                 else if (p.name == "lantern") l.pos = vec3(p.transform * vec4(0.0f, 0.0f, 0.0f, 1.0f)), l.color = vec3(1.0f, 0.72f, 0.38f), l.radius = 8.0f, l.intensity = 0.8f;
+                else if (p.name == "tunnel_light") l.pos = vec3(p.transform[3]), l.color = render::tunnel_light_color(*shown_track_, l.pos), l.radius = 13.0f, l.intensity = 1.6f;
                 else if (p.name == "lava_rock") l.pos = vec3(p.transform * vec4(0.0f, 0.6f, 0.0f, 1.0f)), l.color = vec3(1.0f, 0.42f, 0.1f), l.radius = 11.0f, l.intensity = dark ? 0.9f : 0.5f;
                 else continue;
                 lights.push_back(l);
@@ -1101,6 +1102,14 @@ void App::update_camera(float alpha, float dt) {
     const vec3 cam_target = pos - dir * cam_dist_ + kUp * cam_height_;
     if (!cam_init_ || back != cam_back_) cam_y_ = cam_target.y;
     else cam_y_ += (cam_target.y - cam_y_) * (1.0f - std::exp(-10.0f * dt)); // soften hops and bumps
+    {   // Under a tunnel's roof (the kart's or the camera's): stay below it.
+        const sim::Track& t = world()->track();
+        const vec3 at(cam_target.x, cam_y_, cam_target.z);
+        float limit = 1e9f;
+        if (const auto r = t.tunnel_roof(at, t.nearest_sample(at, now.sample))) limit = *r - 0.8f;
+        if (const auto r = t.tunnel_roof(pos, now.sample)) limit = std::min(limit, *r - 0.8f);
+        cam_y_ = std::min(cam_y_, limit);
+    }
     cam_pos_ = vec3(cam_target.x, cam_y_, cam_target.z);
     cam_look_ = pos + dir * 3.0f + kUp * 0.9f;
     cam_back_ = back;
@@ -1153,6 +1162,15 @@ void App::seam_tour_step(const sim::Track& t) {
             above("stairs" + std::to_string(k), i);
         }
         for (size_t z = 0; z < t.zones.size(); ++z) above("zone" + std::to_string(z), t.zones[z].first + t.zones[z].count / 2);
+        for (size_t k = 0; k < t.tunnels.size(); ++k) {
+            const auto& tn = t.tunnels[k];
+            const std::string id = "tunnel" + std::to_string(k);
+            const int before = tn.first >= int(t.center.size()) ? tn.first - 8 : back_from(tn.first, 8); // on a side road, or round the loop
+            chase(id + "_in", std::max(0, before), 6.0f);
+            chase(id + "_mid", tn.first + tn.count / 2);
+            chase(id + "_out", tn.first + tn.count - 3);
+            above(id, tn.first + tn.count / 2);
+        }
         for (int i = 0; i < n; ++i)
             if (!t.center[size_t(i)].has_floor && t.center[size_t(back_from(i, 1))].has_floor) {
                 chase("gap" + std::to_string(i), back_from(i, 6));
@@ -2348,6 +2366,20 @@ void App::render(float alpha, float dt) {
     update_lava(w, cam.position);
     // Under deep water: a blue-green world that fades out close by.
     render::SceneLighting lit = light_;
+    // In a tunnel: the daylight fades and the lamps do the work.
+    if (w && size_t(player_) < w->karts().size()) {
+        const sim::Track& t = w->track();
+        const auto roof = t.tunnel_roof(cam.position, t.nearest_sample(cam.position, w->karts()[size_t(player_)].sample));
+        const float target = roof && cam.position.y < *roof ? 1.0f : 0.0f;
+        tunnel_dark_ += (target - tunnel_dark_) * (1.0f - std::exp(-5.0f * std::max(dt, 0.0f)));
+        if (!options_.seam_tour.empty()) tunnel_dark_ = target; // the tour jumps from place to place
+        lit.ambient *= glm::mix(1.0f, 0.4f, tunnel_dark_);
+        lit.sun *= glm::mix(1.0f, 0.2f, tunnel_dark_);
+        // No daylight haze inside: what little fog there is is dark.
+        lit.fog_density *= glm::mix(1.0f, 0.3f, tunnel_dark_);
+        lit.sky = glm::mix(lit.sky, lit.sky * 0.3f, tunnel_dark_);
+        lit.zenith = glm::mix(lit.zenith, lit.zenith * 0.3f, tunnel_dark_);
+    }
     if (w && size_t(player_) < w->karts().size()) {
         const sim::Track& t = w->track();
         if (t.in_deep_water(cam.position, t.nearest_sample(cam.position, w->karts()[size_t(player_)].sample))) {

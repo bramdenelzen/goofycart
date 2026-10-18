@@ -233,6 +233,13 @@
         {
           "type": "item_boxes",
           "at": 85
+        },
+        {
+          "type": "tunnel",
+          "from": 30,
+          "to": 176,
+          "height": 7,
+          "style": "ice"
         }
       ]
     },

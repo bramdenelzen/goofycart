@@ -222,6 +222,13 @@
       "surface": "lava",
       "side": "right",
       "when": "eruption"
+    },
+    {
+      "type": "tunnel",
+      "from": [14, -20],
+      "to": [15, -4],
+      "height": 7,
+      "style": "lava"
     }
   ],
   "gates": {

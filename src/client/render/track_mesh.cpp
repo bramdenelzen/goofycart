@@ -390,6 +390,100 @@ void facing_quad(MeshBuilder& b, vec3 p0, vec3 p1, vec3 p2, vec3 p3, vec3 want, 
     else b.quad(p0, p1, p2, p3, color);
 }
 
+// ---- tunnels
+
+// What a tunnel is built of, by its style or else the track's theme.
+struct TunnelLook {
+    uint32_t inner_tex, outer_tex, inner, outer, lamp;
+    vec3 light;
+};
+TunnelLook tunnel_look(const std::string& style, const std::string& theme) {
+    const std::string s = !style.empty() ? style
+                          : theme == "snow" ? "ice" : theme == "volcano" ? "lava" : theme == "night" ? "concrete"
+                          : theme == "market" || theme == "harbor" ? "masonry" : "rock";
+    if (s == "masonry") return {TexBrick, TexBrick, rgba(176, 150, 124), rgba(150, 128, 106), rgba(255, 214, 140), {1.0f, 0.78f, 0.48f}};
+    if (s == "ice") return {TexIce, TexSnow, rgba(160, 205, 235), rgba(236, 242, 250), rgba(200, 240, 255), {0.62f, 0.86f, 1.0f}};
+    if (s == "concrete") return {TexPanel, TexPanel, rgba(90, 92, 110), rgba(70, 72, 88), rgba(120, 240, 255), {0.35f, 0.9f, 1.0f}};
+    if (s == "lava") return {TexRock, TexRock, rgba(70, 52, 50), rgba(52, 40, 40), rgba(255, 140, 50), {1.0f, 0.42f, 0.12f}};
+    return {TexRock, TexRock, rgba(150, 120, 96), rgba(132, 104, 84), rgba(255, 210, 130), {1.0f, 0.76f, 0.46f}}; // rock
+}
+
+// Each tunnel: an arched vault over the road from the top of its walls, a
+// thick shell outside it that comes down to the ground beside the road, a
+// portal face at each end, and lamps along the crown (their lights are
+// listed as "tunnel_light" props).
+void tunnels(MeshBuilder& b, const sim::Track& t, std::vector<PropPlacement>* out) {
+    constexpr int kArch = 10;          // segments across the arch
+    constexpr float kWall = 1.5f;      // the road's walls (track_builder.cpp): the vault starts on top of them
+    for (const sim::Track::Tunnel& tn : t.tunnels) {
+        const TunnelLook look = tunnel_look(tn.style, t.theme);
+        const bool rock = look.inner_tex == TexRock || look.inner_tex == TexIce;
+        const float thick = rock ? 2.4f : 1.0f;
+        // The profile across sample k, left wall to right: inner (towards the
+        // road) or outer (the shell's outside, down to below the road).
+        auto profile = [&](int k, bool outer) {
+            const sim::CenterSample& c = t.road[size_t(tn.first + k)];
+            const float span = tn.half_span.empty() ? c.half_width + 5.0f : tn.half_span[size_t(k)];
+            const vec3 flat_right = glm::normalize(vec3(c.right.x, 0.0f, c.right.z) + vec3(1e-6f));
+            const float w = span + (outer ? thick : 0.0f), h = tn.height + (outer ? thick : 0.0f);
+            const float spring = 0.55f * tn.height;
+            std::vector<vec3> pts;
+            pts.push_back(c.pos - flat_right * w + kUp * (outer ? -1.5f : kWall));
+            for (int a = 0; a <= kArch; ++a) {
+                const float th = kPi * (1.0f - float(a) / float(kArch));
+                pts.push_back(c.pos + flat_right * (w * std::cos(th)) + kUp * (spring + (h - spring) * std::sin(th)));
+            }
+            pts.push_back(c.pos + flat_right * w + kUp * (outer ? -1.5f : kWall));
+            return pts;
+        };
+        auto centre = [&](int k) { const auto& c = t.road[size_t(tn.first + k)]; return c.pos + kUp * (0.6f * tn.height); };
+        for (int k = 0; k + 1 < tn.count; ++k) {
+            const auto in0 = profile(k, false), in1 = profile(k + 1, false), out0 = profile(k, true), out1 = profile(k + 1, true);
+            // Inside, with a little variety along it so it doesn't read as one smooth pipe.
+            b.texture(look.inner_tex, rock ? 3.0f : 2.0f);
+            for (size_t j = 0; j + 1 < in0.size(); ++j) {
+                const vec3 m = 0.25f * (in0[j] + in0[j + 1] + in1[j] + in1[j + 1]);
+                const uint32_t col = shade(look.inner, 0.92f + 0.12f * float((k * 7 + int(j) * 3) % 5) / 4.0f);
+                facing_quad(b, in0[j], in1[j], in1[j + 1], in0[j + 1], centre(k) - m, col);
+            }
+            b.texture(look.outer_tex, rock ? 5.0f : 2.0f);
+            for (size_t j = 0; j + 1 < out0.size(); ++j) {
+                const vec3 m = 0.25f * (out0[j] + out0[j + 1] + out1[j] + out1[j + 1]);
+                facing_quad(b, out0[j], out1[j], out1[j + 1], out0[j + 1], m - centre(k), shade(look.outer, 0.9f + 0.1f * float((k + int(j)) % 3) / 2.0f));
+            }
+        }
+        // Portals: the ring between the vault and the shell at each end, and
+        // a lintel band of the inner colour round the mouth.
+        for (int end = 0; end < 2; ++end) {
+            const int k = end ? tn.count - 1 : 0;
+            const sim::CenterSample& c = t.road[size_t(tn.first + k)];
+            const vec3 facing = end ? c.tangent : -c.tangent;
+            const auto in = profile(k, false), outp = profile(k, true);
+            b.texture(look.outer_tex, rock ? 4.0f : 2.0f);
+            for (size_t j = 0; j + 1 < in.size(); ++j) facing_quad(b, in[j], outp[j], outp[j + 1], in[j + 1], facing, shade(look.outer, 1.05f));
+            // Down the sides of the shell to the ground.
+            facing_quad(b, in.front(), in.front() - kUp * (kWall + 1.5f), outp.front(), outp.front(), facing, shade(look.outer, 1.05f));
+        }
+        // Lamps along the crown, every 14 m.
+        b.texture(TexWhite);
+        float run = 7.0f;
+        for (int k = 1; k + 1 < tn.count; ++k) {
+            const sim::CenterSample &c = t.road[size_t(tn.first + k)], &p = t.road[size_t(tn.first + k - 1)];
+            run += glm::distance(c.pos, p.pos);
+            if (run < 14.0f) continue;
+            run = 0.0f;
+            const vec3 at = c.pos + kUp * (tn.height - 0.35f);
+            b.box(at, vec3(0.5f, 0.12f, 0.25f), look.lamp);
+            if (out) {
+                mat4 m(1.0f);
+                m[3] = vec4(at - kUp * 0.4f, 1.0f);
+                out->push_back({"tunnel_light", m});
+            }
+        }
+    }
+}
+
+
 // Which samples have a wall on each side, read back from the wall triangles.
 std::pair<std::vector<bool>, std::vector<bool>> walls_of(const sim::Track& t) {
     constexpr int kStride = 9;
@@ -613,12 +707,19 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
     constexpr int kStride = 9;
     const int n = int(t.center.size());
     const int lamp_every = th.scenery == S::City ? 12 : 20;
+    // Nothing on the walls in or near a tunnel: its roof is in the way.
+    auto roofed = [&](int i) {
+        for (int d = -8; d <= 8; d += 2)
+            if (t.tunnel_at(t.wrap(i + d))) return true;
+        return false;
+    };
     auto oriented = [&](const sim::CenterSample& c, vec3 pos, vec3 x_axis, float scale) {
         const vec3 x = glm::normalize(x_axis - c.up * glm::dot(x_axis, c.up));
         const vec3 y = c.up, z = glm::cross(x, y);
         return mat4(vec4(x * scale, 0.0f), vec4(y * scale, 0.0f), vec4(z * scale, 0.0f), vec4(pos, 1.0f));
     };
     for (int i = 9; i < n - 6; i += lamp_every) {
+        if (roofed(i)) continue;
         const int side = (i / lamp_every) % 2 ? 1 : -1;
         if (!(side > 0 ? right[size_t(i)] : left[size_t(i)])) continue;
         const sim::CenterSample& c = t.center[size_t(i)];
@@ -633,6 +734,7 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
     }
     // Chevron signs round the outside of every proper bend, facing the karts.
     for (int i = 12; i < n - 12; i += 6) {
+        if (roofed(i)) continue;
         const sim::CenterSample& c = t.center[size_t(i)];
         const vec3 t0 = t.center[size_t(i - 10)].tangent, t1 = t.center[size_t(i + 10)].tangent;
         if (glm::dot(t0, t1) > 0.82f) continue;
@@ -646,6 +748,7 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
     // Feather flags along the walls, alternating sides and colours.
     if (th.scenery != S::City && th.scenery != S::Lava)
         for (int i = 16; i < n - 8; i += 26) {
+            if (roofed(i)) continue;
             const int side = (i / 26) % 2 ? 1 : -1;
             if (!(side > 0 ? right[size_t(i)] : left[size_t(i)])) continue;
             const sim::CenterSample& c = t.center[size_t(i)];
@@ -657,6 +760,7 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
         }
     // Grandstands full of fans where the road runs straight.
     for (int i = 20; i < n - 20; i += 85) {
+        if (roofed(i)) continue;
         const sim::CenterSample& c = t.center[size_t(i)];
         if (glm::dot(t.center[size_t(i - 10)].tangent, t.center[size_t(i + 10)].tangent) < 0.985f) continue;
         const int side = (i / 85) % 2 ? 1 : -1;
@@ -683,6 +787,7 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
     }
     // Billboards where the road runs straight for a while.
     for (int i = 30; i < n - 30; i += 70) {
+        if (roofed(i)) continue;
         const sim::CenterSample& c = t.center[size_t(i)];
         const float bend = glm::dot(t.center[size_t(i - 8)].tangent, t.center[size_t(i + 8)].tangent);
         if (bend < 0.97f) continue;
@@ -1052,6 +1157,11 @@ void add_ground_mesh(MeshBuilder& b, const Ground& g, const ThemeStyle& th, uint
 }
 
 } // namespace
+
+vec3 tunnel_light_color(const sim::Track& t, vec3 pos) {
+    const sim::Track::Tunnel* tn = t.tunnel_at(t.nearest_sample(pos));
+    return tunnel_look(tn ? tn->style : std::string(), t.theme).light;
+}
 
 std::function<float(float, float)> make_terrain_sampler(const sim::Track& t) {
     if (!t.ground) return [](float, float) { return std::numeric_limits<float>::quiet_NaN(); };
@@ -1446,6 +1556,7 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
             }
         }
     }
+    tunnels(b, t, props);
     return b.take();
 }
 

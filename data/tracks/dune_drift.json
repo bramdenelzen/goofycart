@@ -257,6 +257,13 @@
           "at": 75,
           "length": 8,
           "lanes": [1, 2]
+        },
+        {
+          "type": "tunnel",
+          "from": 28,
+          "to": 108,
+          "height": 6.5,
+          "style": "rock"
         }
       ]
     }

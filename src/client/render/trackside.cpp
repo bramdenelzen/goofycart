@@ -316,7 +316,7 @@ void paint_flags(MeshBuilder& b, const sim::Track& t) {
     auto V = [&](int sample, int col) { return t.vertices[size_t((sample % n) * kStride + col)]; };
     for (int i = 3; i < n; i += 14) {
         const sim::CenterSample& c = t.center[size_t(i)];
-        if (!c.has_floor) continue;
+        if (!c.has_floor || t.tunnel_at(i) || t.tunnel_at(t.wrap(i + 3)) || t.tunnel_at(t.wrap(i - 3))) continue; // no flags under a roof
         const int k = i / 14;
         const int side = k % 2 ? 1 : -1;
         const bool walled = side > 0 ? right[size_t(i)] : left[size_t(i)];

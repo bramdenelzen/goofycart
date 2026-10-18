@@ -615,6 +615,23 @@ void update_water(KartState& s, const KartStepContext& ctx) {
         emit(ctx, KartEventType::WaterExit);
     }
 }
+// Under a tunnel's roof: no room for the glider, and a jump stops at the
+// roof with a bump back down.
+void update_roof(KartState& s, const KartStepContext& ctx) {
+    const auto roof = ctx.track.tunnel_roof(s.pos, s.sample);
+    if (!roof) return;
+    if (s.gliding || s.glide_armed) {
+        s.gliding = false;
+        s.glide_armed = false;
+        s.glide_bank = s.glide_pitch = 0.0f;
+        emit(ctx, KartEventType::GliderClose);
+    }
+    constexpr float kHeadroom = 1.4f; // the kart's height over its base
+    if (!s.grounded && s.pos.y + kHeadroom > *roof) {
+        s.pos.y = *roof - kHeadroom;
+        if (s.air_vel.y > 0.0f) s.air_vel.y *= -0.25f;
+    }
+}
 } // namespace
 
 void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
@@ -651,6 +668,7 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     if (s.grounded) step_ground(s, in, drift_pressed, ctx);
     else step_air(s, in, drift_pressed, ctx);
     collide_walls(s, ctx);
+    update_roof(s, ctx);
     step_suspension(s, before, ctx);
 
     if (s.pos.y < ctx.track.kill_y || (s.grounded && s.surface == Surface::OutOfBounds)) {

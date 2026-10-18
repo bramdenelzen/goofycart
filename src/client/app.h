@@ -323,6 +323,7 @@ private:
     HudMessage message_;
     bool show_help_ = true;
     uint64_t frame_ = 0;
+    float tunnel_dark_ = 0.0f; // 0 in daylight .. 1 under a tunnel's roof
     // --seam-tour: where the camera goes and what each shot is called.
     struct TourStop {
         std::string name;

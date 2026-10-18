@@ -2,6 +2,8 @@
 #include "gk/core/math.h"
 #include "gk/sim/surface.h"
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
@@ -195,6 +197,30 @@ public:
     bool in_deep_water(vec3 p, int sample) const;
     // The surface a zone puts at `p` (on road sample `sample`), if one is active there.
     std::optional<Surface> zone_surface(vec3 p, int sample) const;
+
+    // A roofed stretch of road: the walls carry on up into an arched roof
+    // `height` metres over the road's middle. The roof stops jumps and folds
+    // the glider away; the client draws it, lights it and keeps the camera
+    // under it.
+    struct Tunnel {
+        int first = 0, count = 0;      // samples in `road`, consecutive on one road
+        float height = 7.0f;           // the roof over the middle of the road (m)
+        std::string style;             // rock, masonry, ice, concrete or lava
+        std::vector<float> half_span;  // per sample: the walls' distance from the centre (m)
+        // The roof's height over the road at `lat` metres from the centre: the
+        // walls rise straight to 55% of the height, then the arch.
+        float roof_at(int k, float lat) const {
+            const float span = half_span.empty() ? 8.0f : half_span[size_t(std::clamp(k, 0, int(half_span.size()) - 1))];
+            const float e = std::min(std::abs(lat) / std::max(span, 0.1f), 1.0f);
+            const float spring = 0.55f * height;
+            return spring + (height - spring) * std::sqrt(1.0f - e * e);
+        }
+    };
+    std::vector<Tunnel> tunnels;
+    // The roof's world height above `p` on road sample `sample`, if that
+    // sample is under one.
+    std::optional<float> tunnel_roof(vec3 p, int sample) const;
+    const Tunnel* tunnel_at(int sample) const;
 
     // Walking the roads: the sample `steps` on (or back), taking the open
     // branches whose bit is set in `route` at their forks.
