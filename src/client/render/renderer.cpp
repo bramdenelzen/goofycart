@@ -229,6 +229,8 @@ bool Renderer::init(SDL_Window* window, const RendererOptions& options) {
         if (!f.uniforms.buffer) return false;
         f.ui = create_buffer(sizeof(UiVertex) * kMaxUiVertices, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
         if (!f.ui.buffer) return false;
+        f.particles = create_buffer(sizeof(Vertex) * 6 * kMaxParticles, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, true);
+        if (!f.particles.buffer) return false;
         VkDescriptorSetAllocateInfo da{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         da.descriptorPool = descriptor_pool_;
         da.descriptorSetCount = 1;
@@ -272,6 +274,7 @@ void Renderer::shutdown() {
         destroy_buffer(f.readback);
         destroy_buffer(f.uniforms);
         destroy_buffer(f.ui);
+        destroy_buffer(f.particles);
         vkDestroySemaphore(device_, f.acquired, nullptr);
         vkDestroyFence(device_, f.fence, nullptr);
         vkDestroyCommandPool(device_, f.pool, nullptr);
@@ -288,6 +291,7 @@ void Renderer::shutdown() {
     vkDestroyPipeline(device_, mesh_pipeline_, nullptr);
     vkDestroyPipeline(device_, mesh_pipeline_two_sided_, nullptr);
     vkDestroyPipeline(device_, mesh_pipeline_blend_, nullptr);
+    vkDestroyPipeline(device_, mesh_pipeline_add_, nullptr);
     vkDestroyPipeline(device_, shadow_pipeline_, nullptr);
     vkDestroySampler(device_, shadow_sampler_, nullptr);
     for (auto& f : frames_) destroy_image(f.shadow);
@@ -464,6 +468,13 @@ bool Renderer::create_pipeline() {
     cba.alphaBlendOp = VK_BLEND_OP_ADD;
     ds.depthWriteEnable = VK_FALSE;
     const VkResult r3 = r2 == VK_SUCCESS ? vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &mesh_pipeline_blend_) : r2;
+    // Additive: light piles up (sparks, flames), depth tested, not written.
+    cba.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    cba.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    cba.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    cba.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    const VkResult r4 = r3 == VK_SUCCESS ? vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &gp, nullptr, &mesh_pipeline_add_) : r3;
+    GK_VK_CHECK(r4);
     vkDestroyShaderModule(device_, vs, nullptr);
     vkDestroyShaderModule(device_, fs, nullptr);
     GK_VK_CHECK(r);
@@ -545,6 +556,20 @@ UiVertex flat_vertex(vec2 p, uint32_t c) {
     return v;
 }
 } // namespace
+
+void Renderer::make_particle_texture() {
+    // A soft round blob with a bright core.
+    constexpr int S = 64;
+    std::vector<uint8_t> px(S * S * 4, 255);
+    for (int y = 0; y < S; ++y)
+        for (int x = 0; x < S; ++x) {
+            const float dx = (float(x) + 0.5f) / S * 2.0f - 1.0f, dy = (float(y) + 0.5f) / S * 2.0f - 1.0f;
+            const float r = std::sqrt(dx * dx + dy * dy);
+            const float a = std::clamp(1.0f - r, 0.0f, 1.0f);
+            px[size_t(y * S + x) * 4 + 3] = uint8_t(255.0f * a * a * (3.0f - 2.0f * a));
+        }
+    particle_texture_ = upload_texture(S, S, px.data());
+}
 
 bool Renderer::load_font(const std::string& path) {
     if (!g_font.load(path)) return false;
@@ -630,6 +655,11 @@ bool Renderer::create_ui_pipeline() {
     vkDestroyShaderModule(device_, fs, nullptr);
     GK_VK_CHECK(r);
     return true;
+}
+
+void Renderer::particle(vec3 pos, float size, vec4 color, bool additive, vec3 velocity, float stretch) {
+    if (!frame_active_ || particles_.size() >= kMaxParticles || color.a <= 0.003f) return;
+    particles_.push_back({pos, velocity, size, stretch, pack_rgba(color), additive});
 }
 
 void Renderer::ui_rect(float x, float y, float w, float h, uint32_t color) {
@@ -1126,6 +1156,10 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
     mat4 proj = glm::perspective(glm::radians(camera.fov_y_deg), aspect, camera.near_z, camera.far_z);
     proj[1][1] *= -1.0f; // Vulkan clip space has +Y down
     const mat4 view = glm::lookAt(camera.position, camera.target, kUp);
+    cam_right_ = vec3(view[0][0], view[1][0], view[2][0]);
+    cam_up_ = vec3(view[0][1], view[1][1], view[2][1]);
+    cam_pos_ = camera.position;
+    time_ = float(double(SDL_GetTicks()) / 1000.0);
     FrameUniforms u{};
     u.view_proj = proj * view;
     u.camera_pos = vec4(camera.position, 1.0f);
@@ -1145,7 +1179,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
         const mat4 lp = glm::ortho(-half, half, -half, half, 1.0f, 320.0f);
         light_vp_ = lp * lv;
         u.light_vp = light_vp_;
-        u.shadow = vec4(lighting.shadows ? 1.0f : 0.0f, 1.0f / float(kShadowSize), lighting.sun, 0);
+        u.shadow = vec4(lighting.shadows ? 1.0f : 0.0f, 1.0f / float(kShadowSize), lighting.sun, std::fmod(time_, 1000.0f));
     }
     std::memcpy(f.uniforms.mapped, &u, sizeof(u));
     vmaFlushAllocation(allocator_, f.uniforms.alloc, 0, VK_WHOLE_SIZE);
@@ -1154,6 +1188,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
     sky_texture_ = lighting.sky_texture;
 
     draws_.clear();
+    particles_.clear();
     ui_vertices_.clear();
     frame_active_ = true;
     return true;
@@ -1308,6 +1343,58 @@ void Renderer::end_frame() {
         push.tint = d.tint;
         vkCmdPushConstants(cmd, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
         vkCmdDrawIndexed(cmd, m.index_count, 1, 0, 0, 0);
+    }
+    if (!particles_.empty() && particle_texture_) {
+        // Soft blended ones (back to front) first, then the additive ones.
+        std::stable_sort(particles_.begin(), particles_.end(), [&](const ParticleCmd& a, const ParticleCmd& b) {
+            if (a.additive != b.additive) return !a.additive;
+            return glm::distance(a.pos, cam_pos_) > glm::distance(b.pos, cam_pos_);
+        });
+        Vertex* out = static_cast<Vertex*>(f.particles.mapped);
+        uint32_t n = 0, first_add = 0;
+        bool add_seen = false;
+        for (const ParticleCmd& p : particles_) {
+            if (p.additive && !add_seen) first_add = n, add_seen = true;
+            vec3 rx = cam_right_ * p.size, ry = cam_up_ * p.size;
+            if (p.stretch > 0.0f && glm::length(p.vel) > 0.01f) {
+                // A streak: long axis along the motion as seen on screen.
+                const vec3 to = glm::normalize(p.pos - cam_pos_);
+                vec3 along = p.vel - to * glm::dot(p.vel, to);
+                if (glm::length(along) > 1e-3f) {
+                    along = glm::normalize(along);
+                    ry = along * (p.size + glm::length(p.vel) * p.stretch);
+                    rx = glm::normalize(glm::cross(along, to)) * p.size;
+                }
+            }
+            const vec3 c[4] = {p.pos - rx - ry, p.pos + rx - ry, p.pos + rx + ry, p.pos - rx + ry};
+            const vec2 uv[4] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+            const int order[6] = {0, 1, 2, 0, 2, 3};
+            for (int k : order) {
+                Vertex v{};
+                v.pos = c[k];
+                v.normal = -cam_right_;
+                v.color = p.color;
+                v.uv = uv[k];
+                out[n++] = v;
+            }
+        }
+        if (!add_seen) first_add = n;
+        vmaFlushAllocation(allocator_, f.particles.alloc, 0, VK_WHOLE_SIZE);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 1, 1, &textures2d_[particle_texture_].set, 0, nullptr);
+        VkDeviceSize offset = 0;
+        vkCmdBindVertexBuffers(cmd, 0, 1, &f.particles.buffer, &offset);
+        push.model = mat4(1.0f);
+        push.tint = vec4(1.0f);
+        push.flags = glm::ivec4(1, 1, 0, 0);
+        vkCmdPushConstants(cmd, pipeline_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), &push);
+        if (first_add > 0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_pipeline_blend_);
+            vkCmdDraw(cmd, first_add, 1, 0, 0);
+        }
+        if (n > first_add) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_pipeline_add_);
+            vkCmdDraw(cmd, n - first_add, 1, first_add, 0);
+        }
     }
     vkCmdEndRendering(cmd);
 

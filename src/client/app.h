@@ -5,6 +5,7 @@
 #include "audio_device.h"
 #include "hud.h"
 #include "input.h"
+#include "particles.h"
 #include "frontend.h"
 #include "menu.h"
 #include "render/renderer.h"
@@ -94,6 +95,10 @@ private:
     // Crates, barrels and tire stacks that break and come back.
     void draw_breakables(const sim::World& w);
     void draw_movers(const sim::World& w, float alpha);
+    void emit_kart_particles(int index, const sim::KartState& s, const mat4& m);
+    void event_particles(const sim::KartEvent& e);
+    void burst(vec3 pos, int n, vec3 color, float speed, float size, bool additive, float gravity, float life);
+    Particles particles_;
     std::map<std::string, std::vector<render::MeshId>> mover_meshes_; // per track, one per mover
     std::map<std::string, std::pair<render::TextureId, std::pair<vec3, vec3>>> sky_textures_; // theme -> sky, zenith, horizon
     render::MeshId single_prop(const std::string& name);

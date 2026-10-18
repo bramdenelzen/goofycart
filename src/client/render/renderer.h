@@ -79,6 +79,11 @@ public:
     void draw(MeshId mesh, const mat4& model, vec4 tint = vec4(1.0f));
     void end_frame();
 
+    // A camera-facing soft particle for this frame, drawn after everything
+    // else in the scene. `additive` adds light (sparks, fire, glints);
+    // otherwise it is blended by alpha (smoke, dust). `stretch` > 0 drags it
+    // along `velocity` into a streak.
+    void particle(vec3 pos, float size, vec4 color, bool additive, vec3 velocity = vec3(0.0f), float stretch = 0.0f);
     // 2D overlay in ui_extent() pixels, drawn after the 3D scene.
     void ui_rect(float x, float y, float w, float h, uint32_t color);
     void ui_quad(vec2 a, vec2 b, vec2 c, vec2 d, uint32_t color);
@@ -120,6 +125,7 @@ public:
     static float ui_text_width(const char* text, float scale = 1.0f);
     // The rounded UI face; without it text falls back to the built-in pixel font.
     bool load_font(const std::string& ttf_path);
+    void make_particle_texture();
 
     // Saves the next presented frame's low-res image to a PNG file.
     void request_screenshot(std::string path) { screenshot_path_ = std::move(path); }
@@ -186,6 +192,7 @@ private:
         VkDescriptorSet set = VK_NULL_HANDLE;
         Buffer readback; // screenshot target
         Buffer ui;       // per-frame overlay vertices
+        Buffer particles; // per-frame particle quads
         std::string readback_path;
         VkExtent2D readback_extent{};
         Image shadow;    // the sun's depth map
@@ -256,6 +263,18 @@ private:
     static constexpr uint32_t kMaxTextures = 1024;
     std::vector<UiVertex> ui_vertices_;
     TextureId font_texture_ = 0;
+    struct ParticleCmd {
+        vec3 pos, vel;
+        float size, stretch;
+        uint32_t color;
+        bool additive;
+    };
+    std::vector<ParticleCmd> particles_;
+    TextureId particle_texture_ = 0;
+    VkPipeline mesh_pipeline_add_ = VK_NULL_HANDLE;
+    vec3 cam_right_{1, 0, 0}, cam_up_{0, 1, 0}, cam_pos_{0.0f};
+    float time_ = 0.0f;
+    static constexpr uint32_t kMaxParticles = 6000;
     MeshId sky_mesh_ = 0;     // a sphere round the camera, shaded as sky (mesh.frag)
     vec3 sky_center_{0.0f};
     TextureId sky_texture_ = 0;

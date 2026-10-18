@@ -117,13 +117,25 @@ void main() {
         vec4 t = texture(albedo_tex, v_uv);
         albedo = v_color.rgb * t.rgb * 1.25;
         emission = 1.0 - t.a;
+        // Glowing things breathe: a slow shimmer that runs across the world.
+        emission *= 0.78 + 0.22 * sin(frame.shadow.w * 2.6 + (v_world.x - v_world.z) * 0.08);
     } else if (draw.flags.x == 1) {
         vec4 t = texture(albedo_tex, v_uv);
         if (t.a < 0.08) discard; // cut-outs: leaves, hair, grilles
         albedo = v_color.rgb * t.rgb * 1.25; // game albedos expect a brighter pipeline
         alpha *= t.a;
     } else {
-        albedo = v_color.rgb * texture(textures, vec3(v_uv, float(v_layer))).rgb * 2.0;
+        float time = frame.shadow.w;
+        vec2 uv = v_uv;
+        if (v_layer == 12u) uv.y += time * 1.6; // dash panels: the chevrons race along
+        if (v_layer == 7u) { // water: two layers of ripples drifting past each other
+            vec3 a = texture(textures, vec3(uv + vec2(time * 0.05, time * 0.03), 7.0)).rgb;
+            vec3 b = texture(textures, vec3(uv * 1.7 - vec2(time * 0.04, -time * 0.06), 7.0)).rgb;
+            albedo = v_color.rgb * (a + b);
+        } else {
+            albedo = v_color.rgb * texture(textures, vec3(uv, float(v_layer))).rgb * 2.0;
+        }
+        if (v_layer == 12u) emission = 0.35 + 0.25 * sin(time * 6.0 + v_world.x * 0.3 + v_world.z * 0.3); // and glow
         // Break up big flat areas: patches of wear and colour over tens of metres,
         // and mowing stripes on grass.
         if (v_layer != 0u) {
@@ -153,6 +165,12 @@ void main() {
     float spec = pow(max(dot(n, h), 0.0), 18.0) * 0.07 * step(0.0, ndl) * vis;
     float rim = pow(1.0 - max(dot(n, v), 0.0), 4.0) * 0.05 * (0.5 + 0.5 * ndl);
     lit += (spec * sun_col + rim * sky_amb) * max(sun, 0.3);
+    // Water: sun glints that twinkle.
+    if (draw.flags.x == 0 && v_layer == 7u) {
+        float g = pow(max(dot(reflect(-l, n), v), 0.0), 60.0);
+        float tw = step(0.75, fract(sin(dot(floor(v_world.xz * 2.0), vec2(12.9898, 78.233)) + floor(frame.shadow.w * 6.0)) * 43758.5453));
+        lit += sun_col * g * (0.4 + 1.6 * tw) * sun;
+    }
     lit = mix(lit, albedo * 1.7, emission); // windows, neon and lamps light themselves
 
     // Aerial perspective: distance and low ground thicken the haze.
