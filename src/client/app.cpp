@@ -108,6 +108,8 @@ bool App::init() {
         log_error("Could not load game data: {}", err);
         return false;
     }
+    // Course packs built from model files on this computer (assets/, not shipped).
+    if (const int n = tracks_.load_local(sim::data_path("../assets/courses"))) log_info("{} local course(s) loaded", n);
     course_.engine = options_.engine;
     course_.cpu = options_.cpu_level;
 #ifdef __APPLE__
@@ -340,6 +342,11 @@ void App::show_track(const std::string& id) {
     if (shown_track_ && shown_track_->id == (id.empty() ? "greybox" : id)) return;
     shown_track_ = std::make_unique<sim::Track>(sim::make_track(tracks_, id));
     auto it = track_meshes_.find(shown_track_->id);
+    if (const int di = tracks_.find(shown_track_->id); it == track_meshes_.end() && di >= 0 && tracks_.tracks[size_t(di)].mesh) {
+        // A model course: draw the model itself, no generated road or scenery.
+        track_props_[shown_track_->id] = load_course_meshes(*tracks_.tracks[size_t(di)].mesh);
+        it = track_meshes_.emplace(shown_track_->id, std::pair(render::MeshId(0), render::MeshId(0))).first;
+    }
     if (it == track_meshes_.end()) {
         const render::MeshId track = renderer_.upload_mesh(render::make_track_mesh(*shown_track_, true));
         std::vector<render::PropPlacement> placements;
@@ -389,6 +396,10 @@ void App::show_track(const std::string& id) {
     }
     light_.fog_density = th.fog_density;
     light_.ambient = th.ambient;
+    if (shown_track_->theme == "rainbow") { // a low, warm dusk sun
+        light_.light_dir = glm::normalize(vec3(0.75f, 0.32f, 0.35f));
+        light_.ambient = 0.6f;
+    }
     if (shown_track_->theme == "night") { // moonlight: dim, blue, from high up
         light_.light_dir = glm::normalize(vec3(-0.35f, 0.8f, -0.45f));
         light_.sun = 0.32f;
@@ -1170,6 +1181,67 @@ void App::draw_movers(const sim::World& w, float alpha) {
     }
 }
 
+std::vector<render::MeshId> App::load_course_meshes(const sim::TrackDef::MeshCourse& mc) {
+    std::vector<render::MeshId> ids;
+    std::string err;
+    auto model = render::load_model(mc.file, &err);
+    if (!model) {
+        log_warn("Course model {}: {}", mc.file, err);
+        return ids;
+    }
+    render::transform_model(*model, glm::translate(mat4(1.0f), mc.offset) * glm::scale(mat4(1.0f), vec3(mc.scale)));
+    const std::string dir = std::filesystem::path(mc.file).parent_path().string() + "/";
+    // Big textures are halved until 1024 at most: plenty at kart height, and light on memory.
+    auto shrink = [](render::ImageData& img) {
+        while (img.width > 1024 || img.height > 1024) {
+            const int w = std::max(1, img.width / 2), h = std::max(1, img.height / 2);
+            std::vector<uint8_t> out(size_t(w) * size_t(h) * 4);
+            for (int y = 0; y < h; ++y)
+                for (int x = 0; x < w; ++x)
+                    for (int c = 0; c < 4; ++c) {
+                        int sum = 0;
+                        for (int dy = 0; dy < 2; ++dy)
+                            for (int dx = 0; dx < 2; ++dx)
+                                sum += img.rgba[(size_t(std::min(img.height - 1, 2 * y + dy)) * size_t(img.width) + size_t(std::min(img.width - 1, 2 * x + dx))) * 4 + size_t(c)];
+                        out[(size_t(y) * size_t(w) + size_t(x)) * 4 + size_t(c)] = uint8_t(sum / 4);
+                    }
+            img = {w, h, std::move(out)};
+        }
+    };
+    std::map<std::string, render::TextureId> textures;
+    for (auto& part : model->parts) {
+        if (std::find(mc.hidden.begin(), mc.hidden.end(), part.material) != mc.hidden.end()) continue;
+        std::string glow_file;
+        for (const auto& [m, f] : mc.glow)
+            if (m == part.material) glow_file = dir + f;
+        const std::string key = part.texture + "|" + glow_file;
+        render::TextureId tex = 0;
+        if (auto t = textures.find(key); t != textures.end()) tex = t->second;
+        else if (!part.texture.empty()) {
+            if (auto img = render::load_image(part.texture)) {
+                shrink(*img);
+                if (!glow_file.empty())
+                    if (auto em = render::load_image(glow_file)) {
+                        shrink(*em);
+                        // Glow textures: alpha 1 = lit normally, 0 = shines by itself.
+                        for (int y = 0; y < img->height; ++y)
+                            for (int x = 0; x < img->width; ++x) {
+                                const int ex = x * em->width / img->width, ey = y * em->height / img->height;
+                                const uint8_t* e = &em->rgba[(size_t(ey) * size_t(em->width) + size_t(ex)) * 4];
+                                const float lum = (0.3f * e[0] + 0.59f * e[1] + 0.11f * e[2]) / 255.0f;
+                                img->rgba[(size_t(y) * size_t(img->width) + size_t(x)) * 4 + 3] = uint8_t(255.0f * (1.0f - std::min(1.0f, lum * 0.9f)));
+                            }
+                    }
+                tex = renderer_.upload_texture(img->width, img->height, img->rgba.data());
+            }
+            textures[key] = tex;
+        }
+        ids.push_back(renderer_.upload_mesh(part.mesh, tex, part.two_sided, false, false, !glow_file.empty()));
+    }
+    log_info("Course model: {} parts, {} textures", ids.size(), textures.size());
+    return ids;
+}
+
 render::MeshId App::single_prop(const std::string& name) {
     if (auto it = single_props_.find(name); it != single_props_.end()) return it->second;
     const auto pm = props_.find(name);
@@ -1355,8 +1427,8 @@ void App::render(float alpha, float dt) {
     cam.fov_y_deg = cam_fov_;
     if (w) show_track(w->track().id);
     if (!renderer_.begin_frame(cam, light_)) return;
-    renderer_.draw(track_mesh_, mat4(1.0f));
-    renderer_.draw(scenery_mesh_, mat4(1.0f));
+    if (track_mesh_) renderer_.draw(track_mesh_, mat4(1.0f));
+    if (scenery_mesh_) renderer_.draw(scenery_mesh_, mat4(1.0f));
     if (prop_meshes_)
         for (render::MeshId id : *prop_meshes_) renderer_.draw(id, mat4(1.0f));
     if (w && screen_ == Screen::Standings) {
@@ -1656,8 +1728,8 @@ void App::render_menu(float dt) {
     if (!options_.preview_model.empty()) cam.target = k.pos + kUp * 0.25f;
     cam.fov_y_deg = 55.0f;
     if (!renderer_.begin_frame(cam, light_)) return;
-    renderer_.draw(track_mesh_, mat4(1.0f));
-    renderer_.draw(scenery_mesh_, mat4(1.0f));
+    if (track_mesh_) renderer_.draw(track_mesh_, mat4(1.0f));
+    if (scenery_mesh_) renderer_.draw(scenery_mesh_, mat4(1.0f));
     if (prop_meshes_)
         for (render::MeshId id : *prop_meshes_) renderer_.draw(id, mat4(1.0f));
     const int mesh = online_ ? std::max(online_->seat(), 0) : std::clamp(options_.karts, 1, 12) - 1;

@@ -84,6 +84,9 @@ const ThemeStyle& theme_style(const std::string& theme) {
         {"market", {rgba(168, 156, 140), rgba(190, 178, 160), rgba(150, 120, 90), rgba(120, 90, 60), rgba(222, 196, 130),
                     rgba(186, 228, 245), rgba(70, 140, 190), rgba(238, 226, 200), rgba(170, 70, 50), rgba(120, 105, 90),
                     rgba(60, 120, 170), {0.62f, 0.8f, 0.97f}, 0.0028f, 0.5f, S::Market}},
+        {"rainbow", {rgba(120, 100, 160), rgba(90, 80, 140), rgba(80, 70, 120), rgba(60, 50, 90), rgba(200, 180, 220),
+                     rgba(200, 220, 255), rgba(60, 60, 140), rgba(255, 120, 200), rgba(120, 220, 255), rgba(40, 30, 60),
+                     rgba(30, 20, 60), {0.9f, 0.55f, 0.6f}, 0.0012f, 0.6f, S::Clouds}},
     };
     for (const auto& [name, style] : kThemes)
         if (theme == name) return style;

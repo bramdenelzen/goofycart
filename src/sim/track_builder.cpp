@@ -1,6 +1,12 @@
 // Builds track geometry from a TrackDef: a closed Catmull-Rom spline through
 // the control points, resampled every ~2 m, with a road of four lanes,
 // verges, walls, ramps, boost pads, glide gaps and item box rows.
+#include <filesystem>
+#include <optional>
+#include <cstdio>
+#include <mutex>
+#include <map>
+#include <array>
 #include "gk/sim/track_def.h"
 
 #include <nlohmann/json.hpp>
@@ -42,6 +48,77 @@ struct Range {
     }
 };
 
+} // namespace
+
+namespace {
+// Positions and triangles by material from a Wavefront OBJ: only what
+// collision needs. Parsed once per file.
+struct ObjCollision {
+    std::vector<vec3> v;
+    std::vector<std::pair<std::array<uint32_t, 3>, std::string>> tris;
+};
+const ObjCollision* load_obj_collision(const std::string& path) {
+    static std::map<std::string, ObjCollision> cache;
+    static std::mutex m;
+    std::lock_guard lock(m);
+    if (auto it = cache.find(path); it != cache.end()) return &it->second;
+    std::ifstream f(path);
+    if (!f) return nullptr;
+    ObjCollision o;
+    std::string line, mat;
+    while (std::getline(f, line)) {
+        if (line.size() < 2) continue;
+        if (line[0] == 'v' && line[1] == ' ') {
+            vec3 p;
+            if (std::sscanf(line.c_str() + 2, "%f %f %f", &p.x, &p.y, &p.z) == 3) o.v.push_back(p);
+        } else if (line.rfind("usemtl ", 0) == 0) {
+            mat = line.substr(7);
+            while (!mat.empty() && (mat.back() == '\r' || mat.back() == ' ')) mat.pop_back();
+        } else if (line[0] == 'f' && line[1] == ' ') {
+            std::vector<uint32_t> idx;
+            std::istringstream ss(line.substr(2));
+            std::string tok;
+            while (ss >> tok) {
+                const long i = std::strtol(tok.c_str(), nullptr, 10);
+                idx.push_back(uint32_t(i > 0 ? i - 1 : long(o.v.size()) + i));
+            }
+            for (size_t k = 1; k + 1 < idx.size(); ++k) o.tris.push_back({{idx[0], idx[k], idx[k + 1]}, mat});
+        }
+    }
+    return &cache.emplace(path, std::move(o)).first->second;
+}
+
+void add_mesh_course(Track& t, const TrackDef::MeshCourse& mc) {
+    const ObjCollision* o = load_obj_collision(mc.file);
+    if (!o) throw std::runtime_error("cannot open course model " + mc.file);
+    auto role = [&](const std::string& mat) -> std::optional<Surface> {
+        auto has = [&](const std::vector<std::string>& l) { return std::find(l.begin(), l.end(), mat) != l.end(); };
+        if (has(mc.boost)) return Surface::BoostPad;
+        if (has(mc.ramps)) return Surface::TrickRamp;
+        if (has(mc.road)) return Surface::Road;
+        if (has(mc.walls)) return Surface::Wall;
+        return std::nullopt;
+    };
+    std::map<uint32_t, uint32_t> remap;
+    for (const auto& [tri, mat] : o->tris) {
+        const auto s = role(mat);
+        if (!s) continue;
+        uint32_t out[3];
+        bool ok = true;
+        for (int k = 0; k < 3; ++k) {
+            const uint32_t i = tri[size_t(k)];
+            if (i >= o->v.size()) { ok = false; break; }
+            auto [it, fresh] = remap.try_emplace(i, uint32_t(t.vertices.size()));
+            if (fresh) t.vertices.push_back(o->v[i] * mc.scale + mc.offset);
+            out[k] = it->second;
+        }
+        if (!ok) continue;
+        // Floors must face up for the wheel probes; the file's winding may not.
+        const vec3 a = t.vertices[out[0]], b = t.vertices[out[1]], c = t.vertices[out[2]];
+        if (*s != Surface::Wall && glm::cross(b - a, c - a).y < 0.0f) std::swap(out[1], out[2]);
+        t.triangles.push_back({out[0], out[1], out[2], *s});
+    }
+}
 } // namespace
 
 Track build_track(const TrackDef& def) {
@@ -316,6 +393,14 @@ Track build_track(const TrackDef& def) {
     quad(base_v, base_v + 1, base_v + 2, base_v + 3, Surface::OutOfBounds);
     t.kill_y = floor_y - 10.0f;
 
+    if (def.mesh) {
+        // A model course: keep only the rails and the floor far below, and
+        // drive on the model's own road.
+        std::erase_if(t.triangles, [](const TrackTriangle& tri) { return tri.surface != Surface::Wall && tri.surface != Surface::OutOfBounds; });
+        t.obstacles.clear();
+        add_mesh_course(t, *def.mesh);
+    }
+
     // Item box rows: four boxes across the road.
     for (float s_box : box_rows) {
         s_box = std::fmod(std::fmod(s_box, total) + total, total);
@@ -423,6 +508,25 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
                                     p.size() > 3 ? p[3].get<float>() : 0.0f));
         }
         if (d.points.size() < 4) throw std::runtime_error("a track needs at least 4 points");
+        if (j.contains("mesh")) {
+            TrackDef::MeshCourse m;
+            const auto& mj = j["mesh"];
+            m.file = mj.at("file").get<std::string>();
+            m.scale = mj.value("scale", 1.0f);
+            if (mj.contains("offset")) m.offset = {mj["offset"][0].get<float>(), mj["offset"][1].get<float>(), mj["offset"][2].get<float>()};
+            auto list = [&](const char* key, std::vector<std::string>& out) {
+                if (mj.contains(key))
+                    for (const auto& s : mj[key]) out.push_back(s.get<std::string>());
+            };
+            list("road", m.road);
+            list("walls", m.walls);
+            list("boost", m.boost);
+            list("ramps", m.ramps);
+            list("hidden", m.hidden);
+            if (mj.contains("glow"))
+                for (const auto& [k, v] : mj["glow"].items()) m.glow.push_back({k, v.get<std::string>()});
+            d.mesh = m;
+        }
         for (const auto& f : j.value("features", nlohmann::json::array())) {
             TrackFeature tf;
             const std::string type = f.at("type").get<std::string>();
@@ -535,6 +639,30 @@ bool TrackCatalog::load(const std::string& index_path, std::string* error) {
         if (error) *error = e.what();
         return false;
     }
+}
+
+int TrackCatalog::load_local(const std::string& dir) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) return 0;
+    Cup cup;
+    cup.name = "Local Cup";
+    for (const auto& entry : fs::directory_iterator(dir, ec)) {
+        const fs::path course = entry.path() / "course.json";
+        if (!fs::exists(course, ec)) continue;
+        TrackDef d;
+        std::string err;
+        if (!load_track_def(course.string(), d, &err) || find(d.id) >= 0) continue;
+        if (d.mesh) {
+            d.mesh->dir = entry.path().string() + "/";
+            if (!fs::path(d.mesh->file).is_absolute()) d.mesh->file = d.mesh->dir + d.mesh->file;
+        }
+        cup.tracks.push_back(d.id);
+        tracks.push_back(std::move(d));
+    }
+    const int n = int(cup.tracks.size());
+    if (n > 0) cups.push_back(std::move(cup));
+    return n;
 }
 
 Track make_track(const TrackCatalog& catalog, const std::string& id) {

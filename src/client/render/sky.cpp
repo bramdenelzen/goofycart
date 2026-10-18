@@ -67,6 +67,9 @@ Style style_for(const std::string& t) {
     if (t == "night")
         return {{0.015f, 0.02f, 0.07f}, {0.14f, 0.10f, 0.26f}, 0.12f, {0.25f, 0.24f, 0.36f}, {0.08f, 0.08f, 0.14f}, B::City,
                 {0.10f, 0.09f, 0.18f}, {0.05f, 0.05f, 0.10f}, true};
+    if (t == "rainbow") // dusk above the clouds: violet overhead, a glowing coral horizon, early stars
+        return {{0.09f, 0.04f, 0.24f}, {0.98f, 0.58f, 0.48f}, 0.3f, {1.0f, 0.78f, 0.7f}, {0.42f, 0.28f, 0.46f}, B::CloudSea,
+                {0.95f, 0.72f, 0.72f}, {0.78f, 0.55f, 0.66f}, true};
     if (t == "market")
         return {{0.10f, 0.54f, 0.92f}, {0.84f, 0.91f, 0.96f}, 0.42f, {1.0f, 1.0f, 0.98f}, {0.76f, 0.80f, 0.90f}, B::Town,
                 {0.56f, 0.66f, 0.72f}, {0.42f, 0.58f, 0.40f}};
