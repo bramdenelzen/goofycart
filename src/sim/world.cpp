@@ -39,6 +39,8 @@ void World::restore(const WorldState& s) {
     if (s.props.size() == props_.size()) props_ = s.props;
     if (s.switches.size() == switches_.size()) switches_ = s.switches;
     rng_ = s.rng;
+    spiked_cooldown_ = s.spiked_cooldown;
+    lightning_cooldown_ = s.lightning_cooldown;
     update_gates();
 }
 

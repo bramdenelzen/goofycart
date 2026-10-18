@@ -213,6 +213,8 @@ void ClientGame::apply_snapshot(const SnapshotMsg& m) {
     ws.box_respawn = m.boxes;
     ws.props = m.props;
     ws.switches = m.switches;
+    ws.spiked_cooldown = m.spiked_cooldown;
+    ws.lightning_cooldown = m.lightning_cooldown;
     ws.rng.state = m.rng;
     world_->restore(ws);
     // Our own kart goes where we drove it: keep our movement over the

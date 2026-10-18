@@ -2,6 +2,8 @@
 // on a flat straight so each case is easy to set up.
 #include "sim_fixture.h"
 
+#include "gk/net/protocol.h"
+
 #include <algorithm>
 #include <map>
 
@@ -271,4 +273,187 @@ TEST_CASE("item state rewinds exactly") {
     CHECK(a.entities.size() == c.entities.size());
     CHECK(a.rng.state == c.rng.state);
     CHECK(a.box_respawn == c.box_respawn);
+}
+
+// ---- hidden limits on the spiked shell and lightning
+
+namespace {
+
+// Four karts on the straight; the back three spin the roulette every tick so
+// each tick is one draw for each of them.
+struct LimitBench : ItemBench {
+    LimitBench() : ItemBench(4) {}
+    void set_race_ticks(int ticks) {
+        WorldState s = world.save();
+        s.race_ticks = ticks;
+        world.restore(s);
+    }
+    // One roulette draw for each of karts 1..3; returns what they got.
+    std::vector<Item> draw() {
+        for (int i = 1; i < 4; ++i) {
+            KartState& k = kart(i);
+            if (k.item != Item::SpikedShell && k.item != Item::Lightning) k.item = Item::None;
+            k.item_next = Item::None;
+            k.roulette = 1;
+        }
+        run(1);
+        std::vector<Item> got;
+        for (int i = 1; i < 4; ++i) got.push_back(kart(i).item_next != Item::None ? kart(i).item_next : kart(i).item);
+        // Keep the slots free of the limited items for the next draw unless a
+        // test put them there on purpose.
+        for (int i = 1; i < 4; ++i) {
+            KartState& k = kart(i);
+            if (k.item_next != Item::None) k.item_next = Item::None;
+            else k.item = Item::None;
+        }
+        return got;
+    }
+    static bool any(const std::vector<Item>& v, Item item) { return std::find(v.begin(), v.end(), item) != v.end(); }
+};
+
+} // namespace
+
+TEST_CASE("no spiked shell or lightning before frame 1800") {
+    LimitBench b;
+    b.set_race_ticks(0);
+    const int gate = b.world.item_tuning().spiked_start_gate;
+    REQUIRE(gate == 1800);
+    REQUIRE(b.world.item_tuning().lightning_start_gate == 1800);
+    while (b.world.race_ticks() < gate) {
+        const auto got = b.draw();
+        CHECK_FALSE(LimitBench::any(got, Item::SpikedShell));
+        CHECK_FALSE(LimitBench::any(got, Item::Lightning));
+    }
+    // After the gate both turn up again.
+    bool spiked = false, lightning = false;
+    for (int n = 0; n < 2000 && !(spiked && lightning); ++n) {
+        const auto got = b.draw();
+        spiked = spiked || LimitBench::any(got, Item::SpikedShell);
+        lightning = lightning || LimitBench::any(got, Item::Lightning);
+    }
+    CHECK(spiked);
+    CHECK(lightning);
+}
+
+TEST_CASE("no second spiked shell while one is in a slot or in flight") {
+    LimitBench b;
+    b.set_race_ticks(4000);
+    // Held in the reserve slot of a kart that isn't drawing.
+    b.kart(0).item = Item::Coin;
+    b.kart(0).item_next = Item::SpikedShell;
+    CHECK((b.world.blocked_items(2) & item_bit(Item::SpikedShell)) != 0);
+    for (int n = 0; n < 1500; ++n) CHECK_FALSE(LimitBench::any(b.draw(), Item::SpikedShell));
+    // Thrown by kart 1: now it's in flight.
+    b.kart(0).item_next = Item::None;
+    b.kart(1).item = Item::SpikedShell;
+    b.kart(1).item_uses = 1;
+    b.tap(1);
+    REQUIRE(std::any_of(b.world.entities().begin(), b.world.entities().end(),
+                        [](const ItemEntity& e) { return e.type == EntityType::SpikedShell; }));
+    CHECK(b.world.spiked_cooldown() > 0);
+    // Even with the cooldown cleared, the shell in flight keeps the slot taken.
+    WorldState s = b.world.save();
+    s.spiked_cooldown = 0;
+    b.world.restore(s);
+    CHECK((b.world.blocked_items(2) & item_bit(Item::SpikedShell)) != 0);
+    // In flight for at most spiked_life frames.
+    for (const ItemEntity& e : b.world.entities())
+        if (e.type == EntityType::SpikedShell) CHECK(e.life <= b.world.item_tuning().spiked_life);
+    // Gone: free again.
+    b.world.entities_mut().clear();
+    CHECK((b.world.blocked_items(2) & item_bit(Item::SpikedShell)) == 0);
+}
+
+TEST_CASE("no spiked shell within 1800 frames of a throw") {
+    LimitBench b;
+    b.set_race_ticks(4000);
+    b.kart(1).item = Item::SpikedShell;
+    b.kart(1).item_uses = 1;
+    b.tap(1);
+    REQUIRE(b.kart(1).item != Item::SpikedShell);
+    // tap() ran two ticks: the throw was on the first of them.
+    const int thrown = b.world.race_ticks() - 2;
+    b.world.entities_mut().clear(); // only the cooldown is left blocking it
+    while (b.world.race_ticks() < thrown + 1800 - 1) {
+        CHECK_FALSE(LimitBench::any(b.draw(), Item::SpikedShell));
+        b.world.entities_mut().clear();
+    }
+    bool seen = false;
+    for (int n = 0; n < 3000 && !seen; ++n) {
+        seen = LimitBench::any(b.draw(), Item::SpikedShell);
+        b.world.entities_mut().clear();
+    }
+    CHECK(seen);
+}
+
+TEST_CASE("lightning: two held at most, one per kart, cooldown after a strike") {
+    LimitBench b;
+    b.set_race_ticks(4000);
+    b.kart(1).item = Item::Lightning;
+    // Kart 1 holds one: it can't draw a second into its reserve slot.
+    CHECK((b.world.blocked_items(1) & item_bit(Item::Lightning)) != 0);
+    CHECK((b.world.blocked_items(2) & item_bit(Item::Lightning)) == 0);
+    b.kart(0).item = Item::Lightning;
+    // Two held: nobody else gets one.
+    CHECK((b.world.blocked_items(2) & item_bit(Item::Lightning)) != 0);
+    CHECK((b.world.blocked_items(3) & item_bit(Item::Lightning)) != 0);
+    b.kart(0).item = Item::None;
+    // Kart 1 strikes: 1800 frames with none.
+    b.tap(1);
+    CHECK(b.world.lightning_cooldown() > 1790);
+    CHECK((b.world.blocked_items(2) & item_bit(Item::Lightning)) != 0);
+}
+
+TEST_CASE("a blocked item falls back without a second draw") {
+    // Everything blocked: a fixed fallback, and the generator moved on by one draw at most.
+    Rng a, c;
+    CHECK(roll_item(a, 1, 12, ~0u) == Item::Coin);
+    CHECK(roll_item(a, 12, 12, ~0u) == Item::Mushroom);
+    CHECK(a.state == c.state);
+    // One item blocked: one draw, same as unblocked.
+    Rng d, e;
+    roll_item(d, 12, 12, item_bit(Item::SpikedShell));
+    roll_item(e, 12, 12);
+    CHECK(d.state == e.state);
+}
+
+TEST_CASE("two worlds on the same inputs draw the same items, through a snapshot") {
+    auto run_race = [](LimitBench& b, int from, int to, std::vector<Item>& out) {
+        for (int t = from; t < to; ++t) {
+            if (t == 400) { // someone throws a shell early on, so the cooldown is running at the snapshot
+                b.kart(1).item = Item::SpikedShell;
+                b.kart(1).item_uses = 1;
+                b.tap(1);
+            }
+            const auto got = b.draw();
+            out.insert(out.end(), got.begin(), got.end());
+        }
+    };
+    LimitBench a, c;
+    a.set_race_ticks(1700);
+    c.set_race_ticks(1700);
+    std::vector<Item> seq_a, seq_c;
+    run_race(a, 0, 500, seq_a);
+    run_race(c, 0, 500, seq_c);
+    REQUIRE(seq_a == seq_c);
+    REQUIRE(a.world.spiked_cooldown() > 0);
+    // Carry world c's state over the wire into a third world and go on from there.
+    LimitBench d;
+    net::SnapshotMsg m;
+    const WorldState ws = c.world.save();
+    m.race_ticks = uint32_t(ws.race_ticks);
+    m.spiked_cooldown = uint16_t(ws.spiked_cooldown);
+    m.lightning_cooldown = uint16_t(ws.lightning_cooldown);
+    net::SnapshotMsg back;
+    REQUIRE(net::decode(net::encode(m), back));
+    WorldState ds = ws;
+    ds.spiked_cooldown = back.spiked_cooldown;
+    ds.lightning_cooldown = back.lightning_cooldown;
+    d.world.restore(ds);
+    CHECK(d.world.spiked_cooldown() == a.world.spiked_cooldown());
+    std::vector<Item> more_a, more_d;
+    run_race(a, 500, 2600, more_a);
+    run_race(d, 500, 2600, more_d);
+    CHECK(more_a == more_d);
+    CHECK(std::count(more_a.begin(), more_a.end(), Item::SpikedShell) > 0);
 }

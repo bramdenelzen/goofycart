@@ -469,6 +469,8 @@ std::vector<uint8_t> encode(const SnapshotMsg& m) {
     }
     w.u8(uint8_t(std::min<size_t>(m.switches.size(), 255)));
     for (size_t i = 0; i < m.switches.size() && i < 255; ++i) w.u16(m.switches[i]);
+    w.u16(m.spiked_cooldown);
+    w.u16(m.lightning_cooldown);
     return w.take();
 }
 
@@ -504,6 +506,8 @@ bool decode(std::span<const uint8_t> d, SnapshotMsg& m) {
     }
     m.switches.resize(r.u8());
     for (auto& sw : m.switches) sw = r.u16();
+    m.spiked_cooldown = r.u16();
+    m.lightning_cooldown = r.u16();
     return r.ok();
 }
 

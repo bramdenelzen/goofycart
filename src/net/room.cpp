@@ -449,6 +449,8 @@ void Room::send_snapshots() {
     base.boxes = ws.box_respawn;
     base.props = ws.props;
     base.switches = ws.switches;
+    base.spiked_cooldown = uint16_t(std::clamp(ws.spiked_cooldown, 0, 65535));
+    base.lightning_cooldown = uint16_t(std::clamp(ws.lightning_cooldown, 0, 65535));
     base.entities = ws.entities;
     for (auto& [id, c] : clients_) {
         if (!c.hello) continue;

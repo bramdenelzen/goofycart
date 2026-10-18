@@ -19,7 +19,7 @@
 //   kChannelChat     reliable, low priority: chat and emotes
 namespace gk::net {
 
-inline constexpr uint16_t kProtocolVersion = 11; // bump when the race changes too: both sides build the track from data
+inline constexpr uint16_t kProtocolVersion = 12; // bump when the race changes too: both sides build the track from data
 inline constexpr uint16_t kDefaultPort = 7777;
 inline constexpr uint8_t kChannelState = 0;
 inline constexpr uint8_t kChannelEvents = 1;
@@ -197,6 +197,8 @@ struct SnapshotMsg {
     std::vector<sim::PropState> props;    // breakable obstacles
     std::vector<sim::ItemEntity> entities;
     std::vector<uint16_t> switches;       // track switch timers (they open and shut gates)
+    uint16_t spiked_cooldown = 0;         // hidden item limits: frames until the roulette may
+    uint16_t lightning_cooldown = 0;      // hand out a spiked shell / lightning again
 };
 
 struct EventsMsg {
