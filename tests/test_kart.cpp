@@ -154,7 +154,7 @@ TEST_CASE("a drift starts by carrying the old direction, then settles into a tig
     const auto& k = b.tables.constants;
     auto heading = [&] { const vec3 f = b.kart.forward(); return std::atan2(f.x, f.z); };
     auto travel = [&] { const vec3 v = b.kart.velocity(); return std::atan2(v.x, v.z); };
-    auto wrap = [](float a) { while (a > M_PI) a -= 2 * float(M_PI); while (a < -M_PI) a += 2 * float(M_PI); return a; };
+    auto wrap = [](float a) { while (a > kPi) a -= 2 * kPi; while (a < -kPi) a += 2 * kPi; return a; };
     // Over the entry the nose swings in far more than the path bends.
     const float h0 = heading(), t0 = travel();
     b.step(gas(1.0f, true), k.drift_entry_frames / 2);
