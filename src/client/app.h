@@ -212,6 +212,8 @@ private:
     // Track shown now (menu backdrop or race), its meshes and lighting.
     std::unique_ptr<sim::Track> shown_track_;
     std::map<std::string, std::pair<render::MeshId, render::MeshId>> track_meshes_;
+    std::map<std::string, std::vector<render::PointLight>> track_lights_; // lamps, neon, lanterns, lava per track
+    const std::vector<render::PointLight>* lights_ = nullptr;
     render::SceneLighting light_;
 
     render::MeshId track_mesh_ = 0, scenery_mesh_ = 0, spark_mesh_ = 0, flame_mesh_ = 0, shadow_mesh_ = 0, fireball_mesh_ = 0;

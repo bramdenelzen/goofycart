@@ -8,6 +8,8 @@ layout(set = 0, binding = 0) uniform Frame {
     vec4 sky_color;
     mat4 light_vp;     // world to shadow map
     vec4 shadow;       // x: 1 = shadows on, y: one shadow-map texel in uv
+    vec4 light_pos[24]; // point lights: xyz, radius; camera_pos.w = count
+    vec4 light_col[24]; // rgb * intensity
 } frame;
 
 layout(push_constant) uniform Draw {
@@ -155,7 +157,7 @@ void main() {
     } else {
         float time = frame.shadow.w;
         vec2 uv = v_uv;
-        if (v_layer == 12u) uv.y += time * 1.6; // dash panels: the chevrons race along
+        if (v_layer == 12u) uv.y -= time * 1.6; // dash panels: the chevrons race forward, the way you are sent
         if (v_layer == 7u) { // water: two layers of ripples drifting past each other
             vec3 a = texture(textures, vec3(uv + vec2(time * 0.05, time * 0.03), 7.0)).rgb;
             vec3 b = texture(textures, vec3(uv * 1.7 - vec2(time * 0.04, -time * 0.06), 7.0)).rgb;
@@ -198,6 +200,17 @@ void main() {
         float g = pow(max(dot(reflect(-l, n), v), 0.0), 60.0);
         float tw = step(0.75, fract(sin(dot(floor(v_world.xz * 2.0), vec2(12.9898, 78.233)) + floor(frame.shadow.w * 6.0)) * 43758.5453));
         lit += sun_col * g * (0.4 + 1.6 * tw) * sun;
+    }
+    // Point lights: lamps, neon, lanterns and lava, with a soft wrap so the
+    // ground under a lamp catches it.
+    int lights = int(frame.camera_pos.w + 0.5);
+    for (int i = 0; i < lights; ++i) {
+        vec3 L = frame.light_pos[i].xyz - v_world;
+        float d = length(L);
+        float att = clamp(1.0 - d / frame.light_pos[i].w, 0.0, 1.0);
+        att *= att;
+        float wrap = max(dot(n, L / max(d, 1e-3)) * 0.7 + 0.3, 0.0);
+        lit += albedo * frame.light_col[i].rgb * att * wrap;
     }
     lit = mix(lit, albedo * 1.7, emission); // windows, neon and lamps light themselves
     if (draw.flags.w == 3) { // glow: a coloured rim and flash (hits, tricks, the Star)

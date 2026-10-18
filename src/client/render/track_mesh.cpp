@@ -1215,7 +1215,8 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
                                    : pillar ? (th_name == "sky" || th_name == "night" ? "tire_stack" : "barrel")
                                             : "crate";
                 const float h = 2.0f * o.half.y + 0.3f;
-                props->push_back({kind, mat4(vec4(o.right * o.half.x, 0.0f), vec4(o.up * h, 0.0f), vec4(o.forward * o.half.z, 0.0f), vec4(o.pos, 1.0f)), true});
+                // -right keeps the frame right-handed, so the faces point outward.
+                props->push_back({kind, mat4(vec4(-o.right * o.half.x, 0.0f), vec4(o.up * h, 0.0f), vec4(o.forward * o.half.z, 0.0f), vec4(o.pos, 1.0f)), true});
             }
         }
     }

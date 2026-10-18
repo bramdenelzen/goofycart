@@ -1375,7 +1375,19 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
     time_ = float(double(SDL_GetTicks()) / 1000.0);
     FrameUniforms u{};
     u.view_proj = proj * view;
-    u.camera_pos = vec4(camera.position, 1.0f);
+    {   // The nearest point lights, scaled by how far they reach.
+        std::vector<std::pair<float, const PointLight*>> order;
+        for (const PointLight& pl : lighting.lights) order.push_back({glm::distance(pl.pos, camera.position) - pl.radius, &pl});
+        std::partial_sort(order.begin(), order.begin() + std::min<size_t>(order.size(), size_t(kMaxLights)), order.end(),
+                          [](const auto& a, const auto& b) { return a.first < b.first; });
+        const int n = int(std::min<size_t>(order.size(), size_t(kMaxLights)));
+        for (int i = 0; i < n; ++i) {
+            const PointLight& pl = *order[size_t(i)].second;
+            u.light_pos[i] = vec4(pl.pos, pl.radius);
+            u.light_col[i] = vec4(pl.color * pl.intensity, 0.0f);
+        }
+        u.camera_pos = vec4(camera.position, float(n));
+    }
     u.light_dir = vec4(glm::normalize(lighting.light_dir), lighting.ambient);
     u.fog_color = vec4(lighting.sky, lighting.fog_density);
     u.sky_color = vec4(lighting.zenith, 1.0f);

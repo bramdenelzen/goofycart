@@ -35,6 +35,16 @@ struct Camera {
     float far_z = 1000.0f;
 };
 
+// A point light: lamps, neon signs, lanterns, lava. The renderer keeps the
+// kMaxLights nearest the camera each frame.
+struct PointLight {
+    vec3 pos;
+    float radius = 12.0f;  // where its light fades out (m)
+    vec3 color{1.0f};
+    float intensity = 1.0f;
+};
+constexpr int kMaxLights = 24;
+
 struct SceneLighting {
     vec3 light_dir = glm::normalize(vec3(0.6f, 0.62f, 0.45f)); // towards the light: a mid-morning sun
     float ambient = 0.45f;
@@ -44,6 +54,7 @@ struct SceneLighting {
     float sun = 1.0f; // strength of the direct light: 1 sun, ~0.35 moon
     vec3 zenith = {0.2f, 0.5f, 0.9f}; // sky light from straight above
     TextureId sky_texture = 0;        // painted sky (sky.h); 0 = a plain gradient
+    std::vector<PointLight> lights;   // any number; the nearest kMaxLights are used
 };
 
 struct RendererOptions {
@@ -201,6 +212,8 @@ private:
         vec4 sky_color;
         mat4 light_vp;
         vec4 shadow;
+        vec4 light_pos[kMaxLights]; // xyz, radius
+        vec4 light_col[kMaxLights]; // rgb * intensity; camera_pos.w holds the count
     };
     static constexpr uint32_t kFramesInFlight = 2;
     static constexpr uint32_t kShadowSize = 2048;

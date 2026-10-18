@@ -396,6 +396,21 @@ void App::show_track(const std::string& id) {
             }
             merged[p.name].append(pm->second.mesh, m);
         }
+        {   // Point lights where the glowing props stand.
+            std::vector<render::PointLight>& lights = track_lights_[shown_track_->id];
+            const bool night = shown_track_->theme == "night", dark = night || shown_track_->theme == "volcano";
+            for (const auto& p : placements) {
+                render::PointLight l;
+                if (p.name == "lamp_post") l.pos = vec3(p.transform * vec4(1.0f, 5.2f, 0.0f, 1.0f)), l.color = vec3(1.0f, 0.86f, 0.58f), l.radius = 20.0f, l.intensity = night ? 2.2f : 0.35f;
+                else if (p.name == "neon_pink") l.pos = vec3(p.transform * vec4(0.0f, 1.6f, 0.6f, 1.0f)), l.color = vec3(1.0f, 0.35f, 0.8f), l.radius = 14.0f, l.intensity = 1.1f;
+                else if (p.name == "neon_cyan") l.pos = vec3(p.transform * vec4(0.0f, 1.6f, 0.6f, 1.0f)), l.color = vec3(0.3f, 0.9f, 1.0f), l.radius = 14.0f, l.intensity = 1.1f;
+                else if (p.name == "lantern") l.pos = vec3(p.transform * vec4(0.0f, 0.0f, 0.0f, 1.0f)), l.color = vec3(1.0f, 0.72f, 0.38f), l.radius = 8.0f, l.intensity = 0.8f;
+                else if (p.name == "lava_rock") l.pos = vec3(p.transform * vec4(0.0f, 0.6f, 0.0f, 1.0f)), l.color = vec3(1.0f, 0.42f, 0.1f), l.radius = 11.0f, l.intensity = dark ? 0.9f : 0.5f;
+                else continue;
+                lights.push_back(l);
+            }
+            log_info("Track {}: {} point lights", shown_track_->id, lights.size());
+        }
         std::vector<render::MeshId>& ids = track_props_[shown_track_->id];
         for (auto& [name, builder] : merged) {
             const PropModel& pm = props_.at(name);
@@ -413,6 +428,7 @@ void App::show_track(const std::string& id) {
     track_mesh_ = it->second.first;
     scenery_mesh_ = it->second.second;
     prop_meshes_ = &track_props_[shown_track_->id];
+    lights_ = &track_lights_[shown_track_->id];
     const render::ThemeStyle& th = render::theme_style(shown_track_->theme);
     light_ = {};
     light_.sky = th.sky;
@@ -429,6 +445,7 @@ void App::show_track(const std::string& id) {
     }
     light_.fog_density = th.fog_density;
     light_.ambient = th.ambient;
+    light_.lights = *lights_;
     if (shown_track_->theme == "rainbow") { // a low, warm dusk sun
         light_.light_dir = glm::normalize(vec3(0.75f, 0.32f, 0.35f));
         light_.ambient = 0.6f;
@@ -1843,14 +1860,14 @@ void App::draw_breakables(const sim::World& w) {
                             const float yaw = 0.12f * std::sin(float(i * 7 + x * 3 + z * 5 + y));
                             const quat q = glm::angleAxis(yaw, o.up);
                             const vec3 r = q * o.right, f = q * o.forward;
-                            const mat4 m(vec4(r * (0.48f * cell.x * pop), 0.0f), vec4(o.up * (0.98f * cell.y * pop), 0.0f),
+                            const mat4 m(vec4(-r * (0.48f * cell.x * pop), 0.0f), vec4(o.up * (0.98f * cell.y * pop), 0.0f),
                                          vec4(f * (0.48f * cell.z * pop), 0.0f), vec4(c, 1.0f));
                             renderer_.draw(single_prop("crate"), fit_prop("crate", m));
                         }
             } else {
                 const char* name = o.breakable == B::Barrel ? (i % 2 ? "barrel_red" : "barrel")
                                  : o.breakable == B::Crystal ? "crystal" : "tire_stack";
-                const mat4 m(vec4(o.right * (o.half.x * pop), 0.0f), vec4(o.up * (h * pop), 0.0f), vec4(o.forward * (o.half.z * pop), 0.0f),
+                const mat4 m(vec4(-o.right * (o.half.x * pop), 0.0f), vec4(o.up * (h * pop), 0.0f), vec4(o.forward * (o.half.z * pop), 0.0f),
                              vec4(o.pos, 1.0f));
                 renderer_.draw(single_prop(name), fit_prop(name, m));
             }
@@ -1862,7 +1879,7 @@ void App::draw_breakables(const sim::World& w) {
                 // Rolls out on its side, then flops flat and settles.
                 const float t = std::min(1.0f, float(p.down) / 32.0f);
                 const float tilt = (1.0f - t) * 1.2f + 0.08f * std::sin(float(k) * 2.0f + float(p.down) * 0.2f) * (1.0f - t);
-                mat4 m(vec4(o.right * r, 0.0f), vec4(o.up * 0.5f, 0.0f), vec4(o.forward * r, 0.0f), vec4(at, 1.0f));
+                mat4 m(vec4(-o.right * r, 0.0f), vec4(o.up * 0.5f, 0.0f), vec4(o.forward * r, 0.0f), vec4(at, 1.0f));
                 m = glm::rotate(m, tilt, vec3(1, 0, 0));
                 renderer_.draw(single_prop("tire"), fit_prop("tire", m));
             }
@@ -2334,7 +2351,9 @@ void App::render_menu(float dt) {
     renderer_.draw(shadow_mesh_, glm::scale(glm::translate(kart_m, vec3(0, 0.03f, -0.02f)), vec3(1.15f, 1.0f, 1.55f)));
     const GpuModel* preview = options_.preview_model.empty() ? nullptr : assets_.item(options_.preview_model);
     if (!preview && !options_.preview_model.empty()) preview = assets_.driver(options_.preview_model); // drivers too
-    if (preview) {
+    if (!preview && !options_.preview_model.empty() && props_.count(options_.preview_model)) { // and map props
+        renderer_.draw(single_prop(options_.preview_model), kart_m);
+    } else if (preview) {
         draw_model(*preview, kart_m);
         // The kart's axes, for checking a model's orientation: red +X, green +Y, blue +Z.
         renderer_.draw(spark_mesh_, glm::scale(glm::translate(kart_m, vec3(1.5f, 0.1f, 0)), vec3(2.0f)), vec4(3, 0, 0, 1));
