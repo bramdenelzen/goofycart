@@ -217,18 +217,28 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         if (z.lo - 3.0f > lo - 1.5f && (z.hi + 3.0f > hi + 1.5f || offset - z.lo < z.hi - offset)) offset = z.lo - 3.0f;
         else if (z.hi + 3.0f < hi + 1.5f) offset = z.hi + 3.0f;
     }
-    // Barriers standing up ahead (gates shut, a door down): pass on the open side.
+    // Barriers standing up ahead (gates shut, a door down, hay bales): pass on
+    // the open side. The kart cuts across towards its aim point, so test where
+    // that path crosses the barrier, not where the aim point is: in a slalom
+    // the next bale stands between here and there.
+    const float target_z = std::max(to_local(k, tc.pos + tc.right * offset).z, 1.0f);
     for (const Track::Barrier& b : t.barriers) {
         if (!t.barrier_up(b)) continue;
         const Local l = to_local(k, b.pos);
         if (l.z < -2.0f || l.z > look + 12.0f || std::abs(l.y) > 4.0f) continue;
-        const float across = glm::dot(b.pos - tc.pos, tc.right);
-        const float half = std::abs(glm::dot(b.right, tc.right)) * b.half.x + std::abs(glm::dot(b.forward, tc.right)) * b.half.z + 1.6f;
-        if (offset < across - half || offset > across + half) continue;
+        const CenterSample& bs = t.sample(b.sample);
+        const float here = glm::dot(k.pos - bs.pos, bs.right);
+        const float f = std::clamp(l.z / target_z, 0.15f, 1.0f);
+        const float path = here + (offset - here) * f;
+        const float across = glm::dot(b.pos - bs.pos, bs.right);
+        const float half = std::abs(glm::dot(b.right, bs.right)) * b.half.x + std::abs(glm::dot(b.forward, bs.right)) * b.half.z + 1.6f;
+        if (path < across - half || path > across + half) continue;
         const float left = across - half, right = across + half;
         const bool left_ok = left > lo - 2.0f, right_ok = right < hi + 2.0f;
-        if (left_ok && (!right_ok || offset - left < right - offset)) offset = left;
-        else if (right_ok) offset = right;
+        float want = path;
+        if (left_ok && (!right_ok || path - left < right - path)) want = left;
+        else if (right_ok) want = right;
+        offset = std::clamp(here + (want - here) / f, lo - 1.0f, hi + 1.0f);
     }
     const vec3 target = tc.pos + tc.right * offset;
 

@@ -313,7 +313,6 @@ bool World::adopt_motion(int kart, const KartState& c, std::span<const KartInput
     if (glm::distance(k.pos, c.pos) > 45.0f) return false; // far beyond a stutter: not believable
     const float top = params_[size_t(kart)].top_speed * 2.2f;
     if (glm::length(c.velocity()) > top || std::abs(c.speed) > top) return false;
-    { static int n = 0; if (++n % 500 == 0) std::fprintf(stderr, "adopt d=%.3f fin=%d\n", glm::distance(k.pos, c.pos), int(c.finished)); }
     k.pos = c.pos;
     k.rot = glm::normalize(c.rot);
     k.speed = c.speed;
@@ -341,6 +340,10 @@ bool World::adopt_motion(int kart, const KartState& c, std::span<const KartInput
     k.visual_drift_yaw = c.visual_drift_yaw;
     k.wall_bump = c.wall_bump;
     k.stuck_frames = c.stuck_frames;
+    k.susp_y = c.susp_y, k.susp_vy = c.susp_vy;
+    k.susp_pitch = c.susp_pitch, k.susp_pitch_v = c.susp_pitch_v;
+    k.susp_roll = c.susp_roll, k.susp_roll_v = c.susp_roll_v;
+    k.susp_wobble = c.susp_wobble;
     // Boosts the kart earned by how it was driven (drift, slipstream, pads)
     // go with the movement; item boosts are the server's (they cost an item).
     const auto driven = [](BoostKind b) {
