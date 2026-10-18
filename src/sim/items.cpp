@@ -544,10 +544,14 @@ void World::items_after_step() {
 }
 
 void World::update_entities() {
+    // Homing shells follow the road to their target: onto the branch it's on.
+    auto shell_route = [&](const KartState& target) {
+        const int b = track_.sample(target.sample).branch;
+        return b >= 0 && b < 32 ? 1u << b : 0u;
+    };
     const auto& t = item_tuning_;
     const float g = tables_.constants.gravity;
     const int nk = int(karts_.size());
-    const int ns = int(track_.center.size());
     std::vector<bool> dead(entities_.size(), false);
     std::vector<WallContact> contacts;
     std::vector<ItemEntity> spawned;
@@ -592,12 +596,13 @@ void World::update_entities() {
                 dest = tk.pos + kUp * 0.5f;
             } else {
                 // Advance along the centre line towards the leader's sample.
+                const uint32_t route = shell_route(tk);
                 for (int step = 0; step < 6 && e.sample != tk.sample; ++step) {
-                    const vec3 c = track_.center[size_t(e.sample)].pos + kUp * 3.0f;
+                    const vec3 c = track_.sample(e.sample).pos + kUp * 3.0f;
                     if (glm::length(c - e.pos) > 4.0f) break;
-                    e.sample = int16_t((e.sample + 1) % ns);
+                    e.sample = int16_t(track_.next(e.sample, route));
                 }
-                dest = track_.center[size_t(e.sample)].pos + kUp * 3.0f;
+                dest = track_.sample(e.sample).pos + kUp * 3.0f;
             }
             const vec3 d = dest - e.pos;
             const float dist = glm::length(d);
@@ -615,12 +620,13 @@ void World::update_entities() {
                 if (glm::length(tk.pos - e.pos) < 22.0f) {
                     dest = tk.pos;
                 } else {
+                    const uint32_t route = shell_route(tk);
                     for (int step = 0; step < 6; ++step) {
-                        const vec3 c = track_.center[size_t(e.sample)].pos;
+                        const vec3 c = track_.sample(e.sample).pos;
                         if (glm::length(vec3(c.x - e.pos.x, 0, c.z - e.pos.z)) > 5.0f) break;
-                        e.sample = int16_t((e.sample + 1) % ns);
+                        e.sample = int16_t(track_.next(e.sample, route));
                     }
-                    dest = track_.center[size_t(e.sample)].pos;
+                    dest = track_.sample(e.sample).pos;
                 }
                 vec3 d = dest - e.pos;
                 d.y = 0.0f;

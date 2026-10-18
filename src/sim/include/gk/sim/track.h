@@ -12,6 +12,7 @@ namespace gk::sim {
 struct TrackTriangle {
     uint32_t a, b, c;
     Surface surface;
+    uint8_t group = 0; // 0 always there; k > 0 the road of Track::branches[k - 1] (gone while its gate is shut)
 };
 
 // One sample of the closed 3D spline that runs along the middle of the road.
@@ -25,6 +26,8 @@ struct CenterSample {
     float half_width = 6.0f;
     bool respawn_ok = true;
     bool has_floor = true; // false over gaps the glider crosses
+    int branch = -1;       // -1 the main loop, else the index in Track::branches
+    float u = 0.0f;        // distance along its own road (m): texture runs, not progress
 };
 
 struct RayHit {
@@ -41,6 +44,18 @@ struct WallContact {
 };
 
 class TrackCollision; // Jolt-backed, defined in track_collision.cpp
+
+// What opens and shuts during a race. Every condition reads only shared race
+// state (the race clock, the leader's lap, switch timers in the WorldState),
+// so the server and every predicting client agree on it tick by tick.
+struct Gate {
+    enum class When : uint8_t { Always, Laps, Cycle, Switch };
+    When when = When::Always;
+    int lap_lo = 1, lap_hi = 99;   // Laps: holds while the leader's lap is in [lo, hi]
+    int period = 600, open = 300, offset = 0; // Cycle (ticks): holds for `open` of every `period`, from `offset`
+    int sw = -1;                   // Switch: holds while that switch is pressed
+    bool invert = false;           // holds exactly when the rest would not
+};
 
 class Track {
 public:
@@ -105,6 +120,86 @@ public:
         int sample = 0;
     };
     std::vector<Mover> movers;
+
+    // ---- alternate roads and things that change during the race
+
+    // A side road: leaves the main loop at `fork`, rejoins it at `merge`.
+    // Its samples sit in `road` from `first`; their `s` runs from the fork's
+    // to the merge's, so progress, checkpoints and placings work on it.
+    struct Branch {
+        int fork = 0, merge = 0;       // main-loop samples
+        int first = 0, count = 0;      // its samples in `road`
+        uint32_t first_vertex = 0;     // its vertex grid (kStride per sample, as the main loop's)
+        int gate = -1;                 // open while this holds (-1 always)
+        bool vanish = false;           // shut: the road itself is gone (else a barrier closes its mouth)
+        float ai_share = 0.5f;         // the fraction of CPUs that take it when it's open
+        int side = 1;                  // +1 leaves on the right of the main road, -1 the left
+        std::string name;
+    };
+    std::vector<Branch> branches;
+    // Every sample of every road: the main loop (= `center`, first), then each
+    // branch's. A kart's `sample` indexes this.
+    std::vector<CenterSample> road;
+    const CenterSample& sample(int i) const { return road[size_t(i)]; }
+
+    std::vector<Gate> gates;
+    // Whether each gate holds this tick; set by the World. Empty: everything open.
+    std::vector<uint8_t> gate_state;
+    bool gate_holds(int g) const { return g < 0 || size_t(g) >= gate_state.size() || gate_state[size_t(g)] != 0; }
+    bool branch_open(int b) const { return gate_holds(branches[size_t(b)].gate); }
+    // A road that vanishes stays while anyone is on it (set by the World), so
+    // it never drops out from under a kart; its mouth is fenced off meanwhile.
+    std::vector<uint8_t> branch_busy;
+    bool branch_present(int b) const {
+        const Branch& br = branches[size_t(b)];
+        return !br.vanish || branch_open(b) || (size_t(b) < branch_busy.size() && branch_busy[size_t(b)]);
+    }
+
+    // A pad on the road: driving over it presses it for `hold` ticks.
+    struct Switch {
+        vec3 pos{0.0f};
+        vec3 forward{0, 0, 1}, right{1, 0, 0}, up{0, 1, 0};
+        float radius = 2.5f;
+        int hold = 600;
+        int sample = 0;
+    };
+    std::vector<Switch> switches;
+
+    // A wall that stands while its gate holds and sinks into the road when it
+    // doesn't: closing doors, rising bollards, a branch's mouth.
+    struct Barrier {
+        vec3 pos{0.0f};                // base centre
+        vec3 forward{0, 0, 1}, right{1, 0, 0}, up{0, 1, 0};
+        vec3 half{4.0f, 1.0f, 0.5f};   // across, height / 2, along (m)
+        int gate = -1;
+        int sample = 0;
+        int branch = -1;               // closes this branch's mouth (drawn as its gate)
+    };
+    std::vector<Barrier> barriers;
+    bool barrier_up(const Barrier& b) const { return gate_holds(b.gate); }
+
+    // A stretch of road whose surface changes while its gate holds: a flood,
+    // an oil spill, black ice, a dash strip, lava (out of bounds).
+    struct Zone {
+        int first = 0, count = 0;      // samples in `road`, consecutive on one road
+        float lo = -1e9f, hi = 1e9f;   // across the road (m from its centre, + right)
+        Surface surface = Surface::Water;
+        int gate = -1;
+    };
+    std::vector<Zone> zones;
+    // The surface a zone puts at `p` (on road sample `sample`), if one is active there.
+    std::optional<Surface> zone_surface(vec3 p, int sample) const;
+
+    // Walking the roads: the sample `steps` on (or back), taking the open
+    // branches whose bit is set in `route` at their forks.
+    int next(int i, uint32_t route = 0) const;
+    int prev(int i) const;
+    int advance(int i, int steps, uint32_t route = 0) const;
+    // The main-loop sample level with road sample `i` (same distance from the line).
+    int main_sample(int i) const;
+    // A road's samples, for drawing: [0] the main loop, then one per branch.
+    struct Strip { int first, count; uint32_t first_vertex; bool closed; int branch; };
+    std::vector<Strip> strips() const;
     // The world tick the movers stand at for collision (set by the World).
     double mover_time = 0.0;
     vec3 mover_pos(size_t i, double tick) const;
@@ -120,7 +215,7 @@ public:
         float curvature = 0.0f;
         bool blocked = false;        // an obstacle narrows the band here
     };
-    std::vector<LinePoint> line;
+    std::vector<LinePoint> line;     // one per `road` sample
     bool closed = true;              // the centre line loops (a lap circuit)
 
     // Builds the collision structure and the racing line. Call after filling the geometry.
@@ -132,9 +227,9 @@ public:
     // Contacts between a sphere and the track (walls and floors).
     void collide_sphere(vec3 center, float radius, std::vector<WallContact>& out) const;
 
-    // Index of the centre sample nearest to `p`, searching around `hint` first.
+    // Index of the road sample nearest to `p`, searching around `hint` first.
     int nearest_sample(vec3 p, int hint = -1) const;
-    // Which checkpoint region a sample belongs to.
+    // Which checkpoint region a road sample belongs to.
     int checkpoint_of(int sample) const;
     // Start grid: position and facing for each of up to 12 slots.
     struct Slot { vec3 pos; vec3 forward; };
@@ -142,7 +237,8 @@ public:
     int respawn_sample_before(int sample) const;
 
 private:
-    std::unique_ptr<TrackCollision> collision_;
+    bool group_present(size_t group) const;
+    std::vector<std::unique_ptr<TrackCollision>> collision_;
 };
 
 // The greybox test track: hills, a trick ramp, a glide ramp over a chasm,

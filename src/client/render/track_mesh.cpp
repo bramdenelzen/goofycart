@@ -137,7 +137,7 @@ std::pair<uint32_t, uint32_t> obstacle_look(const std::string& theme, bool pilla
     return {TexWood, rgba(196, 150, 96)}; // crates
 }
 
-MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
+MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles, int group) {
     const ThemeStyle& th = theme_style(t.theme);
     MeshBuilder b;
     const sim::CenterSample& start = t.center.front();
@@ -147,13 +147,22 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
     std::vector<int> obstacle_of(t.triangles.size(), -1);
     for (size_t o = 0; o < t.obstacles.size(); ++o)
         for (uint32_t i = 0; i < t.obstacles[o].tri_count; ++i) obstacle_of[t.obstacles[o].first_tri + i] = int(o);
+    // Every road's vertex grid: the main loop's, then each branch's.
+    const std::vector<sim::Track::Strip> strips = t.strips();
+    auto strip_of = [&](uint32_t vi) {
+        for (size_t k = 0; k < strips.size(); ++k)
+            if (vi >= strips[k].first_vertex && vi < strips[k].first_vertex + uint32_t(strips[k].count * kStride)) return int(k);
+        return -1;
+    };
 
     // Texture coordinates that follow the road: along it by distance and
     // across it by metres from the centre (or up a wall).
     auto road_uv = [&](uint32_t vi, bool wall, float tile, bool seam) {
-        const int sample = int(vi / kStride), col = int(vi % kStride);
-        const sim::CenterSample& c = t.center[size_t(sample)];
-        const float s = (seam && sample == 0) ? t.length : c.s;
+        const sim::Track::Strip& st = strips[size_t(std::max(strip_of(vi), 0))];
+        const uint32_t local = vi - st.first_vertex;
+        const int sample = int(local / kStride), col = int(local % kStride);
+        const sim::CenterSample& c = t.road[size_t(st.first + sample)];
+        const float s = (seam && sample == 0) ? t.length : c.u;
         const vec3 d = t.vertices[vi] - c.pos;
         if (wall) return vec2(s / tile, (col >= 7 ? -glm::dot(d, c.up) : 0.0f) / tile);
         return vec2(glm::dot(d, c.right) / tile, s / tile);
@@ -161,6 +170,7 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
 
     for (size_t ti = 0; ti < t.triangles.size(); ++ti) {
         const auto& tri = t.triangles[ti];
+        if (group >= 0 && tri.group != group) continue;
         const vec3 a = t.vertices[tri.a], c1 = t.vertices[tri.b], c2 = t.vertices[tri.c];
         const vec3 centroid = (a + c1 + c2) / 3.0f;
         if (obstacle_of[ti] >= 0) {
@@ -183,14 +193,16 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
             color = (int(std::floor(across)) & 1) ? rgba(20, 20, 20) : rgba(240, 240, 240);
         b.texture(surface_texture(t.theme, tri.surface), tri.surface == sim::Surface::OutOfBounds ? 8.0f : 2.0f);
 
-        const bool on_grid = tri.a < grid_end && tri.b < grid_end && tri.c < grid_end;
+        const int sa = strip_of(tri.a), sb = strip_of(tri.b), sc = strip_of(tri.c);
+        const bool on_grid = sa >= 0 && sb >= 0 && sc >= 0;
         if (!on_grid) {
             b.tri(a, c1, c2, color);
             continue;
         }
         const bool wall = tri.surface == sim::Surface::Wall;
-        if (wall && skip_obstacles) continue; // painted walls (trackside.cpp)
-        const bool seam = std::max({tri.a, tri.b, tri.c}) / kStride == uint32_t(n - 1) &&
+        const bool one_road = sa == sb && sb == sc;
+        if (wall && skip_obstacles && one_road) continue; // painted walls (trackside.cpp)
+        const bool seam = sa == 0 && sb == 0 && sc == 0 && std::max({tri.a, tri.b, tri.c}) / kStride == uint32_t(n - 1) &&
                           std::min({tri.a, tri.b, tri.c}) / kStride == 0;
         const bool pad = tri.surface == sim::Surface::BoostPad || tri.surface == sim::Surface::GlideRamp;
         const float tile = pad ? 4.0f : tri.surface == sim::Surface::TrickRamp ? 3.0f : 2.0f;
@@ -244,6 +256,17 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles) {
         }
     }
     return b.take();
+}
+
+// Whether `p` is within `margin` of a side road's edge (from above when
+// `flat`, and only within `max_dy` up or down): scenery keeps off them.
+bool near_branch(const sim::Track& t, vec3 p, float margin, bool flat, float max_dy = 1e9f) {
+    for (size_t j = t.center.size(); j < t.road.size(); j += 2) {
+        const sim::CenterSample& o = t.road[j];
+        const float d = flat ? glm::length(vec2(o.pos.x - p.x, o.pos.z - p.z)) : glm::distance(o.pos, p);
+        if (d < o.half_width + margin && std::abs(o.pos.y - p.y) < max_dy) return true;
+    }
+    return false;
 }
 
 // ---- trackside detail: kerbs, wall rails and posts, a start gantry,
@@ -400,7 +423,7 @@ void grandstands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng&
             if (std::abs(j - at) < 12 || std::abs(j - at) > n - 12) continue;
             clear = glm::length(vec2(t.center[size_t(j)].pos.x - base.x, t.center[size_t(j)].pos.z - base.z)) > t.center[size_t(j)].half_width + 10.0f;
         }
-        if (!clear) continue;
+        if (!clear || near_branch(t, base, 10.0f, true)) continue;
         MeshBuilder g;
         g.texture(TexPanel, 2.0f);
         const float len = 14.0f;
@@ -463,7 +486,7 @@ void hills(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng& rnd, 
             const sim::CenterSample& c = t.center[j];
             clear = glm::length(vec2(c.pos.x - p.x, c.pos.z - p.z)) > c.half_width + r * 0.9f || c.pos.y > floor_y + h + 4.0f;
         }
-        if (!clear) continue;
+        if (!clear || near_branch(t, p, r * 0.9f, true)) continue;
         std::vector<vec2> prof{{r, -2.0f}, {r * 0.92f, h * 0.2f}, {r * 0.7f, h * 0.55f}, {r * 0.38f, h * 0.85f}, {0.0f, h}};
         b.lathe(p, kUp, prof, 18, col, 8.0f, 2.0f);
     }
@@ -534,7 +557,7 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
             if (std::min(along, n - along) < 14) continue;
             clear = glm::distance(t.center[size_t(j)].pos, pos) > t.center[size_t(j)].half_width + 10.0f;
         }
-        if (clear) out.push_back({"grandstand", oriented(c, pos, glm::cross(c.up, -outward), 1.0f)});
+        if (clear && !near_branch(t, pos, 10.0f, false)) out.push_back({"grandstand", oriented(c, pos, glm::cross(c.up, -outward), 1.0f)});
     }
     // Billboards where the road runs straight for a while.
     for (int i = 30; i < n - 30; i += 70) {
@@ -552,7 +575,7 @@ void wall_props(const sim::Track& t, const ThemeStyle& th, const std::vector<boo
             if (std::min(along, n - along) < 12) continue;
             clear = glm::distance(t.center[size_t(j)].pos, pos) > t.center[size_t(j)].half_width + 8.0f;
         }
-        if (!clear) continue;
+        if (!clear || near_branch(t, pos, 8.0f, false)) continue;
         // The board's front is +Z: turn it to face the road.
         const vec3 z = -outward;
         const vec3 x = glm::normalize(glm::cross(c.up, z));
@@ -590,7 +613,7 @@ void roadside_islands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th,
             const sim::CenterSample& o = t.center[size_t(j)];
             clear = glm::length(vec2(o.pos.x - centre.x, o.pos.z - centre.z)) > o.half_width + r + 5.0f || std::abs(o.pos.y - centre.y) > 14.0f;
         }
-        if (!clear) continue;
+        if (!clear || near_branch(t, centre, r + 5.0f, true, 14.0f)) continue;
         const float yaw = rnd() * 6.28f;
         if (th.scenery == S::Clouds) {
             place("cloud", centre - vec3(0, 2.5f, 0), yaw, 0.35f + rnd() * 0.2f);
@@ -666,7 +689,7 @@ void market_town(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng&
             const sim::CenterSample& o = t.center[size_t(j)];
             if (glm::length(vec2(o.pos.x - p.x, o.pos.z - p.z)) < o.half_width + r + 2.0f && std::abs(o.pos.y - p.y) < 12.0f) return false;
         }
-        return true;
+        return !near_branch(t, p, r + 2.0f, true, 12.0f);
     };
     const char* houses[5] = {"house_1", "house_2", "house_3", "house_4", "house_5"};
     std::vector<std::pair<vec3, vec3>> fronts[2]; // per side: house front top points, for lantern strings
@@ -794,7 +817,7 @@ Ground make_ground(const sim::Track& t, const ThemeStyle& th) {
     Ground g;
     const GroundLook look = ground_look(th);
     vec3 lo(1e9f), hi(-1e9f);
-    for (const auto& c : t.center) lo = glm::min(lo, c.pos), hi = glm::max(hi, c.pos);
+    for (const auto& c : t.road) lo = glm::min(lo, c.pos), hi = glm::max(hi, c.pos);
     const float margin = 280.0f;
     g.x0 = lo.x - margin, g.z0 = lo.z - margin;
     g.nx = int((hi.x - lo.x + 2.0f * margin) / g.cell) + 1;
@@ -805,9 +828,11 @@ Ground make_ground(const sim::Track& t, const ThemeStyle& th) {
     // Every road sample pulls the ground towards just under itself, strongly
     // close by and fading out over ~45 m; the lowest nearby road wins, so a
     // bridge never buries the road beneath it.
-    for (const sim::CenterSample& c : t.center) {
+    for (const sim::CenterSample& c : t.road) {
         const float inner = c.half_width + 5.0f, outer = c.half_width + 46.0f;
-        const float y = c.has_floor ? c.pos.y - 0.9f : c.pos.y - 16.0f; // a ravine under a glide
+        // A ravine under a glide, and under a road that can vanish.
+        const bool can_vanish = c.branch >= 0 && t.branches[size_t(c.branch)].vanish;
+        const float y = c.has_floor && !can_vanish ? c.pos.y - 0.9f : c.pos.y - 16.0f;
         const int i0 = std::max(0, int((c.pos.x - outer - g.x0) / g.cell)), i1 = std::min(g.nx - 1, int((c.pos.x + outer - g.x0) / g.cell) + 1);
         const int j0 = std::max(0, int((c.pos.z - outer - g.z0) / g.cell)), j1 = std::min(g.nz - 1, int((c.pos.z + outer - g.z0) / g.cell) + 1);
         for (int j = j0; j <= j1; ++j)
@@ -925,7 +950,7 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
             bool clear = true;
             for (size_t j = 0; j < t.center.size() && clear; j += 4)
                 clear = glm::length(vec2(t.center[j].pos.x - base.x, t.center[j].pos.z - base.z)) > t.center[j].half_width + 12.0f;
-            if (!clear) continue;
+            if (!clear || near_branch(t, base, 12.0f, true)) continue;
             if (ground.valid() && props) { // standing on the terrain, no islands
                 base.y = ground.height(base.x, base.z) + 0.1f;
                 const float yaw = rnd() * 6.28f;
@@ -1255,6 +1280,81 @@ MeshData make_oil_mesh(const sim::Track& t) {
         if (tri.surface != sim::Surface::Oil) continue;
         const vec3 lift(0.0f, 0.03f, 0.0f);
         b.tri(t.vertices[tri.a] + lift, t.vertices[tri.b] + lift, t.vertices[tri.c] + lift, rgba(255, 255, 255));
+    }
+    return b.take();
+}
+
+MeshData make_zone_mesh(const sim::Track& t, const sim::Track::Zone& z) {
+    MeshBuilder b;
+    const bool lava = z.surface == sim::Surface::OutOfBounds;
+    const bool volcano = t.theme == "volcano";
+    const uint32_t color = lava ? (volcano ? rgba(255, 120, 30) : rgba(40, 110, 200)) : surface_color(theme_style(t.theme), z.surface);
+    b.texture(lava ? (volcano ? TexRock : TexWater) : surface_texture(t.theme, z.surface), z.surface == sim::Surface::BoostPad ? 4.0f : 2.0f);
+    for (int i = z.first; i + 1 < z.first + z.count; ++i) {
+        const sim::CenterSample &c = t.road[size_t(i)], &d = t.road[size_t(i + 1)];
+        if (!c.has_floor || !d.has_floor) continue;
+        auto edge = [&](const sim::CenterSample& e, float side) {
+            const float w = e.half_width + 0.6f;
+            const float lat = side < 0.0f ? std::max(z.lo, -w) : std::min(z.hi, w);
+            return e.pos + e.right * lat + e.up * 0.05f;
+        };
+        const vec3 a0 = edge(c, -1), a1 = edge(c, 1), b0 = edge(d, -1), b1 = edge(d, 1);
+        const vec2 ua(glm::dot(a0 - c.pos, c.right) * 0.5f, c.u * 0.5f), ub(glm::dot(a1 - c.pos, c.right) * 0.5f, c.u * 0.5f),
+            uc(glm::dot(b1 - d.pos, d.right) * 0.5f, d.u * 0.5f), ud(glm::dot(b0 - d.pos, d.right) * 0.5f, d.u * 0.5f);
+        if (glm::dot(glm::cross(a1 - a0, b1 - a0), c.up) >= 0.0f) b.quad_uv(a0, a1, b1, b0, ua, ub, uc, ud, color);
+        else b.quad_uv(a0, b0, b1, a1, ua, ud, uc, ub, color);
+    }
+    return b.take();
+}
+
+MeshData make_barrier_mesh(const sim::Track::Barrier& bar) {
+    // In the barrier's frame: x across, y up, z along the road. Red and white
+    // panels between yellow posts, the classic closed-road look.
+    MeshBuilder b;
+    const float hx = bar.half.x, h = 2.0f * bar.half.y, hz = bar.half.z;
+    const bool long_fence = hz > hx; // a fence along a road edge rather than across it
+    b.texture(TexWhite);
+    const float span = long_fence ? hz : hx;
+    const int panels = std::max(1, int(span * 2.0f / 1.6f));
+    for (int i = 0; i < panels; ++i) {
+        const float a = -span + 2.0f * span * float(i) / float(panels), c = a + 2.0f * span / float(panels);
+        const uint32_t col = (i & 1) ? rgba(245, 245, 245) : rgba(220, 45, 40);
+        const vec3 centre = long_fence ? vec3(0.0f, 0.5f * h, 0.5f * (a + c)) : vec3(0.5f * (a + c), 0.5f * h, 0.0f);
+        const vec3 half = long_fence ? vec3(std::min(hx, 0.2f), 0.42f * h, 0.5f * (c - a)) : vec3(0.5f * (c - a), 0.42f * h, std::min(hz, 0.2f));
+        b.box(centre, half, col);
+    }
+    for (int i = 0; i <= panels; i += std::max(1, panels / 4)) {
+        const float a = -span + 2.0f * span * float(i) / float(panels);
+        const vec3 p = long_fence ? vec3(0.0f, 0.0f, a) : vec3(a, 0.0f, 0.0f);
+        b.box(p + vec3(0.0f, 0.5f * h + 0.05f, 0.0f), vec3(0.16f, 0.5f * h + 0.05f, 0.16f), rgba(255, 205, 40));
+    }
+    b.box({0.0f, h + 0.06f, 0.0f}, long_fence ? vec3(0.12f, 0.06f, hz) : vec3(hx, 0.06f, 0.12f), rgba(255, 205, 40));
+    return b.take();
+}
+
+MeshData make_switch_mesh(float radius, bool on) {
+    // A big round button set in a hazard-striped ring, flat on the road.
+    MeshBuilder b;
+    b.texture(TexWhite);
+    const int seg = 28;
+    for (int i = 0; i < seg; ++i) {
+        const float a0 = 2.0f * kPi * float(i) / float(seg), a1 = 2.0f * kPi * float(i + 1) / float(seg);
+        auto P = [](float a, float r, float y) { return vec3(std::cos(a) * r, y, std::sin(a) * r); };
+        // Wound to face up and out.
+        auto up_tri = [&](vec3 p, vec3 q, vec3 r, uint32_t col) {
+            if (glm::cross(q - p, r - p).y < 0.0f) std::swap(q, r);
+            b.tri(p, q, r, col);
+        };
+        auto up_quad = [&](vec3 p, vec3 q, vec3 r, vec3 w, uint32_t col) {
+            if (glm::cross(q - p, r - p).y < 0.0f) b.quad(p, w, r, q, col);
+            else b.quad(p, q, r, w, col);
+        };
+        const uint32_t ring = (i / 2) % 2 ? rgba(30, 30, 36) : rgba(255, 200, 30);
+        up_quad(P(a0, radius, 0.03f), P(a0, radius * 0.72f, 0.03f), P(a1, radius * 0.72f, 0.03f), P(a1, radius, 0.03f), ring);
+        const float top = on ? 0.06f : 0.22f;
+        const uint32_t cap = on ? rgba(70, 230, 110) : rgba(230, 60, 50);
+        up_tri(vec3(0.0f, top, 0.0f), P(a0, radius * 0.66f, top), P(a1, radius * 0.66f, top), cap);
+        up_quad(P(a0, radius * 0.66f, top), P(a0, radius * 0.7f, 0.03f), P(a1, radius * 0.7f, 0.03f), P(a1, radius * 0.66f, top), shade(cap, 0.7f));
     }
     return b.take();
 }

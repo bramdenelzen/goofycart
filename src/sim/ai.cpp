@@ -18,11 +18,25 @@ namespace {
 float sign(float x) { return x < 0.0f ? -1.0f : 1.0f; }
 
 // Total heading change of the racing line over the next `metres` (radians, + = right).
-float turn_ahead(const Track& t, int from, float metres, float spacing) {
+float turn_ahead(const Track& t, int from, float metres, float spacing, uint32_t route) {
     const int steps = std::max(1, int(metres / spacing));
     float sum = 0.0f;
-    for (int i = 0; i < steps; ++i) sum += t.line[size_t(t.wrap(from + i))].curvature * spacing;
+    for (int i = 0, s = from; i < steps; ++i, s = t.next(s, route)) sum += t.line[size_t(s)].curvature * spacing;
     return sum;
+}
+
+// Which side roads this CPU takes this lap: a fixed mix per branch, so the
+// field spreads over them, and the same on the server and every client.
+uint32_t cpu_route(const World& w, int kart) {
+    const Track& t = w.track();
+    const KartState& k = w.karts()[size_t(kart)];
+    uint32_t route = 0;
+    for (size_t b = 0; b < t.branches.size() && b < 32; ++b) {
+        uint32_t h = uint32_t(kart + 1) * 2654435761u ^ uint32_t(k.lap) * 40503u ^ uint32_t(b + 1) * 2246822519u;
+        h ^= h >> 15, h *= 2246822519u, h ^= h >> 13;
+        if (float(h % 1000u) < t.branches[b].ai_share * 1000.0f) route |= 1u << b;
+    }
+    return route;
 }
 
 // A point in the kart's frame: x to the right, z ahead, y up.
@@ -89,7 +103,8 @@ float cpu_rubber_band(CpuLevel level) {
 KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     const KartState& k = world.karts()[size_t(kart)];
     const Track& t = world.track();
-    if (t.center.empty() || t.line.size() != t.center.size()) return autopilot(k, t, skill.lookahead);
+    if (t.center.empty() || t.line.size() != t.road.size()) return autopilot(k, t, skill.lookahead);
+    const uint32_t route = cpu_route(world, kart);
 
     KartInput in;
     in.accelerate = true;
@@ -109,16 +124,15 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
 
     // ---- where to aim: racing line, nudged for item boxes and obstacles
     const float look = skill.lookahead + speed * 0.4f;
-    int target_sample = t.wrap(k.sample + std::max(1, int(std::ceil(look / spacing))));
+    int target_sample = t.advance(k.sample, std::max(1, int(std::ceil(look / spacing))), route);
     // On the wrong side of an obstacle ahead: aim at the gap beside it.
-    for (int s = k.sample + 1; t.wrap(s) != target_sample; ++s) {
-        const int i = t.wrap(s);
+    for (int i = t.next(k.sample, route), guard = 0; i != target_sample && guard < 200; i = t.next(i, route), ++guard) {
         if (!t.line[size_t(i)].blocked) continue;
-        const float lat = glm::dot(k.pos - t.center[size_t(i)].pos, t.center[size_t(i)].right);
-        if (lat < t.line[size_t(i)].lo - 0.3f || lat > t.line[size_t(i)].hi + 0.3f) target_sample = t.wrap(i + 2);
+        const float lat = glm::dot(k.pos - t.sample(i).pos, t.sample(i).right);
+        if (lat < t.line[size_t(i)].lo - 0.3f || lat > t.line[size_t(i)].hi + 0.3f) target_sample = t.advance(i, 2, route);
         break;
     }
-    const CenterSample& tc = t.center[size_t(target_sample)];
+    const CenterSample& tc = t.sample(target_sample);
     const Track::LinePoint& lp = t.line[size_t(target_sample)];
     float offset = lp.offset * skill.line_follow + skill.lane;
 
@@ -134,6 +148,16 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
             if (cost < best) best = cost, best_off = box_off;
         }
         offset = best_off;
+    }
+    // A side road this CPU wants that opens with a switch: drive over the switch.
+    for (size_t b = 0; b < t.branches.size() && b < 32; ++b) {
+        const int g = t.branches[b].gate;
+        if (!(route >> b & 1u) || g < 0 || t.branch_open(int(b))) continue;
+        const Gate& gate = t.gates[size_t(g)];
+        if (gate.when != Gate::When::Switch || gate.invert || gate.sw < 0 || size_t(gate.sw) >= t.switches.size()) continue;
+        const Track::Switch& sw = t.switches[size_t(gate.sw)];
+        const Local l = to_local(k, sw.pos);
+        if (l.z > 3.0f && l.z < 35.0f && std::abs(l.x) < 12.0f && std::abs(l.y) < 3.0f) offset = glm::dot(sw.pos - tc.pos, tc.right);
     }
     if (skill.avoids) {
         float shift = 0.0f;
@@ -155,8 +179,8 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     // Obstacles between here and the target: aim so the straight path there
     // passes them on the open side.
     float lo = lp.lo, hi = lp.hi;
-    for (int s = k.sample + 1; t.wrap(s) != target_sample; ++s) {
-        const Track::LinePoint& b = t.line[size_t(t.wrap(s))];
+    for (int i = t.next(k.sample, route), guard = 0; i != target_sample && guard < 200; i = t.next(i, route), ++guard) {
+        const Track::LinePoint& b = t.line[size_t(i)];
         if (!b.blocked) continue;
         if (std::max(lo, b.lo) > std::min(hi, b.hi)) { // can't satisfy both: the nearer obstacle wins
             lo = b.lo, hi = b.hi;
@@ -165,6 +189,19 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         lo = std::max(lo, b.lo), hi = std::min(hi, b.hi);
     }
     offset = std::clamp(offset, lo, hi);
+    // Barriers standing up ahead (gates shut, a door down): pass on the open side.
+    for (const Track::Barrier& b : t.barriers) {
+        if (!t.barrier_up(b)) continue;
+        const Local l = to_local(k, b.pos);
+        if (l.z < -2.0f || l.z > look + 12.0f || std::abs(l.y) > 4.0f) continue;
+        const float across = glm::dot(b.pos - tc.pos, tc.right);
+        const float half = std::abs(glm::dot(b.right, tc.right)) * b.half.x + std::abs(glm::dot(b.forward, tc.right)) * b.half.z + 1.6f;
+        if (offset < across - half || offset > across + half) continue;
+        const float left = across - half, right = across + half;
+        const bool left_ok = left > lo - 2.0f, right_ok = right < hi + 2.0f;
+        if (left_ok && (!right_ok || offset - left < right - offset)) offset = left;
+        else if (right_ok) offset = right;
+    }
     const vec3 target = tc.pos + tc.right * offset;
 
     // ---- pure pursuit: the arc through the target gives the yaw rate we need.
@@ -210,8 +247,8 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
             // Reversing turns the nose the other way to the stick: swing it
             // towards the target, or away from the side that's blocked.
             // The open side of the road: towards the middle of the CPU band.
-            const CenterSample& here = t.center[size_t(t.wrap(k.sample))];
-            const Track::LinePoint& band = t.line[size_t(t.wrap(k.sample + 3))];
+            const CenterSample& here = t.sample(k.sample);
+            const Track::LinePoint& band = t.line[size_t(t.advance(k.sample, 3, route))];
             const float lat = glm::dot(k.pos - here.pos, here.right), mid = 0.5f * (band.lo + band.hi);
             const float want = std::abs(mid - lat) > 0.8f ? sign(mid - lat) : side_hit > 0.0f ? -1.0f : 1.0f;
             in.steer = -want;
@@ -222,27 +259,28 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     // ---- drifting
     // Drift into any corner that keeps turning the same way for a while, even
     // a gentle one: chaining mini-turbos is where the time is.
-    const float turn = turn_ahead(t, k.sample + int(4.0f / spacing), 30.0f, spacing);
-    const float turn_long = turn_ahead(t, k.sample + int(4.0f / spacing), 55.0f, spacing);
+    const int ahead4 = t.advance(k.sample, int(4.0f / spacing), route);
+    const float turn = turn_ahead(t, ahead4, 30.0f, spacing, route);
+    const float turn_long = turn_ahead(t, ahead4, 55.0f, spacing, route);
     const bool going_right_way = to.z > 0.5f;
     // A drift can't turn gentler than this; only drift where the corner needs most of it.
     const float min_drift_yaw = p.turn_rate * drift_turn_target(c, p, -1.0f) * speed_fac;
-    const float near_turn = turn_ahead(t, k.sample + 1, 14.0f, spacing);
+    const float near_turn = turn_ahead(t, t.next(k.sample, route), 14.0f, spacing, route);
     const float corner_yaw = std::abs(near_turn) / 14.0f * speed;
     const bool want_drift = skill.drifts && k.grounded && going_right_way && speed > c.min_drift_speed + 3.0f &&
                             std::abs(turn) > 0.3f && near_turn * turn > 0.0f && turn_long * sign(turn) > 0.45f && corner_yaw > 0.85f * min_drift_yaw &&
                             !is_offroad(k.surface) && k.bullet_frames == 0 && k.boost_frames == 0;
     // Room left before the inside edge of the road, for a drift towards `dir`.
     auto room_inside = [&](float dir) {
-        const CenterSample& here = t.center[size_t(t.wrap(k.sample))];
-        const Track::LinePoint& band = t.line[size_t(t.wrap(k.sample))];
+        const CenterSample& here = t.sample(k.sample);
+        const Track::LinePoint& band = t.line[size_t(k.sample)];
         const float lat = glm::dot(k.pos - here.pos, here.right);
         return dir < 0.0f ? lat - band.lo : band.hi - lat;
     };
     if (k.drift == DriftState::Drifting) {
         const float dir = float(k.drift_dir);
         float rel = drift_rel_for(c, p, yaw_needed * dir / (p.turn_rate * speed_fac)); // +1 = into the turn
-        const float rest = turn_ahead(t, k.sample, 12.0f, spacing) * dir;
+        const float rest = turn_ahead(t, k.sample, 12.0f, spacing, route) * dir;
         const int tier = k.mt_tier(c);
         // Let go once the wanted mini-turbo is ready (and drift again if the
         // corner goes on), when the drift turns tighter than the line, or
@@ -281,7 +319,7 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     // ---- items
     if (!world.racing() || k.finished) return in;
     const bool react = int((tick / 6u + uint32_t(kart) * 5u) % 8u) < skill.reaction;
-    const bool straight_ahead = std::abs(turn_ahead(t, k.sample, 25.0f, spacing)) < 0.35f;
+    const bool straight_ahead = std::abs(turn_ahead(t, k.sample, 25.0f, spacing, route)) < 0.35f;
     const bool can_boost = k.grounded && !k.gliding && k.boost_frames == 0 && (straight_ahead || is_offroad(k.surface));
     if (k.golden_frames > 0) {
         if (can_boost) in.item = !k.item_button_prev;

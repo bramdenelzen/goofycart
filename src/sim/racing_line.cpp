@@ -72,27 +72,84 @@ bool pad_span(const Track& t, const CenterSample& c, float& lo, float& hi) {
 
 } // namespace
 
+namespace {
+
+// Relaxes the line along a chain of road samples: wide stencil first to find
+// the overall shape, then narrow to smooth. The final 1-sample pass matters:
+// wider stencils alone leave every third sample on its own chain, free to
+// zig-zag against its neighbours. `fixed` samples keep their offset (the
+// main road either side of a branch).
+void relax(Track& t, const std::vector<int>& chain, bool closed, const std::vector<bool>& fixed) {
+    const int m = int(chain.size());
+    std::vector<float> next(static_cast<size_t>(m));
+    auto at = [&](int k) { return closed ? chain[size_t(((k % m) + m) % m)] : chain[size_t(std::clamp(k, 0, m - 1))]; };
+    for (int stencil : {12, 6, 3, 1}) {
+        for (int iter = 0; iter < 300; ++iter) {
+            for (int k = 0; k < m; ++k) {
+                Track::LinePoint& lp = t.line[size_t(chain[size_t(k)])];
+                if (fixed[size_t(k)] || (!closed && (k - 2 * stencil < 0 || k + 2 * stencil >= m))) { // near an open end
+                    next[size_t(k)] = lp.offset;
+                    continue;
+                }
+                // Zero fourth difference: the point a smooth (least-bending) curve
+                // through the neighbours would pass.
+                const vec3 mid = (4.0f * (t.line_point(at(k - stencil)) + t.line_point(at(k + stencil))) - t.line_point(at(k - 2 * stencil)) -
+                                  t.line_point(at(k + 2 * stencil))) / 6.0f;
+                const CenterSample& c = t.road[size_t(chain[size_t(k)])];
+                const float want = glm::dot(mid - c.pos, c.right);
+                next[size_t(k)] = std::clamp(glm::mix(lp.offset, want, 0.6f), lp.lo, lp.hi);
+            }
+            for (int k = 0; k < m; ++k) t.line[size_t(chain[size_t(k)])].offset = next[size_t(k)];
+        }
+    }
+}
+
+} // namespace
+
 void build_racing_line(Track& t) {
     const int n = int(t.center.size());
-    t.line.assign(size_t(n), {});
+    const int total = int(t.road.size());
+    t.line.assign(size_t(total), {});
     if (n < 8) return;
     const float spacing = t.length > 0.0f ? t.length / float(n) : glm::length(t.center[1].pos - t.center[0].pos);
     t.closed = glm::length(t.center[size_t(n - 1)].pos - t.center[0].pos) < 3.0f * spacing;
 
+    // The roads as chains of samples: the loop, and each branch with the
+    // main road around it for context.
+    constexpr int kContext = 24;
+    std::vector<int> loop(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) loop[size_t(i)] = i;
+    struct Chain { std::vector<int> idx; std::vector<bool> fixed; };
+    std::vector<Chain> branch_chains;
+    for (const Track::Branch& b : t.branches) {
+        Chain ch;
+        for (int k = kContext; k >= 1; --k) ch.idx.push_back(t.wrap(b.fork - k)), ch.fixed.push_back(true);
+        for (int k = 0; k < b.count; ++k) ch.idx.push_back(b.first + k), ch.fixed.push_back(false);
+        for (int k = 0; k < kContext; ++k) ch.idx.push_back(t.wrap(b.merge + k)), ch.fixed.push_back(true);
+        branch_chains.push_back(std::move(ch));
+    }
+
     // Drivable band, keeping a kart's width off the edge. Over gaps the line
     // stays in the middle, and it narrows towards them so karts arrive straight.
     constexpr float kMargin = 1.6f;
-    std::vector<int> gap_dist(size_t(n), 1 << 20);
-    for (int i = 0; i < n; ++i)
-        if (!t.center[size_t(i)].has_floor) gap_dist[size_t(i)] = 0;
-    for (int pass = 0; pass < 2; ++pass)
-        for (int k = 0; k < 2 * n; ++k) {
-            const int i = pass == 0 ? k % n : (2 * n - 1 - k) % n;
-            const int j = t.wrap(pass == 0 ? i - 1 : i + 1);
-            gap_dist[size_t(i)] = std::min(gap_dist[size_t(i)], gap_dist[size_t(j)] + 1);
-        }
-    for (int i = 0; i < n; ++i) {
-        const CenterSample& c = t.center[size_t(i)];
+    std::vector<int> gap_dist(size_t(total), 1 << 20);
+    for (int i = 0; i < total; ++i)
+        if (!t.road[size_t(i)].has_floor) gap_dist[size_t(i)] = 0;
+    auto spread = [&](const std::vector<int>& idx, bool closed) {
+        const int m = int(idx.size());
+        for (int pass = 0; pass < 2; ++pass)
+            for (int k = 0; k < (closed ? 2 * m : m); ++k) {
+                const int a = pass == 0 ? k % m : (closed ? (2 * m - 1 - k) % m : m - 1 - k);
+                const int b = pass == 0 ? a - 1 : a + 1;
+                if (!closed && (b < 0 || b >= m)) continue;
+                const int i = idx[size_t(a)], j = idx[size_t((b % m + m) % m)];
+                gap_dist[size_t(i)] = std::min(gap_dist[size_t(i)], gap_dist[size_t(j)] + 1);
+            }
+    };
+    spread(loop, true);
+    for (const Chain& ch : branch_chains) spread(ch.idx, false);
+    for (int i = 0; i < total; ++i) {
+        const CenterSample& c = t.road[size_t(i)];
         Track::LinePoint& lp = t.line[size_t(i)];
         const float taper = float(gap_dist[size_t(i)]) * spacing * 0.08f;
         const float rr = reach(t, c, 1.0f), rl = reach(t, c, -1.0f);
@@ -119,7 +176,9 @@ void build_racing_line(Track& t) {
         if (parts.size() != 1 || parts[0] != std::pair(road_lo, road_hi)) {
             // The widest part, or along a run of blocked samples the part
             // that carries on from the last one, so the line can't swap sides.
-            const Track::LinePoint* prev = i > 0 && t.line[size_t(i - 1)].blocked ? &t.line[size_t(i - 1)] : nullptr;
+            const bool first_of_branch = c.branch >= 0 && i == t.branches[size_t(c.branch)].first;
+            const int pi = i == 0 || first_of_branch ? -1 : t.prev(i);
+            const Track::LinePoint* prev = pi >= 0 && t.line[size_t(pi)].blocked ? &t.line[size_t(pi)] : nullptr;
             auto score = [&](const std::pair<float, float>& part) {
                 if (!prev) return part.second - part.first;
                 return std::min(part.second, prev->hi) - std::max(part.first, prev->lo);
@@ -142,45 +201,31 @@ void build_racing_line(Track& t) {
         }
     }
 
-    // Relax: wide stencil first to find the overall shape, then narrow to smooth.
-    // The final 1-sample pass matters: wider stencils alone leave every third
-    // sample on its own chain, free to zig-zag against its neighbours.
-    std::vector<float> next(static_cast<size_t>(n));
-    for (int stencil : {12, 6, 3, 1}) {
-        for (int iter = 0; iter < 300; ++iter) {
-            for (int i = 0; i < n; ++i) {
-                Track::LinePoint& lp = t.line[size_t(i)];
-                const int a = t.wrap(i - stencil), b = t.wrap(i + stencil);
-                const int a2 = t.wrap(i - 2 * stencil), b2 = t.wrap(i + 2 * stencil);
-                if (!t.closed && (a2 != i - 2 * stencil || b2 != i + 2 * stencil)) { // near an open end
-                    next[size_t(i)] = lp.offset;
-                    continue;
-                }
-                // Zero fourth difference: the point a smooth (least-bending) curve
-                // through the neighbours would pass.
-                const vec3 mid = (4.0f * (t.line_point(a) + t.line_point(b)) - t.line_point(a2) - t.line_point(b2)) / 6.0f;
-                const CenterSample& c = t.center[size_t(i)];
-                const float want = glm::dot(mid - c.pos, c.right);
-                next[size_t(i)] = std::clamp(glm::mix(lp.offset, want, 0.6f), lp.lo, lp.hi);
-            }
-            for (int i = 0; i < n; ++i) t.line[size_t(i)].offset = next[size_t(i)];
-        }
-    }
+    relax(t, loop, t.closed, std::vector<bool>(size_t(n), false));
+    for (const Chain& ch : branch_chains) relax(t, ch.idx, false, ch.fixed);
 
     // Signed curvature from the heading change across a few samples.
     constexpr int kSpan = 3;
-    for (int i = 0; i < n; ++i) {
-        const CenterSample& c = t.center[size_t(i)];
-        vec3 d1 = t.line_point(i) - t.line_point(i - kSpan);
-        vec3 d2 = t.line_point(i + kSpan) - t.line_point(i);
-        d1 -= c.up * glm::dot(d1, c.up);
-        d2 -= c.up * glm::dot(d2, c.up);
-        const float l1 = glm::length(d1), l2 = glm::length(d2);
-        if (l1 < 1e-3f || l2 < 1e-3f) continue;
-        // Right turns rotate the heading towards `right`, i.e. clockwise seen from above.
-        const float turn = std::atan2(-glm::dot(glm::cross(d1, d2), c.up), glm::dot(d1, d2));
-        t.line[size_t(i)].curvature = turn / (0.5f * (l1 + l2));
-    }
+    auto curvature = [&](const std::vector<int>& idx, bool closed, const std::vector<bool>* fixed) {
+        const int m = int(idx.size());
+        auto at = [&](int k) { return closed ? idx[size_t(((k % m) + m) % m)] : idx[size_t(std::clamp(k, 0, m - 1))]; };
+        for (int k = 0; k < m; ++k) {
+            if (fixed && (*fixed)[size_t(k)]) continue;
+            const int i = idx[size_t(k)];
+            const CenterSample& c = t.road[size_t(i)];
+            vec3 d1 = t.line_point(i) - t.line_point(at(k - kSpan));
+            vec3 d2 = t.line_point(at(k + kSpan)) - t.line_point(i);
+            d1 -= c.up * glm::dot(d1, c.up);
+            d2 -= c.up * glm::dot(d2, c.up);
+            const float l1 = glm::length(d1), l2 = glm::length(d2);
+            if (l1 < 1e-3f || l2 < 1e-3f) continue;
+            // Right turns rotate the heading towards `right`, i.e. clockwise seen from above.
+            const float turn = std::atan2(-glm::dot(glm::cross(d1, d2), c.up), glm::dot(d1, d2));
+            t.line[size_t(i)].curvature = turn / (0.5f * (l1 + l2));
+        }
+    };
+    curvature(loop, t.closed, nullptr);
+    for (const Chain& ch : branch_chains) curvature(ch.idx, false, &ch.fixed);
 }
 
 } // namespace gk::sim

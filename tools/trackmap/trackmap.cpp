@@ -81,7 +81,7 @@ void text(Image& img, int x, int y, int value, uint32_t c) {
 void draw(const TrackDef& def, const std::string& out_dir) {
     const Track t = build_track(def);
     vec3 lo(1e9f), hi(-1e9f);
-    for (const auto& c : t.center) lo = glm::min(lo, c.pos), hi = glm::max(hi, c.pos);
+    for (const auto& c : t.road) lo = glm::min(lo, c.pos), hi = glm::max(hi, c.pos);
     const float margin = 30.0f, px = 3.0f; // pixels per metre
     const int w = int((hi.x - lo.x + 2 * margin) * px), h = int((hi.z - lo.z + 2 * margin) * px);
     Image img(w, h);
@@ -110,10 +110,38 @@ void draw(const TrackDef& def, const std::string& out_dir) {
             }
     }
     // Start line, racing line, control points.
-    for (size_t i = 0; i < t.center.size(); ++i) {
+    for (size_t i = 0; i < t.road.size(); ++i) {
         const vec2 p = to_px(t.line_point(int(i)));
-        img.put(int(p.x), int(p.y), 0x30ff60, t.center[i].pos.y + 0.1f);
+        img.put(int(p.x), int(p.y), t.road[i].branch < 0 ? 0x30ff60 : 0x30e0ff, t.road[i].pos.y + 0.1f);
     }
+    // Zones (tinted), barriers (red-orange bars) and switches (yellow discs).
+    for (const Track::Zone& z : t.zones)
+        for (int i = z.first; i < z.first + z.count; ++i) {
+            const CenterSample& c = t.road[size_t(i)];
+            for (float o = std::max(z.lo, -c.half_width); o <= std::min(z.hi, c.half_width); o += 0.6f) {
+                const vec2 p = to_px(c.pos + c.right * o);
+                if ((int(p.x) + int(p.y)) % 3 == 0) img.put(int(p.x), int(p.y), z.surface == Surface::OutOfBounds ? 0xff5010 : 0x40a0ff, c.pos.y + 0.2f);
+            }
+        }
+    for (const Track::Barrier& b : t.barriers)
+        for (float x = -b.half.x; x <= b.half.x; x += 0.2f)
+            for (float z = -b.half.z; z <= b.half.z; z += 0.2f) {
+                const vec2 p = to_px(b.pos + b.right * x + b.forward * z);
+                img.put(int(p.x), int(p.y), 0xff7030, b.pos.y + 3.0f);
+            }
+    for (const Track::Switch& sw : t.switches)
+        for (float a = 0; a < 6.3f; a += 0.05f)
+            for (float r = 0; r < sw.radius; r += 0.3f) {
+                const vec2 p = to_px(sw.pos + sw.right * (std::cos(a) * r) + sw.forward * (std::sin(a) * r));
+                img.put(int(p.x), int(p.y), 0xffe020, sw.pos.y + 3.0f);
+            }
+    for (const BranchDef& bd : def.branches)
+        for (size_t i = 0; i < bd.points.size(); ++i) {
+            const vec2 p = to_px(vec3(bd.points[i]));
+            for (int a = -2; a <= 2; ++a)
+                for (int b = -2; b <= 2; ++b) img.put(int(p.x) + a, int(p.y) + b, 0x60e0ff);
+            text(img, int(p.x) + 5, int(p.y) - 5, int(i), 0x60e0ff);
+        }
     for (float o = -t.center[0].half_width; o <= t.center[0].half_width; o += 0.2f) {
         const vec2 p = to_px(t.center[0].pos + t.center[0].right * o);
         img.put(int(p.x), int(p.y), 0xffffff);
@@ -133,6 +161,11 @@ void draw(const TrackDef& def, const std::string& out_dir) {
     for (const auto& lp : t.line) tightest = std::min(tightest, 1.0f / std::max(std::abs(lp.curvature), 1e-4f));
     std::printf("%s: %.0f m, %d samples, tightest line radius %.0f m, height %.0f..%.0f -> %s\n", def.name.c_str(),
                 t.length, n, tightest, lo.y, hi.y, path.c_str());
+    for (const Track::Branch& b : t.branches)
+        std::printf("  branch %s: %d samples (%.0f m) from main %d to %d%s%s\n", b.name.c_str(), b.count, float(b.count) * 2.0f, b.fork, b.merge,
+                    b.gate >= 0 ? ", gated" : "", b.vanish ? ", vanishes" : "");
+    std::printf("  %zu gates, %zu switches, %zu barriers, %zu zones, %zu obstacles, %zu movers\n", t.gates.size(), t.switches.size(),
+                t.barriers.size(), t.zones.size(), t.obstacles.size(), t.movers.size());
     // Parts of the road that come close from above must be a bridge's
     // height apart; report the tightest such pair and every crossing.
     float worst = 1e9f;

@@ -14,6 +14,8 @@ World::World(Track track, PhysicsTables tables, RaceConfig config)
     track_.laps = config_.laps;
     box_respawn_.assign(track_.item_boxes.size(), 0);
     props_.assign(track_.obstacles.size(), PropState{});
+    switches_.assign(track_.switches.size(), 0);
+    update_gates();
     rng_.state ^= config_.seed * 0xD1B54A32D192ED03ull;
 }
 
@@ -35,7 +37,64 @@ void World::restore(const WorldState& s) {
     entities_ = s.entities;
     if (s.box_respawn.size() == box_respawn_.size()) box_respawn_ = s.box_respawn;
     if (s.props.size() == props_.size()) props_ = s.props;
+    if (s.switches.size() == switches_.size()) switches_ = s.switches;
     rng_ = s.rng;
+    update_gates();
+}
+
+int World::race_lap() const {
+    int lap = 1;
+    for (const KartState& k : karts_) lap = std::max(lap, k.lap);
+    return std::min(lap, std::max(1, config_.laps));
+}
+
+// Which gates hold this tick: from the race clock, the leader's lap and the
+// switches, all part of the shared world state.
+void World::update_gates() {
+    const auto& gates = track_.gates;
+    track_.gate_state.assign(gates.size(), 1);
+    const int lap = race_lap();
+    for (size_t g = 0; g < gates.size(); ++g) {
+        const Gate& gate = gates[g];
+        bool holds = true;
+        switch (gate.when) {
+        case Gate::When::Always: break;
+        case Gate::When::Laps: holds = lap >= gate.lap_lo && lap <= gate.lap_hi; break;
+        case Gate::When::Cycle: {
+            const int period = std::max(gate.period, 1);
+            const int phase = ((race_ticks_ - gate.offset) % period + period) % period;
+            holds = phase < gate.open;
+            break;
+        }
+        case Gate::When::Switch:
+            holds = gate.sw >= 0 && size_t(gate.sw) < switches_.size() && switches_[size_t(gate.sw)] > 0;
+            break;
+        }
+        track_.gate_state[g] = uint8_t(holds != gate.invert);
+    }
+    // Roads that vanish wait for the karts on them to get off.
+    track_.branch_busy.assign(track_.branches.size(), 0);
+    for (const KartState& k : karts_) {
+        if (k.respawn_frames > 0 || size_t(k.sample) >= track_.road.size()) continue;
+        const int b = track_.road[size_t(k.sample)].branch;
+        if (b >= 0) track_.branch_busy[size_t(b)] = 1;
+    }
+}
+
+// A switch is pressed while any kart rolls over it, and stays pressed for its hold time.
+void World::press_switches() {
+    for (size_t i = 0; i < track_.switches.size(); ++i) {
+        const Track::Switch& sw = track_.switches[i];
+        bool pressed = false;
+        for (const KartState& k : karts_) {
+            if (!k.grounded || k.respawn_frames > 0) continue;
+            const vec3 d = k.pos - sw.pos;
+            const float up = glm::dot(d, sw.up);
+            if (std::abs(up) < 1.5f && glm::length(d - sw.up * up) < sw.radius) pressed = true;
+        }
+        if (pressed) switches_[i] = uint16_t(std::min(sw.hold, 65535));
+        else if (switches_[i] > 0) --switches_[i];
+    }
 }
 
 void World::tick(std::span<const KartInput> inputs) {
@@ -86,9 +145,11 @@ void World::tick(std::span<const KartInput> inputs) {
     }
     if (!frozen) update_slipstream();
     if (!frozen) collide_props();
+    if (!frozen) press_switches();
     collide_karts();
     if (config_.items && !frozen) items_after_step();
     if (!frozen) ++race_ticks_;
+    update_gates(); // for the next tick (and for drawing this one): switches, the clock and laps have moved on
     for (size_t i = 0; i < karts_.size(); ++i) {
         KartState& k = karts_[i];
         if (k.respawn_frames > 0) continue;
@@ -403,7 +464,7 @@ KartInput autopilot(const KartState& kart, const Track& track, float lookahead_b
     const float spacing = track.length / float(n);
     const float lookahead = lookahead_base + std::abs(kart.speed) * 0.45f;
     const int ahead = int(std::ceil(lookahead / spacing));
-    const vec3 target = track.center[size_t((kart.sample + ahead) % n)].pos;
+    const vec3 target = track.sample(track.advance(kart.sample, ahead)).pos;
     vec3 to = target - kart.pos;
     const vec3 f = kart.forward(), r = kart.right();
     const float x = glm::dot(to, r), z = glm::dot(to, f);

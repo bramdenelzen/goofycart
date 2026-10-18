@@ -40,6 +40,7 @@ struct WorldState {
     std::vector<int> box_respawn;
     Rng rng;
     std::vector<PropState> props;
+    std::vector<uint16_t> switches; // ticks each track switch stays pressed
 };
 
 // The authoritative race simulation: track, karts and race clock, stepped at
@@ -50,7 +51,7 @@ public:
 
     int add_kart(const KartParams& params);
     void set_kart_params(int kart, const KartParams& params) { params_[size_t(kart)] = params; }
-    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_, entities_, box_respawn_, rng_, props_}; }
+    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_, entities_, box_respawn_, rng_, props_, switches_}; }
     void restore(const WorldState& s);
     void tick(std::span<const KartInput> inputs);
 
@@ -84,6 +85,10 @@ public:
     void throw_item(int kart, Item item, bool backwards, bool forwards);
     // Whether a kart is on a dropped oil slick (slippery, like the oil surface).
     bool over_oil(int kart) const;
+    // Ticks left on each track switch (0 = not pressed).
+    const std::vector<uint16_t>& switches() const { return switches_; }
+    // The lap the race is on for the track's gates: the leader's.
+    int race_lap() const;
 
     uint64_t tick_count() const { return tick_; }
     int countdown_left() const { return countdown_left_; }
@@ -95,6 +100,8 @@ public:
 
 private:
     void collide_karts();
+    void update_gates();
+    void press_switches();
     void collide_props();
     void update_slipstream();
     // items.cpp
@@ -114,6 +121,7 @@ private:
     std::vector<ItemEntity> entities_;
     std::vector<int> box_respawn_;
     std::vector<PropState> props_;
+    std::vector<uint16_t> switches_;
     std::vector<KartInput> step_inputs_;
     Rng rng_;
     ItemTuning item_tuning_;

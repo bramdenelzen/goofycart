@@ -232,6 +232,16 @@ bool App::init() {
             k.sample = world_->track().nearest_sample(k.pos);
             prev_ = world_->karts();
         }
+        if (world_ && options_.spawn_sample >= 0 && size_t(options_.spawn_sample) < world_->track().road.size()) {
+            const sim::CenterSample& c = world_->track().sample(options_.spawn_sample);
+            sim::KartState& k = world_->karts_mut()[size_t(player_)];
+            k.pos = c.pos + c.up * 0.1f;
+            k.rot = glm::normalize(glm::quat_cast(glm::mat3(-c.right, c.up, c.tangent)));
+            k.sample = k.last_safe_sample = options_.spawn_sample;
+            prev_ = world_->karts();
+        }
+        if (world_ && options_.start_lap > 1)
+            for (sim::KartState& k : world_->karts_mut()) k.lap = options_.start_lap;
     } else {
         if (options_.menu == "options") screen_ = Screen::Options;
         else if (options_.menu == "controls") screen_ = Screen::Controls;
@@ -423,6 +433,25 @@ void App::show_track(const std::string& id) {
             const render::PaintedModel side = render::make_trackside(*shown_track_);
             const render::TextureId tex = renderer_.upload_texture(side.texture.size(), side.texture.size(), side.texture.rgba().data());
             ids.push_back(renderer_.upload_mesh(side.mesh, tex, false));
+        }
+        {   // Roads that vanish, barriers, switches and zones: drawn when they're there.
+            const sim::Track& t = *shown_track_;
+            GateMeshes& g = gate_meshes_[t.id];
+            for (size_t b = 0; b < t.branches.size(); ++b) {
+                if (!t.branches[b].vanish) continue;
+                const render::MeshId road = renderer_.upload_mesh(render::make_track_mesh(t, true, int(b) + 1));
+                const render::PaintedModel side = render::make_trackside(t, int(b) + 1);
+                const render::TextureId tex = renderer_.upload_texture(side.texture.size(), side.texture.size(), side.texture.rgba().data());
+                g.roads.push_back({int(b), {road, renderer_.upload_mesh(side.mesh, tex, false)}});
+            }
+            for (const auto& bar : t.barriers) g.barriers.push_back(renderer_.upload_mesh(render::make_barrier_mesh(bar)));
+            for (const auto& z : t.zones) {
+                const bool lava = z.surface == sim::Surface::OutOfBounds && t.theme == "volcano";
+                g.zones.push_back(renderer_.upload_mesh(render::make_zone_mesh(t, z), 0, false, lava, false, lava));
+            }
+            for (const auto& sw : t.switches)
+                g.switches.push_back({renderer_.upload_mesh(render::make_switch_mesh(sw.radius, false)),
+                                      renderer_.upload_mesh(render::make_switch_mesh(sw.radius, true), 0, false, true)});
         }
         log_info("Track {}: {} props in {} meshes; {} ms (road {}, scenery {}, props and trackside {})", shown_track_->id, placements.size(), ids.size(),
                  ms(), ms_road, ms_scenery - ms_road, ms() - ms_scenery);
@@ -1085,9 +1114,9 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     if (online_) pos += online_->visual_offset(index);
     const quat rot = glm::slerp(p.rot, s.rot, alpha);
     // Bumping down the stairs: a hop on every step.
-    if (s.grounded && world() && world()->track().on_stairs(world()->track().center[size_t(s.sample)].s)) {
-        const float along = glm::dot(pos - world()->track().center[size_t(s.sample)].pos, world()->track().center[size_t(s.sample)].tangent) +
-                            world()->track().center[size_t(s.sample)].s;
+    if (s.grounded && world() && world()->track().sample(s.sample).branch < 0 && world()->track().on_stairs(world()->track().sample(s.sample).s)) {
+        const sim::CenterSample& c = world()->track().sample(s.sample);
+        const float along = glm::dot(pos - c.pos, c.tangent) + c.s;
         pos.y += 0.09f * std::abs(std::sin(along / 1.2f * kPi));
     }
     mat4 m = glm::translate(mat4(1.0f), pos) * glm::mat4_cast(rot);
@@ -1787,6 +1816,39 @@ void App::draw_movers(const sim::World& w, float alpha) {
     }
 }
 
+void App::draw_gates(const sim::World& w) {
+    const sim::Track& t = w.track();
+    const auto it = gate_meshes_.find(t.id);
+    if (it == gate_meshes_.end()) return;
+    const GateMeshes& g = it->second;
+    for (const auto& [branch, meshes] : g.roads)
+        if (t.branch_present(branch)) renderer_.draw(meshes.first, mat4(1.0f)), renderer_.draw(meshes.second, mat4(1.0f));
+    for (size_t i = 0; i < t.zones.size() && i < g.zones.size(); ++i)
+        if (t.gate_holds(t.zones[i].gate)) renderer_.draw(g.zones[i], mat4(1.0f));
+    for (size_t i = 0; i < t.switches.size() && i < g.switches.size(); ++i) {
+        const auto& sw = t.switches[i];
+        const bool on = i < w.switches().size() && w.switches()[i] > 0;
+        const mat4 model(vec4(-sw.right, 0.0f), vec4(sw.up, 0.0f), vec4(sw.forward, 0.0f), vec4(sw.pos, 1.0f));
+        renderer_.draw(on ? g.switches[i].second : g.switches[i].first, model);
+    }
+    // Barriers rise out of the road and sink back into it over a moment.
+    if (barrier_track_ != t.id || barrier_rise_.size() != t.barriers.size()) {
+        barrier_track_ = t.id;
+        barrier_rise_.assign(t.barriers.size(), 0.0f);
+        for (size_t i = 0; i < t.barriers.size(); ++i) barrier_rise_[i] = t.barrier_up(t.barriers[i]) ? 1.0f : 0.0f;
+    }
+    for (size_t i = 0; i < t.barriers.size() && i < g.barriers.size(); ++i) {
+        const auto& bar = t.barriers[i];
+        float& rise = barrier_rise_[i];
+        const float target = t.barrier_up(bar) ? 1.0f : 0.0f;
+        rise += std::clamp(target - rise, -frame_dt_ * 2.5f, frame_dt_ * 4.0f);
+        if (rise < 0.01f) continue;
+        const float sink = (1.0f - rise) * (2.0f * bar.half.y + 0.2f);
+        const mat4 model(vec4(-bar.right, 0.0f), vec4(bar.up, 0.0f), vec4(bar.forward, 0.0f), vec4(bar.pos - bar.up * sink, 1.0f));
+        renderer_.draw(g.barriers[i], model);
+    }
+}
+
 render::MeshId App::single_prop(const std::string& name) {
     if (auto it = single_props_.find(name); it != single_props_.end()) return it->second;
     const auto pm = props_.find(name);
@@ -2030,6 +2092,7 @@ void App::render(float alpha, float dt) {
         draw_items(*w);
         draw_breakables(*w);
         draw_movers(*w, alpha);
+        draw_gates(*w);
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
         if (!paused_) {
             particles_.update(frame_dt_);

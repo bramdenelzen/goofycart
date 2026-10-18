@@ -448,6 +448,7 @@ void Room::send_snapshots() {
     base.rng = ws.rng.state;
     base.boxes = ws.box_respawn;
     base.props = ws.props;
+    base.switches = ws.switches;
     base.entities = ws.entities;
     for (auto& [id, c] : clients_) {
         if (!c.hello) continue;

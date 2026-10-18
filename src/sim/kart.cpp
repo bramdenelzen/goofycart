@@ -134,7 +134,7 @@ void step_respawn(KartState& s, const KartStepContext& ctx) {
     --s.respawn_frames;
     if (s.respawn_frames == ctx.k.respawn_frames / 2) {
         const int idx = ctx.track.respawn_sample_before(s.last_safe_sample);
-        const CenterSample& c = ctx.track.center[size_t(idx)];
+        const CenterSample& c = ctx.track.sample(idx);
         s.pos = c.pos + c.up * 0.05f;
         s.rot = basis(c.tangent, c.up);
         s.speed = 0.0f;
@@ -536,7 +536,7 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
         s.stuck_frames = 0;
     }
     if (s.grounded && s.surface != Surface::OutOfBounds) {
-        const CenterSample& c = ctx.track.center[size_t(s.sample)];
+        const CenterSample& c = ctx.track.sample(s.sample);
         if (c.respawn_ok && c.has_floor) s.last_safe_sample = s.sample;
     }
 }
@@ -547,9 +547,14 @@ bool kart_update_progress(KartState& s, const Track& track) {
     const int ncp = int(track.checkpoints.size());
     const int region = track.checkpoint_of(s.sample);
     const int next = (s.checkpoint + 1) % ncp;
-    if (region == next) {
-        s.checkpoint = next;
-        if (next == 0) {
+    // A side road can be shorter than the stretch of main road it bypasses,
+    // so on one the next few regions may go by in a single step.
+    const int ahead = ((region - s.checkpoint) % ncp + ncp) % ncp;
+    const bool on_branch = track.sample(s.sample).branch >= 0;
+    if (region == next || (on_branch && ahead > 0 && ahead <= 4)) {
+        const bool lapped = region == next ? next == 0 : s.checkpoint + ahead >= ncp;
+        s.checkpoint = region;
+        if (lapped) {
             ++s.lap;
             return true;
         }
@@ -559,7 +564,7 @@ bool kart_update_progress(KartState& s, const Track& track) {
 
 float kart_race_distance(const KartState& s, const Track& track) {
     if (track.center.empty()) return 0.0f;
-    float along = track.center[size_t(s.sample)].s;
+    float along = track.sample(s.sample).s;
     if (s.checkpoint == 0 && along > track.length * 0.5f) along -= track.length; // still before the line
     return float(s.lap - 1) * track.length + along;
 }

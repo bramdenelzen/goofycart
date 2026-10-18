@@ -38,14 +38,16 @@ vec3 from_jph(JPH::Vec3 v) { return vec3(v.GetX(), v.GetY(), v.GetZ()); }
 // own bounding volume tree) and karts probe it with rays and spheres.
 class TrackCollision {
 public:
-    explicit TrackCollision(const Track& t) {
+    // The triangles of one group (0 the fixed track, k a branch that can vanish).
+    TrackCollision(const Track& t, uint8_t group) {
         init_jolt_once();
         JPH::VertexList verts;
         verts.reserve(t.vertices.size());
         for (const auto& v : t.vertices) verts.push_back(JPH::Float3(v.x, v.y, v.z));
         JPH::IndexedTriangleList tris;
         tris.reserve(t.triangles.size());
-        for (const auto& tr : t.triangles) tris.push_back(JPH::IndexedTriangle(tr.a, tr.b, tr.c, uint32_t(tr.surface)));
+        for (const auto& tr : t.triangles)
+            if (tr.group == group) tris.push_back(JPH::IndexedTriangle(tr.a, tr.b, tr.c, uint32_t(tr.surface)));
         JPH::PhysicsMaterialList materials;
         for (int i = 0; i < int(Surface::Count); ++i) {
             materials.push_back(new JPH::PhysicsMaterialSimple(surface_name(Surface(i)), JPH::Color::sGrey));
@@ -101,6 +103,7 @@ private:
 };
 
 Track::Track() = default;
+// (collision_ holds one TrackCollision per triangle group.)
 Track::~Track() = default;
 Track::Track(Track&&) noexcept = default;
 Track& Track::operator=(Track&&) noexcept = default;
@@ -108,11 +111,84 @@ Track& Track::operator=(Track&&) noexcept = default;
 void build_racing_line(Track& track); // racing_line.cpp
 
 void Track::finalize() {
-    collision_ = std::make_unique<TrackCollision>(*this);
+    if (road.size() < center.size()) road = center; // hand-built tracks (tests): no branches
+    collision_.clear();
+    uint8_t groups = 0;
+    for (const auto& tr : triangles) groups = std::max(groups, tr.group);
+    for (uint8_t g = 0; g <= groups; ++g) {
+        bool any = false;
+        for (const auto& tr : triangles) any |= tr.group == g;
+        collision_.push_back(any ? std::make_unique<TrackCollision>(*this, g) : nullptr);
+    }
+    // The CPUs' line is drawn on the road as built: every road there, no
+    // zones or barriers (they come and go; the CPUs react to them as they drive).
+    auto zones_ = std::move(zones);
+    auto barriers_ = std::move(barriers);
+    auto gates_ = std::move(gate_state);
+    auto busy_ = std::move(branch_busy);
+    zones.clear(), barriers.clear(), gate_state.clear(), branch_busy.clear();
     build_racing_line(*this);
+    zones = std::move(zones_), barriers = std::move(barriers_), gate_state = std::move(gates_), branch_busy = std::move(busy_);
 }
 
-int Track::wrap(int sample) const {
+// A group's triangles count while it's there: group k is branch k - 1's road.
+bool Track::group_present(size_t g) const {
+    if (g == 0) return true;
+    const size_t b = g - 1;
+    return b >= branches.size() || branch_present(int(b));
+}
+
+int Track::next(int i, uint32_t route) const {
+    const int n = int(center.size());
+    if (i < n) {
+        for (size_t b = 0; b < branches.size() && b < 32; ++b)
+            if (branches[b].fork == i && (route >> b & 1u) && branch_open(int(b))) return branches[b].first;
+        return wrap(i + 1);
+    }
+    for (const Branch& br : branches)
+        if (i >= br.first && i < br.first + br.count) return i + 1 < br.first + br.count ? i + 1 : wrap(br.merge);
+    return wrap(i + 1);
+}
+
+int Track::prev(int i) const {
+    const int n = int(center.size());
+    if (i < n) return wrap(i - 1);
+    for (const Branch& br : branches)
+        if (i >= br.first && i < br.first + br.count) return i > br.first ? i - 1 : br.fork;
+    return wrap(i - 1);
+}
+
+int Track::advance(int i, int steps, uint32_t route) const {
+    for (int k = 0; k < steps; ++k) i = next(i, route);
+    for (int k = 0; k > steps; --k) i = prev(i);
+    return i;
+}
+
+int Track::main_sample(int i) const {
+    const int n = int(center.size());
+    if (i < n || n == 0) return i;
+    const float step = length / float(n);
+    return wrap(int(std::round(road[size_t(i)].s / std::max(step, 1e-3f))));
+}
+
+std::vector<Track::Strip> Track::strips() const {
+    std::vector<Strip> out{{0, int(center.size()), 0, true, -1}};
+    for (size_t b = 0; b < branches.size(); ++b)
+        out.push_back({branches[b].first, branches[b].count, branches[b].first_vertex, false, int(b)});
+    return out;
+}
+
+std::optional<Surface> Track::zone_surface(vec3 p, int sample) const {
+    for (const Zone& z : zones) {
+        if (sample < z.first || sample >= z.first + z.count || !gate_holds(z.gate)) continue;
+        const CenterSample& c = road[size_t(sample)];
+        const float lat = glm::dot(p - c.pos, c.right);
+        if (lat >= z.lo && lat <= z.hi && std::abs(glm::dot(p - c.pos, c.up)) < 2.5f) return z.surface;
+    }
+    return std::nullopt;
+}
+
+int Track::wrap(int sample) const { // on the main loop
     const int n = int(center.size());
     if (n == 0) return 0;
     if (closed) return ((sample % n) + n) % n;
@@ -120,8 +196,8 @@ int Track::wrap(int sample) const {
 }
 
 vec3 Track::line_point(int sample) const {
-    const CenterSample& c = center[size_t(wrap(sample))];
-    return line.empty() ? c.pos : c.pos + c.right * line[size_t(wrap(sample))].offset;
+    const CenterSample& c = road[size_t(sample)];
+    return line.size() <= size_t(sample) ? c.pos : c.pos + c.right * line[size_t(sample)].offset;
 }
 
 vec3 Track::mover_pos(size_t i, double tick) const {
@@ -141,7 +217,48 @@ float Track::mover_top(const Mover& m, float x, float z) const {
 }
 
 std::optional<RayHit> Track::raycast(vec3 origin, vec3 dir, float max_dist) const {
-    std::optional<RayHit> best = collision_ ? collision_->raycast(origin, dir, max_dist) : std::nullopt;
+    std::optional<RayHit> best;
+    for (size_t g = 0; g < collision_.size(); ++g) {
+        if (!collision_[g] || !group_present(g)) continue;
+        const auto hit = collision_[g]->raycast(origin, dir, max_dist);
+        if (hit && (!best || hit->distance < best->distance)) best = hit;
+    }
+    // Zones change the floor's surface while they're on.
+    if (best && !zones.empty() && best->surface != Surface::Wall && -glm::dot(dir, best->normal) > 0.5f) {
+        const int i = nearest_sample(best->point, -1);
+        if (const auto zs = zone_surface(best->point, i)) best->surface = *zs;
+    }
+    // Barriers: boxes standing on the road while up.
+    for (const Barrier& b : barriers) {
+        if (!barrier_up(b)) continue;
+        // Slab test in the barrier's frame.
+        const vec3 o = origin - b.pos;
+        const vec3 lo_(-b.half.x, 0.0f, -b.half.z), hi_(b.half.x, 2.0f * b.half.y, b.half.z);
+        const vec3 ol(glm::dot(o, b.right), glm::dot(o, b.up), glm::dot(o, b.forward));
+        const vec3 dl(glm::dot(dir, b.right), glm::dot(dir, b.up), glm::dot(dir, b.forward));
+        float t0 = 0.0f, t1 = max_dist;
+        int axis = -1;
+        bool miss = false;
+        for (int a = 0; a < 3 && !miss; ++a) {
+            if (std::abs(dl[a]) < 1e-6f) {
+                miss = ol[a] < lo_[a] || ol[a] > hi_[a];
+                continue;
+            }
+            float ta = (lo_[a] - ol[a]) / dl[a], tb = (hi_[a] - ol[a]) / dl[a];
+            if (ta > tb) std::swap(ta, tb);
+            if (ta > t0) t0 = ta, axis = a;
+            t1 = std::min(t1, tb);
+            miss = t0 > t1;
+        }
+        if (miss || axis < 0 || (best && best->distance <= t0)) continue;
+        RayHit hit;
+        hit.distance = t0;
+        hit.point = origin + dir * t0;
+        const vec3 axes[3] = {b.right, b.up, b.forward};
+        hit.normal = axes[axis] * (dl[axis] > 0.0f ? -1.0f : 1.0f);
+        hit.surface = axis == 1 ? Surface::Road : Surface::Wall;
+        best = hit;
+    }
     for (size_t i = 0; i < movers.size(); ++i) {
         const Mover& m = movers[i];
         const float down = -glm::dot(dir, m.up);
@@ -165,7 +282,26 @@ std::optional<RayHit> Track::raycast(vec3 origin, vec3 dir, float max_dist) cons
 }
 
 void Track::collide_sphere(vec3 c, float radius, std::vector<WallContact>& out) const {
-    if (collision_) collision_->collide_sphere(c, radius, out);
+    for (size_t g = 0; g < collision_.size(); ++g)
+        if (collision_[g] && group_present(g)) collision_[g]->collide_sphere(c, radius, out);
+    for (const Barrier& b : barriers) {
+        if (!barrier_up(b)) continue;
+        const vec3 rel = c - b.pos;
+        const vec3 l(glm::dot(rel, b.right), glm::dot(rel, b.up), glm::dot(rel, b.forward));
+        const vec3 q(std::clamp(l.x, -b.half.x, b.half.x), std::clamp(l.y, 0.0f, 2.0f * b.half.y), std::clamp(l.z, -b.half.z, b.half.z));
+        const vec3 d = l - q;
+        const float dist = glm::length(d);
+        if (dist >= radius) continue;
+        vec3 n_local;
+        float depth;
+        if (dist > 1e-4f) {
+            n_local = d / dist, depth = radius - dist;
+        } else { // inside: out along the barrier's thin direction, towards whichever side is nearer
+            n_local = {0, 0, l.z > 0.0f ? 1.0f : -1.0f};
+            depth = b.half.z - std::abs(l.z) + radius;
+        }
+        out.push_back({glm::normalize(b.right * n_local.x + b.up * n_local.y + b.forward * n_local.z), depth, Surface::Wall});
+    }
     for (size_t i = 0; i < movers.size(); ++i) {
         const Mover& m = movers[i];
         const vec3 rel = c - mover_pos(i, mover_time);
@@ -195,31 +331,59 @@ void Track::collide_sphere(vec3 c, float radius, std::vector<WallContact>& out) 
 }
 
 int Track::nearest_sample(vec3 p, int hint) const {
-    const int n = int(center.size());
+    const int n = int(road.size()), nm = int(center.size());
     if (n == 0) return 0;
     auto d2 = [&](int i) {
-        const vec3 d = center[size_t(i)].pos - p;
+        const vec3 d = road[size_t(i)].pos - p;
         return glm::dot(d, d);
+    };
+    // How far outside a sample's road `p` is (negative: how deep inside).
+    auto outside = [&](int i) { return std::sqrt(d2(i)) - road[size_t(i)].half_width; };
+    // The nearest main-loop sample, then a side road's if `p` is further
+    // inside that road than the main one: where they run side by side, a
+    // kart on the main road's lanes stays on the main road.
+    auto pick = [&](int main_best, bool windowed, float s0) {
+        int best_b = -1;
+        float best_bd = std::numeric_limits<float>::max();
+        const float total = std::max(length, 1.0f);
+        for (int i = nm; i < n; ++i) {
+            if (windowed) {
+                float ds = std::abs(road[size_t(i)].s - s0);
+                ds = std::min(ds, total - ds);
+                if (ds > 80.0f) continue;
+            }
+            const float d = d2(i);
+            if (d < best_bd) best_bd = d, best_b = i;
+        }
+        if (best_b < 0) return main_best;
+        // Neighbours along the branch can sit deeper inside it than the nearest one.
+        return outside(best_b) < outside(main_best) ? best_b : main_best;
     };
     int best = 0;
     float best_d = std::numeric_limits<float>::max();
     if (hint >= 0 && hint < n) {
+        // Near the hint along the race (80 m either side): keeps a kart on
+        // its own deck where the track crosses itself.
+        const int h = main_sample(hint);
         constexpr int kWindow = 40; // 80 m either side
         for (int k = -kWindow; k <= kWindow; ++k) {
-            const int i = ((hint + k) % n + n) % n;
+            const int i = ((h + k) % nm + nm) % nm;
             const float d = d2(i);
             if (d < best_d) best_d = d, best = i;
         }
-        if (best_d < 30.0f * 30.0f) return best;
+        const int chosen = pick(best, true, road[size_t(hint)].s);
+        if (d2(chosen) < 30.0f * 30.0f || best_d < 30.0f * 30.0f) return chosen;
     }
-    for (int i = 0; i < n; ++i) {
+    best_d = std::numeric_limits<float>::max();
+    for (int i = 0; i < nm; ++i) {
         const float d = d2(i);
         if (d < best_d) best_d = d, best = i;
     }
-    return best;
+    return pick(best, false, 0.0f);
 }
 
 int Track::checkpoint_of(int sample) const {
+    sample = main_sample(sample);
     int cp = 0;
     for (int i = 0; i < int(checkpoints.size()); ++i)
         if (sample >= checkpoints[size_t(i)]) cp = i;
@@ -238,11 +402,15 @@ Track::Slot Track::grid_slot(int index) const {
 }
 
 int Track::respawn_sample_before(int sample) const {
-    const int n = int(center.size());
-    for (int k = 0; k < n; ++k) {
-        const int i = ((sample - k) % n + n) % n;
-        if (center[size_t(i)].respawn_ok && center[size_t(i)].has_floor) return i;
-    }
+    const int n = int(road.size());
+    if (n == 0) return 0;
+    if (sample < 0 || sample >= n) sample = 0;
+    auto there = [&](int i) { // a branch that has vanished is no place to put a kart
+        const int b = road[size_t(i)].branch;
+        return b < 0 || branch_open(b);
+    };
+    for (int k = 0, i = sample; k < n; ++k, i = prev(i))
+        if (road[size_t(i)].respawn_ok && road[size_t(i)].has_floor && there(i)) return i;
     return 0;
 }
 

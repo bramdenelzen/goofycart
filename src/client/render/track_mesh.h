@@ -21,7 +21,9 @@ const ThemeStyle& theme_style(const std::string& theme);
 // Render mesh for a track: per-surface colours, a checkered start line,
 // two-tone walls and a dark underside so the floating track reads as solid.
 // `skip_obstacles` leaves the obstacles out, for drawing them as props.
-MeshData make_track_mesh(const sim::Track& track, bool skip_obstacles = false);
+// `group`: only the triangles of that group (0 the fixed track, k > 0 branch
+// k - 1's road that comes and goes); -1 all of them.
+MeshData make_track_mesh(const sim::Track& track, bool skip_obstacles = false, int group = 0);
 // Low-poly scenery placed around the track, by theme.
 // With `props`, the trees, rocks, buildings, clouds and other props are not
 // built into the mesh but listed there, to be drawn with the painted models
@@ -40,6 +42,12 @@ MeshData make_flame_mesh();
 MeshData make_fireball_mesh();
 // The track's oil spills (Surface::Oil), lifted just off the road, for the oil shader.
 MeshData make_oil_mesh(const sim::Track& track);
+// What a zone puts on the road while it's on (a flood, ice, lava...), lifted just off it.
+MeshData make_zone_mesh(const sim::Track& track, const sim::Track::Zone& zone);
+// A barrier in its own frame (x across, y up, z along), standing at full height.
+MeshData make_barrier_mesh(const sim::Track::Barrier& barrier);
+// A switch pad in its own frame, flat on the road: raised and red, or pressed and green.
+MeshData make_switch_mesh(float radius, bool on);
 // A puddle: an irregular flat disc about a unit across, for a dropped oil slick.
 MeshData make_oil_disc_mesh();
 

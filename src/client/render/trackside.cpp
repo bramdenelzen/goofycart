@@ -21,14 +21,19 @@ float smooth01(float t) {
     return t * t * (3.0f - 2.0f * t);
 }
 
-std::pair<std::vector<bool>, std::vector<bool>> walls_of(const sim::Track& t) {
-    const int n = int(t.center.size());
+// Which samples of a road have a wall on each side, read back from the
+// wall triangles that belong to that road alone.
+std::pair<std::vector<bool>, std::vector<bool>> walls_of(const sim::Track& t, const sim::Track::Strip& st) {
+    const int n = st.count;
+    const uint32_t lo = st.first_vertex, hi = st.first_vertex + uint32_t(n * kStride);
     std::vector<bool> left(size_t(n), false), right(size_t(n), false);
     for (const auto& tri : t.triangles) {
         if (tri.surface != sim::Surface::Wall) continue;
+        bool inside = true;
+        for (uint32_t vi : {tri.a, tri.b, tri.c}) inside &= vi >= lo && vi < hi;
+        if (!inside) continue;
         for (uint32_t vi : {tri.a, tri.b, tri.c}) {
-            if (vi >= uint32_t(n * kStride)) break;
-            const int col = int(vi % kStride), sample = int(vi / kStride);
+            const int col = int((vi - lo) % kStride), sample = int((vi - lo) / kStride);
             if (col == 7) left[size_t(sample)] = true;
             if (col == 8) right[size_t(sample)] = true;
         }
@@ -116,18 +121,44 @@ void paint_atlas(Canvas& t, const ThemeStyle& th) {
     }
 }
 
+void paint_road(MeshBuilder& b, const sim::Track& t, const sim::Track::Strip& st);
+void paint_flags(MeshBuilder& b, const sim::Track& t);
+
 } // namespace
 
-PaintedModel make_trackside(const sim::Track& t) {
+PaintedModel make_trackside(const sim::Track& t, int group) {
     PaintedModel m;
     m.texture = Canvas(1024, col(128, 128, 128));
     const ThemeStyle& th = theme_style(t.theme);
     paint_atlas(m.texture, th);
     MeshBuilder b;
-    const int n = int(t.center.size());
-    if (n < 4) return m;
-    const auto [left, right] = walls_of(t);
-    auto V = [&](int sample, int col) { return t.vertices[size_t((sample % n) * kStride + col)]; };
+    if (t.center.size() < 4) return m;
+    for (const sim::Track::Strip& st : t.strips()) {
+        const bool vanishes = st.branch >= 0 && t.branches[size_t(st.branch)].vanish;
+        if ((group == 0) == vanishes) continue;
+        if (group > 0 && st.branch != group - 1) continue;
+        paint_road(b, t, st);
+    }
+    // The flags line the main loop.
+    if (group == 0) paint_flags(b, t);
+    m.mesh = b.take();
+    m.finish();
+    return m;
+}
+
+namespace {
+
+// Walls, rails and kerbs along one road.
+void paint_road(MeshBuilder& b, const sim::Track& t, const sim::Track::Strip& st) {
+    const int n = st.count;
+    const bool closed = st.closed;
+    const auto [left, right] = walls_of(t, st);
+    auto C = [&](int sample) -> const sim::CenterSample& { return t.road[size_t(st.first + (closed ? (sample % n + n) % n : std::clamp(sample, 0, n - 1)))]; };
+    auto V = [&](int sample, int col) {
+        const int k = closed ? (sample % n + n) % n : std::clamp(sample, 0, n - 1);
+        return t.vertices[size_t(st.first_vertex + uint32_t(k * kStride + col))];
+    };
+    const int segs = closed ? n : n - 1;
     auto uvq = [&](const UvRect& r, float u0, float u1, vec2 out[4]) { // bottom-left, bottom-right, top-right, top-left
         out[0] = r.at(u0, 1.0f);
         out[1] = r.at(u1, 1.0f);
@@ -139,14 +170,14 @@ PaintedModel make_trackside(const sim::Track& t) {
     for (int side = 0; side < 2; ++side) {
         const std::vector<bool>& has = side ? right : left;
         const int base = side ? 6 : 0, top = side ? 8 : 7;
-        for (int i = 0; i < n; ++i) {
-            const int j = (i + 1) % n;
+        for (int i = 0; i < segs; ++i) {
+            const int j = closed ? (i + 1) % n : i + 1;
             if (!has[size_t(i)] || !has[size_t(j)]) continue;
             const int panel = i / 2;
             const float u0 = float(i % 2) * 0.5f, u1 = u0 + 0.5f;
             // Outside of a sharp corner: chevrons.
-            const sim::CenterSample& c = t.center[size_t(i)];
-            const vec3 ta = t.center[size_t((i - 4 + n) % n)].tangent, tb = t.center[size_t((i + 4) % n)].tangent;
+            const sim::CenterSample& c = C(i);
+            const vec3 ta = C(i - 4).tangent, tb = C(i + 4).tangent;
             const float turn = glm::dot(tb - ta, c.right); // > 0 turning right
             const bool sharp = glm::dot(ta, tb) < 0.96f;
             const bool outside = sharp && ((turn > 0.0f && side == 0) || (turn < 0.0f && side == 1));
@@ -169,10 +200,11 @@ PaintedModel make_trackside(const sim::Track& t) {
         // Rail along the top, a post every five samples.
         int origin = 0;
         while (origin < n && has[size_t(origin)]) ++origin;
+        if (!closed) origin = 0;
         auto flush = [&](int from, int to) {
             std::vector<vec3> path;
             for (int k = from;; k = (k + 1) % n) {
-                path.push_back(V(k, top) + t.center[size_t(k)].up * 0.1f);
+                path.push_back(V(k, top) + C(k).up * 0.1f);
                 if (k == to) break;
             }
             if (path.size() >= 2) {
@@ -182,8 +214,8 @@ PaintedModel make_trackside(const sim::Track& t) {
             region(b, r_post);
             for (int k = from, count = 0;; k = (k + 1) % n, ++count) {
                 if (count % 5 == 0) {
-                    const vec3 out = side ? t.center[size_t(k)].right : -t.center[size_t(k)].right;
-                    b.tube(V(k, base) + out * 0.1f, V(k, top) + out * 0.1f + t.center[size_t(k)].up * 0.25f, 0.12f, 0.1f, kWhite, 8, true);
+                    const vec3 out = side ? C(k).right : -C(k).right;
+                    b.tube(V(k, base) + out * 0.1f, V(k, top) + out * 0.1f + C(k).up * 0.25f, 0.12f, 0.1f, kWhite, 8, true);
                 }
                 if (k == to) break;
             }
@@ -200,16 +232,16 @@ PaintedModel make_trackside(const sim::Track& t) {
                     start = -1;
                 }
             }
-            if (start >= 0) flush(start, (origin - 1 + n) % n);
+            if (start >= 0) flush(start, closed ? (origin - 1 + n) % n : n - 1);
         }
     }
 
     // ---- kerbs: alternating painted blocks, one block per sample
-    for (int i = 0; i < n; ++i) {
-        const int j = (i + 1) % n;
-        const sim::CenterSample& c = t.center[size_t(i)];
-        const sim::CenterSample& d = t.center[size_t(j)];
-        if (!c.has_floor || !d.has_floor || t.on_stairs(c.s) || t.on_stairs(d.s)) continue;
+    for (int i = 0; i < segs; ++i) {
+        const int j = closed ? (i + 1) % n : i + 1;
+        const sim::CenterSample& c = C(i);
+        const sim::CenterSample& d = C(j);
+        if (!c.has_floor || !d.has_floor || (st.branch < 0 && (t.on_stairs(c.s) || t.on_stairs(d.s)))) continue;
         for (int side = 0; side < 2; ++side) {
             const int edge = side ? 5 : 1, base = side ? 6 : 0;
             const vec3 e0 = V(i, edge), e1 = V(j, edge), b0 = V(i, base), b1 = V(j, base);
@@ -231,7 +263,13 @@ PaintedModel make_trackside(const sim::Track& t) {
         }
     }
 
-    // ---- pennant flags on poles, alternating sides and designs
+}
+
+// Pennant flags on poles along the main loop, alternating sides and designs.
+void paint_flags(MeshBuilder& b, const sim::Track& t) {
+    const int n = int(t.center.size());
+    const auto [left, right] = walls_of(t, t.strips().front());
+    auto V = [&](int sample, int col) { return t.vertices[size_t((sample % n) * kStride + col)]; };
     for (int i = 3; i < n; i += 14) {
         const sim::CenterSample& c = t.center[size_t(i)];
         if (!c.has_floor) continue;
@@ -263,9 +301,8 @@ PaintedModel make_trackside(const sim::Track& t) {
                 b.quad_uv(p00, p10, p11, p01, q00, q10, q11, q01, kWhite);
             }
     }
-    m.mesh = b.take();
-    m.finish();
-    return m;
 }
+
+} // namespace
 
 } // namespace gk::render

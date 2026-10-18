@@ -35,6 +35,8 @@ struct AppOptions {
     bool pixel_look = false;      // --pixel: the low-res look regardless of settings (screenshots)
     bool volumetric = false;      // --volumetric: sun shafts and mist on regardless of settings (screenshots)
     int spawn_obstacle = -1;
+    int spawn_sample = -1; // screenshots: start the player on this road sample (side roads too)
+    int start_lap = 0;     // screenshots: everyone starts on this lap, for the track's lap gates
     std::string demo_fx;          // testing: "explosion", "hit", "tumble" or "trick" on the player at frame 250
     int give_item = 0;            // testing: hand the player this item (sim::Item value) at the start      // testing: start lined up 14 m before this obstacle and drive straight at it
     int karts = 12;
@@ -123,6 +125,17 @@ private:
     std::vector<SpeedLine> speed_lines_;
     void draw_speed_lines(const sim::KartState& k, float top_speed);
     std::map<std::string, std::vector<render::MeshId>> mover_meshes_; // per track, one per mover
+    // What comes and goes during a race: roads that vanish, barriers that
+    // rise and sink, switches, zones. Drawn from the world's gate state.
+    void draw_gates(const sim::World& w);
+    struct GateMeshes {
+        std::vector<std::pair<int, std::pair<render::MeshId, render::MeshId>>> roads; // branch, (road, painted walls)
+        std::vector<render::MeshId> barriers, zones;
+        std::vector<std::pair<render::MeshId, render::MeshId>> switches; // up, pressed
+    };
+    std::map<std::string, GateMeshes> gate_meshes_;
+    std::vector<float> barrier_rise_; // 0 sunk .. 1 standing, eased
+    std::string barrier_track_;
     std::map<std::string, std::pair<render::TextureId, std::pair<vec3, vec3>>> sky_textures_; // theme -> sky, zenith, horizon
     render::MeshId single_prop(const std::string& name);
     mat4 fit_prop(const std::string& name, const mat4& transform) const;

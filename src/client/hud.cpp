@@ -33,7 +33,7 @@ void draw_minimap(render::Renderer& r, const sim::World& w, int player) {
     // from above (+x right, +z down) and kept in proportion.
     vec2 lo(1e9f), hi(-1e9f);
     float y_lo = 1e9f, y_hi = -1e9f;
-    for (const auto& c : t.center) {
+    for (const auto& c : t.road) {
         lo = glm::min(lo, vec2(c.pos.x, c.pos.z)), hi = glm::max(hi, vec2(c.pos.x, c.pos.z));
         y_lo = std::min(y_lo, c.pos.y), y_hi = std::max(y_hi, c.pos.y);
     }
@@ -43,20 +43,27 @@ void draw_minimap(render::Renderer& r, const sim::World& w, int player) {
     const vec2 origin = vec2(x0, y0) + (vec2(box) - span * scale) * 0.5f;
     auto to_map = [&](vec3 p) { return origin + (vec2(p.x, p.z) - lo) * scale; };
 
-    // The road, lowest parts first so bridges are drawn over what they cross:
-    // a dark outline pass, then the road shaded lighter with height.
-    std::vector<int> order(static_cast<size_t>(n));
-    for (int i = 0; i < n; ++i) order[size_t(i)] = i;
-    std::sort(order.begin(), order.end(), [&](int a, int b) {
-        return t.center[size_t(a)].pos.y + t.center[size_t(t.wrap(a + 1))].pos.y <
-               t.center[size_t(b)].pos.y + t.center[size_t(t.wrap(b + 1))].pos.y;
+    // The roads, lowest parts first so bridges are drawn over what they cross:
+    // a dark outline pass, then the road shaded lighter with height. Side
+    // roads that are shut show faintly; ones whose road is gone barely at all.
+    struct Seg { int a, b; uint8_t state; }; // 0 open, 1 shut, 2 gone
+    std::vector<Seg> segs;
+    for (int i = 0; i < n; ++i) segs.push_back({i, t.wrap(i + 1), 0});
+    for (size_t b = 0; b < t.branches.size(); ++b) {
+        const auto& br = t.branches[b];
+        const uint8_t state = t.branch_open(int(b)) ? 0 : br.vanish ? 2 : 1;
+        for (int k = 0; k + 1 < br.count; ++k) segs.push_back({br.first + k, br.first + k + 1, state});
+    }
+    std::sort(segs.begin(), segs.end(), [&](const Seg& a, const Seg& b) {
+        return t.road[size_t(a.a)].pos.y + t.road[size_t(a.b)].pos.y < t.road[size_t(b.a)].pos.y + t.road[size_t(b.b)].pos.y;
     });
     const float yspan = std::max(y_hi - y_lo, 1.0f);
     for (int pass = 0; pass < 2; ++pass)
-        for (int i : order) {
-            const sim::CenterSample &a = t.center[size_t(i)], &b = t.center[size_t(t.wrap(i + 1))];
+        for (const Seg& sg : segs) {
+            const sim::CenterSample &a = t.road[size_t(sg.a)], &b = t.road[size_t(sg.b)];
             if (!a.has_floor || !b.has_floor) continue;
-            const float half = std::max(1.2f, a.half_width * scale) + (pass == 0 ? 1.0f : 0.0f);
+            if (sg.state == 2 && pass == 0) continue;
+            const float half = std::max(sg.state ? 0.8f : 1.2f, a.half_width * scale * (sg.state ? 0.6f : 1.0f)) + (pass == 0 ? 1.0f : 0.0f);
             const vec2 pa = to_map(a.pos), pb = to_map(b.pos);
             vec2 d = pb - pa;
             const float len = glm::length(d);
@@ -64,7 +71,9 @@ void draw_minimap(render::Renderer& r, const sim::World& w, int player) {
             d /= len;
             const vec2 across(-d.y * half, d.x * half), ext_d = d * (pass == 0 ? 1.0f : 0.5f);
             const uint8_t v = uint8_t(150.0f + 80.0f * (0.5f * (a.pos.y + b.pos.y) - y_lo) / yspan);
-            const uint32_t color = pass == 0 ? rgba(10, 10, 20, 170) : rgba(v, v, uint8_t(std::min(255, v + 15)), 230);
+            uint32_t color = pass == 0 ? rgba(10, 10, 20, 170) : rgba(v, v, uint8_t(std::min(255, v + 15)), 230);
+            if (pass == 1 && sg.state == 1) color = rgba(v, uint8_t(v * 0.55f), uint8_t(v * 0.5f), 150); // shut: reddish
+            if (pass == 1 && sg.state == 2) color = rgba(v, v, v, 60);
             r.ui_quad(pa - ext_d - across, pb + ext_d - across, pb + ext_d + across, pa - ext_d + across, color);
         }
     // Start line.
