@@ -44,7 +44,7 @@ KartInput gas(float steer = 0.0f, bool drift = false) {
 
 TEST_CASE("stat points sum to Levels clamped to 0..20") {
     auto parts = test::parts();
-    const StatArray lv = parts.levels({3, 2, 3, 0}); // Brute, Mud Buggy, Monster, Wing
+    const StatArray lv = parts.levels({4, 2, 3, 0}); // Brute, Mud Buggy, Monster, Wing (Meowie sits at 2)
     CHECK(lv[int(Stat::Weight)] == 18);
     CHECK(lv[int(Stat::Acceleration)] == 4);
     CHECK(menu_value(0) == doctest::Approx(0.75f));
