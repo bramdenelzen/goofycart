@@ -42,6 +42,8 @@ struct SceneLighting {
     float fog_density = 0.006f;
     bool shadows = true;
     float sun = 1.0f; // strength of the direct light: 1 sun, ~0.35 moon
+    vec3 zenith = {0.2f, 0.5f, 0.9f}; // sky light from straight above
+    TextureId sky_texture = 0;        // painted sky (sky.h); 0 = a plain gradient
 };
 
 struct RendererOptions {
@@ -256,6 +258,7 @@ private:
     TextureId font_texture_ = 0;
     MeshId sky_mesh_ = 0;     // a sphere round the camera, shaded as sky (mesh.frag)
     vec3 sky_center_{0.0f};
+    TextureId sky_texture_ = 0;
     void ui_glyphs(float x, float y, const char* text, uint32_t color, float em, float edge, float soft, uint32_t color_bottom = 0,
                    float slant = 0.0f, float tracking = 0.0f);
 

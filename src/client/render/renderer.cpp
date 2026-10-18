@@ -1131,7 +1131,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
     u.camera_pos = vec4(camera.position, 1.0f);
     u.light_dir = vec4(glm::normalize(lighting.light_dir), lighting.ambient);
     u.fog_color = vec4(lighting.sky, lighting.fog_density);
-    u.sky_color = vec4(lighting.sky, 1.0f);
+    u.sky_color = vec4(lighting.zenith, 1.0f);
     {   // The sun's view: an orthographic box round the area ahead of the camera,
         // snapped to whole shadow-map texels so the edges don't crawl.
         const vec3 l = glm::normalize(lighting.light_dir);
@@ -1151,6 +1151,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
     vmaFlushAllocation(allocator_, f.uniforms.alloc, 0, VK_WHOLE_SIZE);
     clear_color_ = lighting.sky;
     sky_center_ = camera.position;
+    sky_texture_ = lighting.sky_texture;
 
     draws_.clear();
     ui_vertices_.clear();
@@ -1272,11 +1273,11 @@ void Renderer::end_frame() {
         const GpuMesh& m = meshes_[sky_mesh_];
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, mesh_pipeline_two_sided_);
         bound_pipeline = mesh_pipeline_two_sided_;
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 1, 1, &textures2d_[0].set, 0, nullptr);
-        bound_texture = 0;
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 1, 1, &textures2d_[sky_texture_].set, 0, nullptr);
+        bound_texture = sky_texture_;
         push.model = glm::scale(glm::translate(mat4(1.0f), sky_center_), vec3(900.0f));
         push.tint = vec4(1.0f);
-        push.flags = glm::ivec4(0, 0, 0, 1);
+        push.flags = glm::ivec4(sky_texture_ ? 1 : 0, 0, 0, 1);
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
         vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);

@@ -8,6 +8,7 @@
 
 #include "gk/online/master_client.h"
 #include "render/track_mesh.h"
+#include "render/sky.h"
 #include "render/trackside.h"
 
 #include "gk/core/crash.h"
@@ -375,6 +376,17 @@ void App::show_track(const std::string& id) {
     const render::ThemeStyle& th = render::theme_style(shown_track_->theme);
     light_ = {};
     light_.sky = th.sky;
+    {   // The painted sky for the theme, made once.
+        auto sky = sky_textures_.find(shown_track_->theme);
+        if (sky == sky_textures_.end()) {
+            const render::SkyImage img = render::paint_sky(shown_track_->theme);
+            sky = sky_textures_.emplace(shown_track_->theme, std::pair(renderer_.upload_texture(img.width, img.height, img.rgba.data()),
+                                                                       std::pair(img.zenith, img.horizon))).first;
+        }
+        light_.sky_texture = sky->second.first;
+        light_.zenith = sky->second.second.first;
+        light_.sky = sky->second.second.second; // distant things fade into the horizon
+    }
     light_.fog_density = th.fog_density;
     light_.ambient = th.ambient;
     if (shown_track_->theme == "night") { // moonlight: dim, blue, from high up
@@ -1352,7 +1364,7 @@ void App::render(float alpha, float dt) {
         draw_standings();
     } else if (w) {
         const auto& karts = w->karts();
-        renderer_.ui_vignette(0.55f); // a lens feel; first, so the HUD sits on top
+        renderer_.ui_vignette(0.3f); // a lens feel; first, so the HUD sits on top
         draw_items(*w);
         draw_breakables(*w);
         draw_movers(*w, alpha);

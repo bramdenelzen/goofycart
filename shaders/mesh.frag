@@ -38,7 +38,7 @@ float sun_visibility(vec3 world, vec3 n) {
     if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || s.z >= 1.0) return 1.0;
     float t = frame.shadow.y, sum = 0.0;
     for (int y = -1; y <= 2; ++y)
-        for (int x = -1; x <= 2; ++x) sum += texture(shadow_map, vec3(uv + (vec2(x, y) - 0.5) * t, s.z - 0.0006));
+        for (int x = -1; x <= 2; ++x) sum += texture(shadow_map, vec3(uv + (vec2(x, y) - 0.5) * t * 2.2, s.z - 0.0008));
     float v = sum / 16.0;
     // Fade out towards the edge of the shadowed area.
     vec2 e = abs(uv - 0.5) * 2.0;
@@ -55,9 +55,9 @@ vec3 grade(vec3 c) {
     c = min(c, 0.8) + 0.2 * (1.0 - exp(-over * 3.0));
     // Arcade punch: an S-curve for contrast and richer colour.
     // (gentler at night, where it would crush the dark road)
-    c = mix(c, c * c * (3.0 - 2.0 * c), mix(0.05, 0.35, clamp(frame.shadow.z, 0.0, 1.0)));
+    c = mix(c, c * c * (3.0 - 2.0 * c), mix(0.04, 0.14, clamp(frame.shadow.z, 0.0, 1.0)));
     float luma = dot(c, vec3(0.299, 0.587, 0.114));
-    c = mix(vec3(luma), c, 1.18);
+    c = mix(vec3(luma), c, 1.15);
     // Warm highlights, slightly cool shadows.
     c *= mix(vec3(0.95, 0.98, 1.05), vec3(1.04, 1.0, 0.94), smoothstep(0.2, 0.8, luma));
     return clamp(c, 0.0, 1.0);
@@ -80,16 +80,21 @@ vec3 haze(vec3 dir, vec3 l, float sun) {
 void main() {
     vec3 l = normalize(frame.light_dir.xyz);
     float sun = frame.shadow.z; // 1 by day, low under the moon
-    if (draw.flags.w == 1) { // the sky dome: a gradient, haze at the horizon, the sun
+    if (draw.flags.w == 1) { // the sky dome: the painted sky by direction, plus the sun
         vec3 dir = normalize(v_world - frame.camera_pos.xyz);
-        float up = clamp(dir.y, 0.0, 1.0);
-        vec3 deep = mix(vec3(0.12, 0.36, 0.86), frame.sky_color.rgb * vec3(0.4, 0.6, 1.0), 0.35);
-        vec3 zenith = mix(deep, frame.sky_color.rgb * 0.3, 1.0 - clamp(sun, 0.0, 1.0));
-        vec3 col = mix(haze(dir, l, sun), zenith, pow(up, 0.45));
+        vec3 col;
+        if (draw.flags.x == 1) {
+            float u = atan(dir.z, dir.x) / 6.2831853 + 0.5;
+            float el = asin(clamp(dir.y, -1.0, 1.0));
+            float vv = clamp(0.88 - el / 1.5707963 * 0.88, 0.0, 0.999);
+            col = textureLod(albedo_tex, vec2(u, vv), 0.0).rgb;
+        } else {
+            float up = clamp(dir.y, 0.0, 1.0);
+            col = mix(frame.fog_color.rgb, frame.sky_color.rgb, pow(up, 0.5));
+        }
         float d = max(dot(dir, l), 0.0);
-        vec3 sun_col = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.92, 0.75), clamp(sun, 0.0, 1.0));
-        col += sun_col * (pow(d, 600.0) * 2.0 + pow(d, 40.0) * 0.25 + pow(d, 6.0) * 0.08) * clamp(sun, 0.25, 1.0);
-        col = mix(col, frame.fog_color.rgb * 0.92, smoothstep(0.0, -0.25, dir.y)); // below the horizon: haze
+        vec3 sun_col = mix(vec3(0.75, 0.85, 1.0), vec3(1.0, 0.9, 0.7), clamp(sun, 0.0, 1.0));
+        col += sun_col * (pow(d, 900.0) * 2.5 + pow(d, 60.0) * 0.3 + pow(d, 8.0) * 0.12) * clamp(sun, 0.2, 1.0);
         out_color = vec4(grade(col), 1.0);
         return;
     }
@@ -131,16 +136,17 @@ void main() {
     // Diffuse with a soft terminator; shadowed faces keep a little sun.
     float ndl = dot(n, l);
     float vis = sun_visibility(v_world, n);
-    float diffuse = smoothstep(-0.2, 0.85, ndl) * mix(0.08, 1.0, vis);
+    // Soft light: a wide terminator and shadows filled by the sky, not black.
+    float diffuse = smoothstep(-0.45, 0.95, ndl) * mix(0.45, 1.0, vis);
     // Hemisphere ambient: sky from above, warm bounce from the ground below.
     float up = n.y * 0.5 + 0.5;
-    vec3 sky_amb = mix(frame.sky_color.rgb, vec3(0.62, 0.72, 0.9), 0.4) * 1.05;
-    vec3 ground_amb = vec3(0.48, 0.42, 0.34);
+    vec3 sky_amb = mix(frame.sky_color.rgb, vec3(0.8, 0.86, 0.95), 0.55) * 1.1;
+    vec3 ground_amb = mix(vec3(0.55, 0.47, 0.36), frame.fog_color.rgb, 0.25);
     vec3 amb = ambient * mix(ground_amb, sky_amb, up);
     // Occlusion near the ground: the bottoms of things sit in their own shade.
     float ao = mix(0.72, 1.0, smoothstep(-0.6, 0.6, n.y)) ;
-    vec3 sun_col = mix(vec3(0.5, 0.6, 0.95), vec3(1.0, 0.93, 0.8), clamp(sun, 0.0, 1.0));
-    vec3 lit = albedo * (amb * ao * 0.85 + (1.15 - ambient * 0.55) * diffuse * sun * sun_col);
+    vec3 sun_col = mix(vec3(0.5, 0.6, 0.95), vec3(1.0, 0.9, 0.74), clamp(sun, 0.0, 1.0));
+    vec3 lit = albedo * (amb * ao * 0.9 + (1.0 - ambient * 0.5) * diffuse * sun * sun_col);
 
     // A soft sheen, not plastic: broad and faint, and only in the sun.
     vec3 h = normalize(l + v);
