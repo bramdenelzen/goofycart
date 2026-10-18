@@ -100,8 +100,8 @@ Texel rock(int x, int y) {
     return grey(v);
 }
 Texel arrows(int x, int y) {
-    // Two chevrons along +v (down the image), bright on a darker ground.
-    const int yy = (y + N - std::abs(x - N / 2)) % (N / 2);
+    // Two chevrons pointing along -v (the way the road runs), bright on a darker ground.
+    const int yy = (N - 1 - y + N - std::abs(x - N / 2)) % (N / 2);
     return grey(yy < 5 * S ? 1.35f : 0.8f);
 }
 Texel stripes(int x, int y) { return grey(((x + y) / (8 * S)) % 2 ? 1.12f : 0.82f); }

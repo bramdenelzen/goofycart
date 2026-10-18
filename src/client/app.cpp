@@ -8,6 +8,7 @@
 
 #include "gk/online/master_client.h"
 #include "render/track_mesh.h"
+#include "render/item_icons.h"
 #include "render/sky.h"
 #include "render/trackside.h"
 
@@ -150,6 +151,7 @@ bool App::init() {
     if (!renderer_.init(window_, ro)) return false;
     renderer_.make_particle_texture();
     if (!renderer_.load_font(sim::data_path("fonts/RussoOne-Regular.ttf"))) log_warn("UI font missing: using the pixel font");
+    else renderer_.set_ui_icons(render::paint_item_icons(512), 512, render::kIconGrid);
     // The game's own painted items, then an optional model pack beside the
     // data folder (not in the repository) that may override them.
     // Low-poly: half the segments of the smooth shapes; the painted textures
@@ -202,6 +204,7 @@ bool App::init() {
         start_race();
         screen_ = Screen::Race;
         paused_ = options_.menu == "pause"; // screenshots of the pause menu
+        if (world_ && options_.give_item > 0 && options_.give_item < int(sim::Item::Count)) world_->give_item(player_, sim::Item(options_.give_item));
         if (world_ && options_.spawn_obstacle >= 0 && size_t(options_.spawn_obstacle) < world_->track().obstacles.size()) {
             const auto& o = world_->track().obstacles[size_t(options_.spawn_obstacle)];
             sim::KartState& k = world_->karts_mut()[size_t(player_)];
@@ -212,6 +215,7 @@ bool App::init() {
         }
     } else {
         if (options_.menu == "options") screen_ = Screen::Options;
+        else if (options_.menu == "controls") screen_ = Screen::Controls;
         else if (options_.menu == "course") screen_ = Screen::Course;
         else if (options_.menu == "online") start_matchmaking();
         show_track(course_track(course_, tracks_));
@@ -826,6 +830,7 @@ void App::apply_settings() {
     renderer_.set_full_resolution(!settings_.low_res);
     show_help_ = settings_.show_help;
     input_.rumble_enabled = settings_.rumble;
+    input_.binds = settings_.binds;
     SDL_SetWindowFullscreen(window_, settings_.fullscreen);
     audio_.mixer().set_volumes({settings_.master / 10.0f, settings_.music / 10.0f, settings_.sfx / 10.0f});
 }
@@ -1083,30 +1088,51 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
     auto R = [&] { return particles_.rnd(); };
     const bool near = glm::distance(s.pos, cam_pos_) < 70.0f;
 
-    // Skid marks: two dark strips behind the rear wheels while drifting or sliding.
+    // Skid marks: rubber strips behind each rear tyre, as wide as the tyre,
+    // fading in as the slide starts and out as it ends.
     {
-        const bool marking = s.grounded && speed > 5.0f && (s.drift == sim::DriftState::Drifting || glm::length(s.slide) > 4.0f);
+        const bool sliding_hard = s.grounded && speed > 5.0f && (s.drift == sim::DriftState::Drifting || glm::length(s.slide) > 4.0f);
         const size_t slot = size_t(index % 12);
         if (skid_last_.size() < 12) skid_last_.assign(12, SkidPoint{});
         SkidPoint& last = skid_last_[slot];
-        if (marking) {
-            const vec3 up = s.up(), across = glm::normalize(vec3(m * vec4(1, 0, 0, 0)));
-            SkidPoint now;
-            now.valid = true;
-            for (int w = 0; w < 2; ++w) now.wheel[w] = at({w == 0 ? -0.62f : 0.62f, 0.0f, -0.6f}) + up * 0.04f;
-            now.across = across;
-            if (!last.valid) last = now;
-            else if (glm::distance(now.wheel[0], last.wheel[0]) > 0.35f) {
-                for (int w = 0; w < 2; ++w) {
-                    const float hw = 0.13f;
-                    skids_.push_back({last.wheel[w] - last.across * hw, last.wheel[w] + last.across * hw, now.wheel[w] + now.across * hw,
-                                      now.wheel[w] - now.across * hw, 0.0f});
-                }
-                if (skids_.size() > 2400) skids_.erase(skids_.begin(), skids_.begin() + 200);
-                last = now;
+        const float target = !sliding_hard ? 0.0f : s.drift == sim::DriftState::Drifting ? 0.55f + 0.45f * std::min(1.0f, glm::length(s.slide) / 8.0f) : 0.7f;
+        last.strength += (target - last.strength) * std::min(1.0f, dt * (target > last.strength ? 5.0f : 3.0f));
+        // Rear wheels from the kart's layout: their spots and widths.
+        const KartVisual& kv = kart_visuals_[slot];
+        SkidPoint now;
+        now.strength = last.strength;
+        for (const auto& wl : kv.layout.wheels)
+            if (wl.center.z < 0.0f && now.wheels < 2) {
+                now.wheel[now.wheels] = at({wl.center.x, 0.0f, wl.center.z}) + s.up() * 0.035f;
+                now.width[now.wheels] = std::clamp(wl.radius * 0.75f, 0.12f, 0.4f);
+                ++now.wheels;
             }
-        } else {
+        if (now.wheels == 0) {
+            now.wheels = 2;
+            for (int w = 0; w < 2; ++w) now.wheel[w] = at({w == 0 ? -0.62f : 0.62f, 0.0f, -0.6f}) + s.up() * 0.035f, now.width[w] = 0.26f;
+        }
+        now.across = glm::normalize(vec3(m * vec4(1, 0, 0, 0)));
+        if (last.strength < 0.03f) {
             last.valid = false;
+        } else if (!last.valid || last.wheels != now.wheels) {
+            now.valid = true;
+            now.v = 0.0f;
+            last = now;
+        } else if (glm::distance(now.wheel[0], last.wheel[0]) > 0.3f) {
+            now.valid = true;
+            now.v = last.v + glm::distance(now.wheel[0], last.wheel[0]) / 1.2f;
+            for (int w = 0; w < now.wheels; ++w) {
+                Skid k;
+                const float h0 = 0.5f * last.width[w], h1 = 0.5f * now.width[w];
+                k.p[0] = last.wheel[w] - last.across * h0, k.p[1] = last.wheel[w] + last.across * h0;
+                k.p[2] = now.wheel[w] + now.across * h1, k.p[3] = now.wheel[w] - now.across * h1;
+                k.v0 = std::fmod(last.v, 1.0f), k.v1 = k.v0 + (now.v - last.v);
+                k.a0 = last.strength, k.a1 = now.strength;
+                k.age = 0.0f;
+                skids_.push_back(k);
+            }
+            if (skids_.size() > 2400) skids_.erase(skids_.begin(), skids_.begin() + 200);
+            last = now;
         }
     }
 
@@ -1123,8 +1149,8 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
                 p.carry = vel * 0.95f;
                 p.vel = p.carry + dir({side * (0.8f + 1.2f * R()), 1.5f + 1.5f * R(), -2.0f - 2.0f * R()});
                 p.life = 0.12f + 0.1f * R();
-                p.size0 = 0.13f, p.size1 = 0.08f;
-                p.sprite = Sp::Flame, p.stretch = 0.03f;
+                p.size0 = 0.24f, p.size1 = 0.14f;
+                p.sprite = Sp::Flame, p.stretch = 0.035f;
                 p.color0 = vec4(glm::mix(c, vec3(1.0f), 0.35f), 1.0f), p.color1 = vec4(c, 1.0f);
                 particles_.emit(p);
             }
@@ -1134,7 +1160,7 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
                 p.carry = vel * 0.9f;
                 p.vel = p.carry + dir({side * (1.0f + 2.0f * R()), 2.0f + 2.5f * R(), -1.0f - 1.5f * R()});
                 p.life = 0.2f + 0.15f * R();
-                p.size0 = p.size1 = 0.05f + 0.03f * R();
+                p.size0 = p.size1 = 0.09f + 0.05f * R();
                 p.sprite = R() < 0.5f ? Sp::Sparkle : Sp::Dot;
                 p.pop = 0.15f, p.angle = R() * 6.28f;
                 p.color0 = p.color1 = vec4(glm::mix(c, vec3(1.0f), 0.3f), 1.0f);
@@ -1174,8 +1200,8 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
             p.carry = vel;
             p.vel = vel + dir({(R() - 0.5f) * 0.4f, 0.3f, -1.0f}) * (4.0f + 2.0f * R());
             p.life = 0.1f + 0.06f * R();
-            p.size0 = 0.12f, p.size1 = 0.05f;
-            p.sprite = Sp::Flame, p.stretch = 0.04f;
+            p.size0 = 0.22f, p.size1 = 0.09f;
+            p.sprite = Sp::Flame, p.stretch = 0.045f;
             p.color0 = vec4(hot, 1.0f), p.color1 = vec4(cool, 1.0f);
             particles_.emit(p);
         }
@@ -1214,32 +1240,20 @@ void App::emit_kart_particles(int index, const sim::KartState& s, const mat4& m)
             }
         }
     }
-    // Slipstream: white wind lines streaming past while you're in the tow.
+    // Slipstream: a few long, faint wind lines sliding back along the
+    // kart's sides and over the top, like air parting round it.
     if (s.draft > 15 && near)
-        for (int i = 0, n = count(30.0f * float(s.draft) / 75.0f); i < n; ++i) {
+        for (int i = 0, n = count(14.0f * float(s.draft) / 75.0f); i < n; ++i) {
             Particle p;
-            const float a = R() * 6.28f;
-            p.pos = at({std::cos(a) * (0.9f + 0.3f * R()), 0.5f + std::sin(a) * 0.6f, 1.2f + R()});
+            const float side = R() < 0.5f ? -1.0f : 1.0f;
+            const bool top = R() < 0.3f;
+            p.pos = at({top ? (R() - 0.5f) * 0.6f : side * (0.85f + 0.25f * R()), top ? 1.15f + 0.2f * R() : 0.3f + 0.6f * R(), 0.9f + 0.6f * R()});
             p.carry = vel;
-            p.vel = vel - dir({0, 0, 1}) * 14.0f;
-            p.life = 0.16f;
-            p.size0 = p.size1 = 0.05f;
-            p.sprite = Sp::Streak, p.stretch = 0.07f;
-            p.color0 = vec4(0.9f, 1.0f, 1.0f, 0.95f), p.color1 = vec4(0.55f, 0.85f, 1.0f, 0.0f);
-            particles_.emit(p);
-        }
-    // Star: a trail of spinning rainbow stars.
-    if (s.star_frames > 0)
-        for (int i = 0, n = count(7.0f); i < n; ++i) {
-            Particle p;
-            p.pos = at({(R() - 0.5f) * 1.2f, 0.3f + R() * 0.8f, -0.6f});
-            p.vel = vel * 0.3f + particles_.rnd_dir() * 1.5f;
-            p.life = 0.5f + 0.3f * R();
-            const float h = R() * 6.28f;
-            const vec3 c(0.55f + 0.45f * std::sin(h), 0.55f + 0.45f * std::sin(h + 2.1f), 0.55f + 0.45f * std::sin(h + 4.2f));
-            p.size0 = p.size1 = 0.08f;
-            p.pop = 0.15f, p.sprite = R() < 0.5f ? Sp::Star : Sp::Sparkle, p.spin = 6.0f, p.angle = R() * 6.28f;
-            p.color0 = p.color1 = vec4(c, 1.0f);
+            p.vel = vel - dir({0, 0, 1}) * 9.0f;
+            p.life = 0.22f;
+            p.size0 = p.size1 = 0.035f;
+            p.sprite = Sp::Streak, p.stretch = 0.09f;
+            p.color0 = vec4(1.0f, 1.0f, 1.0f, 0.55f), p.color1 = vec4(0.8f, 0.92f, 1.0f, 0.0f);
             particles_.emit(p);
         }
     (void)index;
@@ -1256,7 +1270,7 @@ void App::draw_speed_lines(const sim::KartState& k, float top_speed) {
     const float dt = frame_dt_;
     const float n = 90.0f * intensity * dt;
     for (int i = 0, c = int(n) + (particles_.rnd() < n - std::floor(n) ? 1 : 0); i < c; ++i)
-        speed_lines_.push_back({particles_.rnd() * 6.2832f, 1.08f + 0.15f * particles_.rnd(), 0.18f + 0.2f * particles_.rnd(),
+        speed_lines_.push_back({particles_.rnd() * 6.2832f, 0.72f + 0.15f * particles_.rnd(), 0.18f + 0.2f * particles_.rnd(),
                                 0.14f + 0.08f * particles_.rnd(), 0.0f, 1.2f + 1.8f * particles_.rnd()});
     for (SpeedLine& l : speed_lines_) l.age += dt;
     std::erase_if(speed_lines_, [](const SpeedLine& l) { return l.age >= l.life; });
@@ -1268,7 +1282,7 @@ void App::draw_speed_lines(const sim::KartState& k, float top_speed) {
         tint = glm::mix(vec3(1.0f), vec3(to_tint(tier_color(k.boost == sim::BoostKind::MiniTurbo ? 1 : k.boost == sim::BoostKind::SuperMiniTurbo ? 2 : 3))), 0.35f);
     for (const SpeedLine& l : speed_lines_) {
         const float t = l.age / l.life;
-        const float r0 = (l.r - 0.45f * t) * half, r1 = r0 - l.len * half; // rushing inward
+        const float r0 = (l.r + 0.45f * t) * half, r1 = r0 - l.len * half; // rushing outward, past the viewer
         const vec2 d(std::cos(l.angle), std::sin(l.angle)), side(-d.y, d.x);
         const float a = std::sin(t * 3.1416f) * 0.55f;
         const uint32_t col = render::rgba(uint8_t(tint.r * 255), uint8_t(tint.g * 255), uint8_t(tint.b * 255), uint8_t(a * 255));
@@ -1312,7 +1326,7 @@ void App::event_particles(const sim::KartEvent& e) {
         break;
     case sim::KartEventType::Bump:
         burst(base + k.up() * 0.6f, 1, vec3(1.0f, 0.92f, 0.4f), 0.0f, 0.25f, Sp::Burst, 0.0f, 0.15f);
-        burst(base + k.up() * 0.8f, 4, vec3(1.0f, 0.9f, 0.3f), 3.0f, 0.08f, Sp::Star, 0.0f, 0.45f);
+        burst(base + k.up() * 0.8f, 4, vec3(1.0f, 0.9f, 0.3f), 3.0f, 0.08f, Sp::Sparkle, 0.0f, 0.45f);
         break;
     case sim::KartEventType::ItemBox: {
         const vec3 cs[5] = {{1.0f, 0.35f, 0.4f}, {0.3f, 0.65f, 1.0f}, {1.0f, 0.85f, 0.2f}, {0.4f, 0.95f, 0.5f}, {0.85f, 0.45f, 1.0f}};
@@ -1324,7 +1338,7 @@ void App::event_particles(const sim::KartEvent& e) {
     }
     case sim::KartEventType::Hit:
         burst(base + k.up() * 0.5f, 1, vec3(1.0f, 0.9f, 0.35f), 0.0f, 0.5f, Sp::Burst, 0.0f, 0.2f);
-        burst(base + k.up() * 0.9f, 5, vec3(1.0f, 0.88f, 0.25f), 3.0f, 0.1f, Sp::Star, -1.0f, 0.7f);
+        burst(base + k.up() * 0.9f, 5, vec3(1.0f, 0.88f, 0.25f), 3.0f, 0.1f, Sp::Sparkle, -1.0f, 0.7f);
         break;
     case sim::KartEventType::Explosion:
         burst(base + k.up() * 0.5f, 1, vec3(1.0f, 0.85f, 0.3f), 0.0f, 1.2f, Sp::Burst, 0.0f, 0.22f);
@@ -1332,21 +1346,21 @@ void App::event_particles(const sim::KartEvent& e) {
         burst(base, 10, vec3(0.32f, 0.3f, 0.34f), 4.0f, 0.45f, Sp::Puff, -1.5f, 1.0f);
         break;
     case sim::KartEventType::Respawn: burst(base + k.up() * 0.5f, 10, vec3(0.75f, 0.92f, 1.0f), 2.5f, 0.09f, Sp::Sparkle, -2.0f, 0.8f); break;
-    case sim::KartEventType::Trick: burst(base + k.up() * 0.5f, 6, vec3(1.0f, 0.95f, 0.45f), 4.0f, 0.09f, Sp::Star, 0.0f, 0.5f); break;
+    case sim::KartEventType::Trick: burst(base + k.up() * 0.5f, 6, vec3(1.0f, 0.95f, 0.45f), 4.0f, 0.09f, Sp::Sparkle, 0.0f, 0.5f); break;
     case sim::KartEventType::Smash:
         burst(front, 5, vec3(0.92f, 0.82f, 0.62f), 3.0f, 0.2f, Sp::Puff, 0.0f, 0.55f);
         burst(front, 5, vec3(0.6f, 0.45f, 0.3f), 5.0f, 0.06f, Sp::Rock, 14.0f, 0.7f);
         break;
     case sim::KartEventType::TireKnock: burst(front, 4, vec3(0.8f, 0.8f, 0.82f), 2.5f, 0.18f, Sp::Puff2, 0.0f, 0.45f); break;
-    case sim::KartEventType::TireBounce: burst(base, 4, vec3(1.0f, 0.95f, 0.5f), 3.5f, 0.08f, Sp::Star, 3.0f, 0.5f); break;
+    case sim::KartEventType::TireBounce: burst(base, 4, vec3(1.0f, 0.95f, 0.5f), 3.5f, 0.08f, Sp::Sparkle, 3.0f, 0.5f); break;
     case sim::KartEventType::Boost: {
         const int t = e.value == int(sim::BoostKind::MiniTurbo) ? 1 : e.value == int(sim::BoostKind::SuperMiniTurbo) ? 2
                     : e.value == int(sim::BoostKind::UltraMiniTurbo) ? 3 : 0;
         const vec3 back = base - k.forward() * 1.0f + k.up() * 0.3f;
         if (t > 0) {
             const vec3 c = vec3(to_tint(tier_color(t)));
-            burst(back, 1, glm::mix(c, vec3(1.0f), 0.4f), 0.0f, 0.35f, Sp::Burst, 0.0f, 0.15f);
-            burst(back, 6, c, 4.5f, 0.07f, Sp::Sparkle, 3.0f, 0.4f);
+            burst(back, 1, glm::mix(c, vec3(1.0f), 0.4f), 0.0f, 0.6f, Sp::Burst, 0.0f, 0.18f);
+            burst(back, 8, c, 5.0f, 0.13f, Sp::Sparkle, 3.0f, 0.45f);
         }
         if (e.value == int(sim::BoostKind::Slipstream)) burst(base + k.up() * 0.5f, 6, vec3(0.85f, 0.97f, 1.0f), 4.0f, 0.1f, Sp::Sparkle, 0.0f, 0.4f);
         break;
@@ -1663,7 +1677,9 @@ void App::draw_items(const sim::World& w) {
         mat4 m = glm::translate(mat4(1.0f), boxes[i] + vec3(0, bob, 0));
         m = glm::rotate(m, spin + float(i), vec3(0, 1, 0));
         m = glm::rotate(m, 0.5f, vec3(1, 0, 1));
+        renderer_.set_fx(2); // iridescent, shimmering glass
         draw_item_mesh(box_mesh_, "item_box", glm::scale(m, vec3(scale)));
+        renderer_.set_fx(0);
     }
     for (const sim::ItemEntity& e : w.entities()) {
         mat4 m = glm::translate(mat4(1.0f), e.pos - vec3(0, 0.3f, 0));
@@ -1700,7 +1716,7 @@ void App::draw_items(const sim::World& w) {
 
 void App::render(float alpha, float dt) {
     frame_dt_ = std::clamp(dt, 0.0f, 0.1f);
-    if (screen_ == Screen::Title || screen_ == Screen::Options || screen_ == Screen::Online || screen_ == Screen::Course ||
+    if (screen_ == Screen::Title || screen_ == Screen::Options || screen_ == Screen::Controls || screen_ == Screen::Online || screen_ == Screen::Course ||
         screen_ == Screen::OnlineMenu || screen_ == Screen::Join || screen_ == Screen::Hosting ||
         screen_ == Screen::Select) {
         render_menu(dt);
@@ -1731,9 +1747,14 @@ void App::render(float alpha, float dt) {
         if (!paused_) particles_.update(frame_dt_);
         // Skid marks fade over eight seconds.
         for (Skid& k : skids_) k.age += paused_ ? 0.0f : frame_dt_;
-        std::erase_if(skids_, [](const Skid& k) { return k.age > 8.0f; });
-        for (const Skid& k : skids_)
-            renderer_.decal(k.a, k.b, k.c, k.d, vec4(0.08f, 0.08f, 0.1f, 0.42f * std::clamp((8.0f - k.age) / 2.0f, 0.0f, 1.0f)));
+        std::erase_if(skids_, [](const Skid& k) { return k.age > 10.0f; });
+        for (const Skid& k : skids_) {
+            const float fade = std::clamp((10.0f - k.age) / 3.0f, 0.0f, 1.0f) * 0.55f;
+            const vec2 uv[4] = {{0.0f, k.v0}, {1.0f, k.v0}, {1.0f, std::min(k.v1, 1.0f)}, {0.0f, std::min(k.v1, 1.0f)}};
+            const vec4 c0(0.07f, 0.06f, 0.07f, k.a0 * fade), c1(0.07f, 0.06f, 0.07f, k.a1 * fade);
+            const vec4 col[4] = {c0, c0, c1, c1};
+            renderer_.decal(k.p, uv, col, render::Renderer::Sprite::Tread);
+        }
         particles_.draw(renderer_);
         if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
@@ -1946,11 +1967,37 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
     case Screen::Options:
         switch (update_options(options_menu_, settings_, act)) {
         case OptionsAction::Changed: apply_settings(); break;
+        case OptionsAction::Controls: screen_ = Screen::Controls; controls_ = {}; break;
         case OptionsAction::Back:
             if (const std::string sp = settings_path(); !sp.empty()) settings_.save(sp);
             screen_ = Screen::Title;
             break;
         case OptionsAction::None: break;
+        }
+        return;
+    case Screen::Controls:
+        if (controls_.waiting) {
+            input_.capture_key = true;
+            if (input_.captured_key) {
+                if (input_.captured_key != SDL_SCANCODE_ESCAPE) {
+                    auto& b = settings_.binds[size_t(controls_.row)];
+                    b[size_t(controls_.slot)] = input_.captured_key;
+                    apply_settings();
+                    if (const std::string sp = settings_path(); !sp.empty()) settings_.save(sp);
+                }
+                input_.captured_key = 0;
+                input_.capture_key = false;
+                controls_.waiting = false;
+            }
+            return;
+        }
+        switch (update_controls(controls_, settings_, act)) {
+        case ControlsAction::Changed:
+            apply_settings();
+            if (const std::string sp = settings_path(); !sp.empty()) settings_.save(sp);
+            break;
+        case ControlsAction::Back: screen_ = Screen::Options; break;
+        default: break;
         }
         return;
     case Screen::Course:
@@ -2046,6 +2093,7 @@ void App::render_menu(float dt) {
     switch (screen_) {
     case Screen::Title: draw_title(renderer_, title_); break;
     case Screen::Options: draw_options(renderer_, options_menu_, settings_); break;
+    case Screen::Controls: draw_controls(renderer_, controls_, settings_); break;
     case Screen::Online: draw_online_status(renderer_, online_error_.empty() ? "SIGNING IN AND FINDING A RACE..." : online_error_, !online_error_.empty()); break;
     case Screen::OnlineMenu:
         draw_online_menu(renderer_, online_menu_, !(!options_.master_url.empty() ? options_.master_url : settings_.master_url).empty());

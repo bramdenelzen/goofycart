@@ -668,8 +668,52 @@ void Renderer::make_particle_texture() {
         const float d = p.y < 0.25f ? std::max(cone, -0.95f - p.y) : base;
         return Px{std::min(base, std::max(cone, std::max(-0.95f - p.y, p.y - 0.25f))) + 0.0f * d, glm::length(p - vec2(-0.2f, 0.1f)) < 0.18f ? 1.0f : 0.85f};
     });
+    // Tread: rubber laid down in streaks along the length (y), soft at the sides.
+    cell(13, false, [](vec2 p) {
+        auto h = [](float x) { return std::fmod(std::sin(x * 127.1f) * 43758.5453f, 1.0f); };
+        const float band = std::floor((p.x + 1.0f) * 9.0f);
+        const float streak = 0.45f + 0.55f * std::abs(h(band));
+        const float side = 1.0f - glm::smoothstep(0.65f, 1.0f, std::abs(p.x));
+        const float grain = std::abs(h(std::floor((p.x + 1.0f) * 40.0f) * 7.0f + std::floor((p.y + 1.0f) * 20.0f)));
+        const float density = streak * side * (0.75f + 0.25f * grain);
+        // Coverage by density: a sub-sample is inside when it falls under it.
+        const float pick = std::abs(h(p.x * 911.0f + p.y * 377.0f));
+        return Px{pick < density ? -1.0f : 1.0f, 1.0f};
+    });
     if (const char* dump = std::getenv("GK_DUMP_PARTICLES")) stbi_write_png(dump, S, S, 4, px.data(), S * 4); // to check the art
     particle_texture_ = upload_texture(S, S, px.data());
+}
+
+void Renderer::set_ui_icons(const std::vector<uint8_t>& icons, int size, int grid) {
+    if (!g_font.loaded() || size != g_font.atlas_size()) return;
+    // One texture, font on the left half, icons on the right.
+    const int fs = g_font.atlas_size();
+    std::vector<uint8_t> px(size_t(fs) * 2 * size_t(fs) * 4, 0);
+    const auto& font = g_font.atlas_rgba();
+    for (int y = 0; y < fs; ++y) {
+        std::copy_n(font.begin() + ptrdiff_t(y) * fs * 4, size_t(fs) * 4, px.begin() + ptrdiff_t(y) * fs * 8);
+        std::copy_n(icons.begin() + ptrdiff_t(y) * size * 4, size_t(size) * 4, px.begin() + ptrdiff_t(y) * fs * 8 + fs * 4);
+    }
+    font_texture_ = upload_texture(fs * 2, fs, px.data());
+    font_u_scale_ = 0.5f;
+    icon_grid_ = grid;
+}
+
+void Renderer::ui_icon(float x, float y, float size, int index, uint32_t tint) {
+    if (!frame_active_ || icon_grid_ <= 0 || index < 0) return;
+    const float c = 1.0f / float(icon_grid_), e = 0.5f / 512.0f;
+    const float u0 = 0.5f + 0.5f * (float(index % icon_grid_) * c + e), u1 = 0.5f + 0.5f * (float(index % icon_grid_ + 1) * c - e);
+    const float v0 = float(index / icon_grid_) * c + e, v1 = float(index / icon_grid_ + 1) * c - e;
+    auto v = [&](float px, float py, float u, float vv) {
+        UiVertex o;
+        o.pos = {px, py};
+        o.uv = {u, vv};
+        o.color = tint;
+        o.mode = 4;
+        return o;
+    };
+    const UiVertex a = v(x, y, u0, v0), b = v(x + size, y, u1, v0), cc = v(x + size, y + size, u1, v1), d = v(x, y + size, u0, v1);
+    ui_vertices_.insert(ui_vertices_.end(), {a, b, cc, a, cc, d});
 }
 
 bool Renderer::load_font(const std::string& path) {
@@ -779,6 +823,22 @@ void sprite_uv(Renderer::Sprite s, vec2 out[4]) {
     out[3] = {u0, v0};
 }
 } // namespace
+
+void Renderer::decal(const vec3 p[4], const vec2 uv[4], const vec4 color[4], Sprite sprite) {
+    if (!frame_active_ || decals_.size() >= 6 * 3000) return;
+    vec2 cell[4];
+    sprite_uv(sprite, cell);
+    const vec2 lo(cell[0].x, cell[2].y), hi(cell[2].x, cell[0].y);
+    const int order[6] = {0, 1, 2, 0, 2, 3};
+    for (int k : order) {
+        Vertex v{};
+        v.pos = p[k];
+        v.normal = {0, 1, 0};
+        v.color = pack_rgba(color[k]);
+        v.uv = lo + (hi - lo) * glm::clamp(uv[k], vec2(0.0f), vec2(1.0f));
+        decals_.push_back(v);
+    }
+}
 
 void Renderer::decal(vec3 a, vec3 b, vec3 c, vec3 d, vec4 color) {
     if (!frame_active_ || decals_.size() >= 6 * 3000) return;
@@ -890,7 +950,8 @@ void Renderer::ui_glyphs(float x, float y, const char* text, uint32_t color, flo
                 o.params = vec4(edge, soft, 0.0f, 0.0f);
                 return o;
             };
-            const UiVertex a = v(x0, y0, g.u0, g.v0), b = v(x1, y0, g.u1, g.v0), c = v(x1, y1, g.u1, g.v1), d = v(x0, y1, g.u0, g.v1);
+            const float u0 = g.u0 * font_u_scale_, u1 = g.u1 * font_u_scale_;
+            const UiVertex a = v(x0, y0, u0, g.v0), b = v(x1, y0, u1, g.v0), c = v(x1, y1, u1, g.v1), d = v(x0, y1, u0, g.v1);
             ui_vertices_.insert(ui_vertices_.end(), {a, b, c, a, c, d});
         }
         pen += (g.advance + tracking + (p[1] ? g_font.kern(p[0], p[1]) : 0.0f)) * em;
@@ -1331,7 +1392,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
 }
 
 void Renderer::draw(MeshId mesh, const mat4& model, vec4 tint) {
-    if (frame_active_ && mesh < meshes_.size()) draws_.push_back({mesh, model, tint});
+    if (frame_active_ && mesh < meshes_.size()) draws_.push_back({mesh, model, tint, fx_});
 }
 
 void Renderer::end_frame() {
@@ -1471,7 +1532,7 @@ void Renderer::end_frame() {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout_, 1, 1, &textures2d_[m.texture].set, 0, nullptr);
             bound_texture = m.texture;
         }
-        push.flags = glm::ivec4(m.texture ? 1 : 0, m.unlit ? 1 : 0, m.glow ? 1 : 0, 0);
+        push.flags = glm::ivec4(m.texture ? 1 : 0, m.unlit ? 1 : 0, m.glow ? 1 : 0, d.fx);
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &m.vertices.buffer, &offset);
         vkCmdBindIndexBuffer(cmd, m.indices.buffer, 0, VK_INDEX_TYPE_UINT32);

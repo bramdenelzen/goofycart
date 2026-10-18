@@ -33,7 +33,8 @@ struct AppOptions {
     std::string screenshot_path;  // saved on the last frame when max_frames is set
     bool autodrive = false;       // the player kart drives itself (demos, screenshots)
     bool pixel_look = false;      // --pixel: the low-res look regardless of settings (screenshots)
-    int spawn_obstacle = -1;      // testing: start lined up 14 m before this obstacle and drive straight at it
+    int spawn_obstacle = -1;
+    int give_item = 0;            // testing: hand the player this item (sim::Item value) at the start      // testing: start lined up 14 m before this obstacle and drive straight at it
     int karts = 12;
     sim::EngineClass engine = sim::EngineClass::cc150;
     sim::Build build{1, 0, 0, 0};
@@ -100,13 +101,16 @@ private:
     void burst(vec3 pos, int n, vec3 color, float speed, float size, render::Renderer::Sprite sprite, float gravity, float life);
     Particles particles_;
     struct Skid {
-        vec3 a, b, c, d;
-        float age;
+        vec3 p[4];
+        float v0, v1, a0, a1, age;
     };
     struct SkidPoint {
         bool valid = false;
+        int wheels = 0;
         vec3 wheel[2]{};
+        float width[2]{0.26f, 0.26f};
         vec3 across{1, 0, 0};
+        float strength = 0.0f, v = 0.0f;
     };
     std::vector<Skid> skids_;
     std::vector<SkidPoint> skid_last_; // per kart
@@ -156,7 +160,8 @@ private:
     std::vector<sim::KartState> prev_;
     int player_ = 0;
 
-    enum class Screen { Title, Options, Online, OnlineMenu, Join, Hosting, Course, Select, Race, Standings };
+    enum class Screen { Title, Options, Controls, Online, OnlineMenu, Join, Hosting, Course, Select, Race, Standings };
+    ControlsState controls_;
     OnlineMenuState online_menu_;
     std::string join_text_, join_hint_;
     // Hosting: the server this game started, and what friends type to join.

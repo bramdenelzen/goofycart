@@ -73,7 +73,7 @@ void paint_atlas(Canvas& t, const ThemeStyle& th) {
     t.fill(r_wall_chevron, chev_bg);
     t.custom(r_wall_chevron, [&](float u, float v) {
         const float x = std::fmod(u * 3.0f, 1.0f), y = std::abs(v - 0.5f) * 2.0f;
-        const float d = std::abs(x - 0.35f - 0.35f * y);
+        const float d = std::abs(x - 0.65f + 0.35f * y); // the point at the middle, furthest along +u
         return vec4(chev.r, chev.g, chev.b, 1.0f - smooth01((d - 0.12f) / 0.02f + 0.5f));
     });
     panel_frame(t, r_wall_chevron, b);

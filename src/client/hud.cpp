@@ -170,12 +170,11 @@ void item_slot(render::Renderer& r, float x, float y, float size, sim::Item item
     r.ui_rect(x - 2.5f, y - 2.5f, size + 5.0f, 2.5f, ui::kRed);
     if (spinning) item = sim::Item(1 + (tick / 4) % uint64_t(sim::kItemCount));
     if (item == sim::Item::None) return;
+    // The item's icon on a soft disc of its colour.
     const ItemLook look = item_look(item);
     const uint32_t c = look.color & 0x00ffffffu;
-    r.ui_round_rect(x + 3.0f, y + 3.0f, size - 6.0f, size - 6.0f, 0.0f, c | 0xf0000000u, c | 0xa0000000u);
-    r.ui_rect(x + 3.0f, y + 3.0f, size - 6.0f, (size - 6.0f) * 0.35f, rgba(255, 255, 255, 50));
-    const float scale = size > 40 ? 1.0f : 0.75f;
-    centered(r, x + size * 0.5f, y + size * 0.5f - 3.5f * scale, look.label, rgba(255, 255, 255), scale);
+    r.ui_round_rect(x + 4.0f, y + 4.0f, size - 8.0f, size - 8.0f, (size - 8.0f) * 0.5f, c | 0x70000000u, c | 0x30000000u);
+    r.ui_icon(x + 2.0f, y + 2.0f, size - 4.0f, int(item) - 1);
     if (uses > 1 && !spinning) {
         char buf[8];
         std::snprintf(buf, sizeof buf, "x%d", uses);

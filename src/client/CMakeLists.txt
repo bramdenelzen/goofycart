@@ -43,6 +43,7 @@ add_executable(gk_client
   render/font.cpp
   particles.cpp
   render/sky.cpp
+  render/item_icons.cpp
   render/paint.cpp
   render/gobby_items.cpp
   render/gobby_props.cpp

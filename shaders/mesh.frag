@@ -163,7 +163,7 @@ void main() {
     // A soft sheen, not plastic: broad and faint, and only in the sun.
     vec3 h = normalize(l + v);
     float spec = pow(max(dot(n, h), 0.0), 18.0) * 0.07 * step(0.0, ndl) * vis;
-    float rim = pow(1.0 - max(dot(n, v), 0.0), 4.0) * 0.05 * (0.5 + 0.5 * ndl);
+    float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.12 * (0.35 + 0.65 * vis); // sky catching the edges
     lit += (spec * sun_col + rim * sky_amb) * max(sun, 0.3);
     // Water: sun glints that twinkle.
     if (draw.flags.x == 0 && v_layer == 7u) {
@@ -172,6 +172,15 @@ void main() {
         lit += sun_col * g * (0.4 + 1.6 * tw) * sun;
     }
     lit = mix(lit, albedo * 1.7, emission); // windows, neon and lamps light themselves
+    if (draw.flags.w == 2) { // item box: rainbow sheen that turns with the view, a glint sweeping across
+        float t = frame.shadow.w;
+        float f = pow(1.0 - max(dot(n, v), 0.0), 1.6);
+        vec3 rainbow = 0.55 + 0.45 * cos(6.2831 * (vec3(0.0, 0.33, 0.67) + f * 1.2 + t * 0.35 + dot(v_world, vec3(0.08, 0.05, 0.11))));
+        lit = mix(lit, lit * 0.7 + rainbow * 0.75, 0.3 + 0.6 * f);
+        float sweep = smoothstep(0.92, 1.0, sin(dot(v_world, vec3(0.9, 1.3, 0.5)) * 1.6 - t * 5.0));
+        lit += vec3(1.0) * sweep * 0.5 + rainbow * f * 0.35;
+        emission = max(emission, 0.2);
+    }
 
     // Aerial perspective: distance and low ground thicken the haze.
     vec3 to = v_world - frame.camera_pos.xyz;

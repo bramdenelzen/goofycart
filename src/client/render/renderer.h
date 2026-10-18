@@ -77,6 +77,8 @@ public:
     // frame must be skipped (minimised window, swapchain being rebuilt).
     bool begin_frame(const Camera& camera, const SceneLighting& lighting);
     void draw(MeshId mesh, const mat4& model, vec4 tint = vec4(1.0f));
+    // A special shader for the draws that follow: 0 none, 2 item box (iridescent glass).
+    void set_fx(int fx) { fx_ = fx; }
     void end_frame();
 
     // A camera-facing soft particle for this frame, drawn after everything
@@ -84,12 +86,14 @@ public:
     // otherwise it is blended by alpha (smoke, dust). `stretch` > 0 drags it
     // along `velocity` into a streak.
     // Shapes in the particle atlas: hard-edged, cartoon style.
-    enum class Sprite : uint8_t { Puff, Star, Sparkle, Flame, Solid, Ring, Dot, Confetti, Burst, Streak, Rock, Puff2, Drop };
+    enum class Sprite : uint8_t { Puff, Star, Sparkle, Flame, Solid, Ring, Dot, Confetti, Burst, Streak, Rock, Puff2, Drop, Tread };
     void particle(vec3 pos, float size, vec4 color, bool additive, vec3 velocity = vec3(0.0f), float stretch = 0.0f,
                   Sprite sprite = Sprite::Puff, float angle = 0.0f);
     // A flat quad lying in the world (skid marks): corners in order, drawn
     // see-through under the particles.
     void decal(vec3 a, vec3 b, vec3 c, vec3 d, vec4 color);
+    // A textured decal: per-corner position, uv within the sprite's cell (0..1) and colour.
+    void decal(const vec3 p[4], const vec2 uv[4], const vec4 color[4], Sprite sprite);
     // 2D overlay in ui_extent() pixels, drawn after the 3D scene.
     void ui_rect(float x, float y, float w, float h, uint32_t color);
     void ui_quad(vec2 a, vec2 b, vec2 c, vec2 d, uint32_t color);
@@ -131,6 +135,10 @@ public:
     static float ui_text_width(const char* text, float scale = 1.0f);
     // The rounded UI face; without it text falls back to the built-in pixel font.
     bool load_font(const std::string& ttf_path);
+    // Item icons (an atlas of `grid` x `grid` cells, square RGBA) for ui_icon;
+    // they share the UI texture with the font.
+    void set_ui_icons(const std::vector<uint8_t>& rgba, int size, int grid);
+    void ui_icon(float x, float y, float size, int index, uint32_t tint = 0xffffffffu);
     void make_particle_texture();
 
     // Saves the next presented frame's low-res image to a PNG file.
@@ -177,7 +185,9 @@ private:
         MeshId mesh;
         mat4 model;
         vec4 tint;
+        int fx = 0;
     };
+    int fx_ = 0;
     struct FrameUniforms {
         mat4 view_proj;
         vec4 camera_pos;
@@ -269,6 +279,8 @@ private:
     static constexpr uint32_t kMaxTextures = 1024;
     std::vector<UiVertex> ui_vertices_;
     TextureId font_texture_ = 0;
+    float font_u_scale_ = 1.0f;   // the font's share of the UI atlas width
+    int icon_grid_ = 0;
     struct ParticleCmd {
         vec3 pos, vel;
         float size, stretch, angle;

@@ -24,6 +24,9 @@ void main() {
         float f = max(v_params.w, fwidth(dist));
         float a = 1.0 - smoothstep(-f * 0.5, f * 0.5, dist);
         out_color = vec4(v_color.rgb, v_color.a * a);
+    } else if (v_mode == 4u) { // an icon: its own colours
+        vec4 t = texture(atlas, v_uv);
+        out_color = t * v_color;
     } else if (v_mode == 3u) { // vignette: darker towards the corners
         float r = length(v_uv / v_params.xy);
         out_color = vec4(v_color.rgb, v_color.a * smoothstep(0.55, 1.35, r) * v_params.z);

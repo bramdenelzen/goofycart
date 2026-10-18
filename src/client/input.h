@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include "gk/sim/input.h"
+#include "settings.h"
 
 #include <SDL3/SDL.h>
 
@@ -42,6 +43,10 @@ public:
     float deadzone = 0.18f;    // radial dead zone on the steering stick
     float steer_curve = 1.5f;  // response exponent outside the dead zone
     bool rumble_enabled = true;
+    std::array<std::array<int, 2>, kBindCount> binds = default_binds();
+    // Rebinding: the next key pressed is reported here (and not as an action).
+    bool capture_key = false;
+    int captured_key = 0;
 
 private:
     std::vector<SDL_Gamepad*> pads_;

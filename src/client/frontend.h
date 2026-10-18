@@ -56,9 +56,19 @@ void draw_online_status(render::Renderer& r, const std::string& text, bool faile
 struct OptionsState {
     int row = 0;
 };
-enum class OptionsAction { None, Changed, Back };
+enum class OptionsAction { None, Changed, Controls, Back };
 OptionsAction update_options(OptionsState& s, Settings& settings, const ClientActions& act);
 void draw_options(render::Renderer& r, const OptionsState& s, const Settings& settings);
+
+// CONTROLS: rebind the keyboard. `waiting` = the row whose key is being set.
+struct ControlsState {
+    int row = 0;
+    int slot = 0;      // which of the two keys
+    bool waiting = false;
+};
+enum class ControlsAction { None, StartCapture, Changed, Back };
+ControlsAction update_controls(ControlsState& s, Settings& st, const ClientActions& act);
+void draw_controls(render::Renderer& r, const ControlsState& s, const Settings& st);
 
 const char* engine_name(sim::EngineClass e);
 const char* cpu_name(sim::CpuLevel l);

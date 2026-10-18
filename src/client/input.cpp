@@ -46,6 +46,10 @@ void InputMapper::handle_event(const SDL_Event& e) {
         }
         break;
     case SDL_EVENT_KEY_DOWN:
+        if (capture_key) {
+            if (!e.key.repeat) captured_key = int(e.key.scancode);
+            break;
+        }
         // Menu keys accept key repeat; the rest do not.
         switch (e.key.key) {
         case SDLK_UP: case SDLK_W: actions_.menu_up = true; break;
@@ -84,7 +88,8 @@ void InputMapper::begin_frame() {
     actions_ = {};
     actions_.quit_requested = quit;
     const bool* keys = SDL_GetKeyboardState(nullptr);
-    actions_.look_back = keys[SDL_SCANCODE_C];
+    for (int k : binds[size_t(Bind::LookBack)])
+        if (k > 0 && keys[k]) actions_.look_back = true;
     for (auto* p : pads_)
         if (SDL_GetGamepadButton(p, SDL_GAMEPAD_BUTTON_WEST)) actions_.look_back = true;
 
@@ -109,15 +114,20 @@ sim::KartInput InputMapper::sample() const {
     sim::KartInput in;
     const bool* k = SDL_GetKeyboardState(nullptr);
     float steer = 0.0f, pitch = 0.0f;
-    if (k[SDL_SCANCODE_LEFT] || k[SDL_SCANCODE_A]) steer -= 1.0f;
-    if (k[SDL_SCANCODE_RIGHT] || k[SDL_SCANCODE_D]) steer += 1.0f;
-    if (k[SDL_SCANCODE_UP] || k[SDL_SCANCODE_W]) pitch -= 1.0f;   // push forward = nose down, as on a stick
-    if (k[SDL_SCANCODE_DOWN] || k[SDL_SCANCODE_S]) pitch += 1.0f;
-    in.accelerate = k[SDL_SCANCODE_X] || k[SDL_SCANCODE_SPACE];
-    in.brake = k[SDL_SCANCODE_Z] || k[SDL_SCANCODE_S] || k[SDL_SCANCODE_DOWN];
-    in.drift = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT] || k[SDL_SCANCODE_V];
-    in.item = k[SDL_SCANCODE_E] || k[SDL_SCANCODE_LCTRL];
-    in.item_back = k[SDL_SCANCODE_S] || k[SDL_SCANCODE_DOWN];
+    auto held = [&](Bind b) {
+        for (int key : binds[size_t(b)])
+            if (key > 0 && k[key]) return true;
+        return false;
+    };
+    if (held(Bind::SteerLeft)) steer -= 1.0f;
+    if (held(Bind::SteerRight)) steer += 1.0f;
+    if (held(Bind::Up)) pitch -= 1.0f;   // push forward = nose down, as on a stick
+    if (held(Bind::Down)) pitch += 1.0f;
+    in.accelerate = held(Bind::Accelerate);
+    in.brake = held(Bind::Brake);
+    in.drift = held(Bind::Drift);
+    in.item = held(Bind::Item);
+    in.item_back = held(Bind::Down);
 
     for (auto* p : pads_) {
         // Radial dead zone, then a response curve, so small corrections stay fine.

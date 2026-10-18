@@ -3,6 +3,7 @@
 #include "ui_style.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 
 namespace gk {
@@ -160,12 +161,13 @@ void draw_online_status(render::Renderer& r, const std::string& text, bool faile
 // ---------------------------------------------------------------- options
 
 namespace {
-constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "CRASH REPORTS", "BACK"};
-constexpr int kOptionCount = 9;
+constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "CRASH REPORTS", "CONTROLS", "BACK"};
+constexpr int kOptionCount = 10;
 } // namespace
 
 OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions& act) {
     if (act.back || (act.accept && s.row == kOptionCount - 1)) return OptionsAction::Back;
+    if (act.accept && s.row == kOptionCount - 2) return OptionsAction::Controls;
     if (act.menu_up) s.row = (s.row + kOptionCount - 1) % kOptionCount;
     if (act.menu_down) s.row = (s.row + 1) % kOptionCount;
     const int d = step(act) + (act.accept ? 1 : 0);
@@ -202,7 +204,7 @@ void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st
                 r.ui_slant_rect(bx, ry + 4.0f, 7.0f, 8.0f, ui::kBarSlant, b < v ? ui::kGold : rgba(255, 255, 255, sel ? 90 : 40),
                                 b < v ? ui::kGoldDeep : rgba(255, 255, 255, sel ? 90 : 40));
             }
-        } else if (i < kOptionCount - 1) {
+        } else if (i < kOptionCount - 2) {
             const bool on = i == 3 ? st.low_res : i == 4 ? st.fullscreen : i == 5 ? st.show_help : i == 6 ? st.rumble : st.crash_reports;
             ui::option_row(r, rx, ry, rw, kOptionRows[i], on ? "<  ON  >" : "<  OFF  >", sel);
         } else {
@@ -211,6 +213,60 @@ void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st
         ry += rh;
     }
     footer(r, "UP/DOWN  CHOOSE      LEFT/RIGHT  CHANGE      ESC  BACK");
+}
+
+// ---------------------------------------------------------------- controls
+
+ControlsAction update_controls(ControlsState& s, Settings& st, const ClientActions& act) {
+    const int rows = kBindCount + 2; // the binds, RESET, BACK
+    if (act.back) return ControlsAction::Back;
+    if (act.menu_up) s.row = (s.row + rows - 1) % rows;
+    if (act.menu_down) s.row = (s.row + 1) % rows;
+    if (act.menu_left || act.menu_right) s.slot = 1 - s.slot;
+    if (!act.accept) return ControlsAction::None;
+    if (s.row == rows - 1) return ControlsAction::Back;
+    if (s.row == rows - 2) {
+        st.binds = default_binds();
+        return ControlsAction::Changed;
+    }
+    s.waiting = true;
+    return ControlsAction::StartCapture;
+}
+
+void draw_controls(render::Renderer& r, const ControlsState& s, const Settings& st) {
+    const float W = ui::W(r);
+    const float pw = 400.0f, x = (W - pw) * 0.5f, y = 14.0f, rh = 18.0f;
+    const int rows = kBindCount + 2;
+    ui::panel(r, x, y, pw, 54.0f + rh * float(rows), 14.0f);
+    ui::title(r, W * 0.5f, y + 10.0f, "CONTROLS", 2.4f);
+    float ry = y + 40.0f;
+    auto key_name = [](int sc) -> std::string {
+        if (sc <= 0) return "-";
+        const char* n = SDL_GetScancodeName(SDL_Scancode(sc));
+        std::string out = n && *n ? n : "?";
+        for (char& ch : out) ch = char(std::toupper(static_cast<unsigned char>(ch)));
+        return out;
+    };
+    for (int i = 0; i < rows; ++i) {
+        const bool sel = i == s.row;
+        const float rx = x + 14.0f, rw = pw - 28.0f;
+        if (i < kBindCount) {
+            ui::option_row(r, rx, ry, rw, bind_name(Bind(i)), nullptr, sel);
+            for (int k = 0; k < 2; ++k) {
+                const bool active = sel && k == s.slot;
+                const std::string txt = active && s.waiting ? "PRESS A KEY" : key_name(st.binds[size_t(i)][size_t(k)]);
+                const float kx = rx + rw - 200.0f + float(k) * 100.0f;
+                if (active) r.ui_slant_rect(kx - 4.0f, ry + 1.0f, 96.0f, rh - 4.0f, ui::kBarSlant, ui::kGold, ui::kGoldDeep);
+                const float tw = ui::text_w(txt.c_str(), 1.0f);
+                if (active) r.ui_text_ex(kx + 44.0f - tw * 0.5f, ry + 4.5f, txt.c_str(), ui::kInk, 1.0f, 0, 0.0f, false, 0.9f);
+                else ui::text_c(r, kx + 44.0f, ry + 4.5f, txt.c_str(), ui::kText, 1.0f);
+            }
+        } else {
+            ui::option_row(r, rx, ry, rw, i == kBindCount ? "RESET TO DEFAULTS" : "BACK", nullptr, sel);
+        }
+        ry += rh;
+    }
+    footer(r, s.waiting ? "PRESS THE NEW KEY      ESC  CANCEL" : "UP/DOWN  CHOOSE      LEFT/RIGHT  FIRST / SECOND KEY      ENTER  REBIND      ESC  BACK");
 }
 
 // ---------------------------------------------------------------- course
