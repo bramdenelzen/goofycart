@@ -1,4 +1,5 @@
 #pragma once
+#include <SDL3/SDL_process.h>
 #include "assets.h"
 #include "render/kart_mesh.h"
 #include "audio_device.h"
@@ -38,6 +39,7 @@ struct AppOptions {
     bool mute = false;
     bool time_trial = false;
     std::string menu;             // open on this menu (options, course) for screenshots
+    bool host = false;            // start hosting a game straight away (the "Host a Server" shortcut)
     std::string preview_model;    // show this manifest item on the title screen instead of the kart
     std::string export_assets;    // write the built-in models as OBJ + PNG into this folder
     bool hide_ui = false;         // menus and HUD off, for screenshots      // with --track: a Time Trial instead of a VS race
@@ -116,7 +118,19 @@ private:
     std::vector<sim::KartState> prev_;
     int player_ = 0;
 
-    enum class Screen { Title, Options, Online, Course, Select, Race, Standings };
+    enum class Screen { Title, Options, Online, OnlineMenu, Join, Hosting, Course, Select, Race, Standings };
+    OnlineMenuState online_menu_;
+    std::string join_text_, join_hint_;
+    // Hosting: the server this game started, and what friends type to join.
+    SDL_Process* host_process_ = nullptr;
+    double host_started_ = 0.0;
+    std::vector<std::string> host_lines_;
+    bool host_failed_ = false;
+    std::string host_share_;  // shown in the lobby while hosting
+    void start_hosting();
+    void poll_hosting();
+    void stop_hosting();
+    void start_join();
     Screen screen_ = Screen::Title;
     TitleState title_;
     OptionsState options_menu_;

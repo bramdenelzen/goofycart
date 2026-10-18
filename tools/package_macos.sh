@@ -39,6 +39,9 @@ sign() { codesign --force --timestamp --options runtime --sign "$identity" "$@";
 [ "$identity" = "-" ] && sign() { codesign --force --sign - "$@"; }
 
 for lib in "$app"/Contents/Frameworks/*.dylib; do if [ -f "$lib" ]; then sign "$lib"; fi; done
+# The game hosts races by starting gk_server, so the app carries a copy.
+cp "$stage/gk_server" "$app/Contents/MacOS/gk_server"
+sign "$app/Contents/MacOS/gk_server"
 sign "$app"
 for tool in gk_server gk_master gk_botclient; do sign "$stage/$tool"; done
 

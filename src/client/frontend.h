@@ -8,6 +8,7 @@
 #include "gk/sim/track_def.h"
 
 #include <string>
+#include <vector>
 
 namespace gk {
 
@@ -18,6 +19,18 @@ struct TitleState {
     int row = 0;
 };
 enum class TitleChoice { None, GrandPrix, Versus, TimeTrial, Online, Options, Quit };
+
+// ONLINE: host a race on this computer, join one by address, or quick match.
+struct OnlineMenuState {
+    int row = 0;
+};
+enum class OnlineChoice { None, Host, Join, QuickMatch, Back };
+OnlineChoice update_online_menu(OnlineMenuState& s, const ClientActions& act);
+void draw_online_menu(render::Renderer& r, const OnlineMenuState& s, bool quick_match_available);
+// Typing a server address: the text so far, a hint underneath.
+void draw_join(render::Renderer& r, const std::string& address, const std::string& hint, bool caret);
+// Hosting: what friends type to join, while the server starts or runs.
+void draw_hosting(render::Renderer& r, const std::vector<std::string>& lines, bool failed);
 TitleChoice update_title(TitleState& s, const ClientActions& act);
 void draw_title(render::Renderer& r, const TitleState& s);
 

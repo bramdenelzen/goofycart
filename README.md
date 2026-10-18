@@ -33,12 +33,24 @@ Every push to the default branch replaces the **latest** pre-release on the
 GitHub Releases page with a ready-to-run Windows zip and macOS DMG: download,
 unzip or open, play. Tagged versions (`v0.2.0`) get their own release.
 
-Next to the game are two double-click scripts. **Host a Server** opens the
-firewall for UDP port 7777 (Windows asks once), prints the addresses friends
-should join with and starts `gk_server`. **Join a Server** asks for an address
-and a name, remembers them, and starts the game connected. They are
-`.bat` files on Windows and `.command` files on macOS (right-click > Open the
-first time).
+### Playing with friends
+
+In the game, **ONLINE > HOST A GAME** starts a race server on your computer,
+asks your router to open the port (UPnP), joins it, and shows the address
+friends should use, already copied to the clipboard. Friends pick **ONLINE >
+JOIN A GAME** and type or paste it (Ctrl/Cmd+V). The game remembers the last
+address.
+
+The double-click **Host a Server** script next to the game does the same in
+one step. **Dedicated Server** runs only the server, for a computer that stays
+on, and **Join a Server** asks for an address and starts the game connected.
+They are `.bat` files on Windows and `.command` files on macOS (right-click >
+Open the first time). Windows asks once whether `gk_server` may use the
+network: click Allow.
+
+If the router has UPnP switched off, or sits behind another router (the
+server says so), friends elsewhere can only join after UDP port 7777 is
+forwarded to the host by hand; friends on the same network can always join.
 
 ## Building
 

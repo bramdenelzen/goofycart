@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include <filesystem>
+
 #include "render/item_mesh.h"
 #include "render/kart_mesh.h"
 
@@ -67,6 +69,7 @@ int App::run(const AppOptions& options) {
             else if (act.menu_up || act.menu_down || act.menu_left || act.menu_right) audio_.mixer().play(audio::Sfx::MenuMove);
         }
         poll_matchmaking();
+        poll_hosting();
         handle_menu_actions(act, running);
 
         const uint64_t now = SDL_GetPerformanceCounter();
@@ -178,6 +181,7 @@ bool App::init() {
 
     select_.build = options_.build;
     if (!options_.connect_host.empty() && !connect_online(options_.connect_host, options_.connect_port, {})) return false;
+    if (options_.host) start_hosting();
     // --track (and demos) race straight away, skipping the menus.
     if (!online_ && (options_.autodrive || !options_.track.empty())) {
         course_.mode = options_.time_trial ? GameMode::TimeTrial : GameMode::Versus;
@@ -645,7 +649,107 @@ bool App::connect_online(const std::string& host, uint16_t port, const std::stri
     return true;
 }
 
+void App::start_join() {
+    join_text_ = settings_.join_address;
+    join_hint_.clear();
+    screen_ = Screen::Join;
+    SDL_StartTextInput(window_);
+}
+
+// The gk_server program that came with the game: next to it (Windows zip,
+// a build folder) or inside the macOS app, else next to the app.
+static std::string find_server_program() {
+    namespace fs = std::filesystem;
+    const char* base = SDL_GetBasePath();
+    if (!base) return {};
+#if defined(_WIN32)
+    const char* exe = "gk_server.exe";
+#else
+    const char* exe = "gk_server";
+#endif
+    const fs::path b(base);
+    for (const fs::path& p : {b / exe, b / ".." / "MacOS" / exe, b / ".." / ".." / ".." / exe, b / ".." / "server" / exe, b / ".." / ".." / "server" / exe}) {
+        std::error_code ec;
+        if (fs::is_regular_file(p, ec)) return fs::weakly_canonical(p, ec).string();
+    }
+    return {};
+}
+
+void App::start_hosting() {
+    stop_hosting();
+    screen_ = Screen::Hosting;
+    host_failed_ = false;
+    host_share_.clear();
+    const std::string server = find_server_program();
+    if (server.empty()) {
+        host_failed_ = true;
+        host_lines_ = {"THE SERVER PROGRAM (GK_SERVER) WASN'T FOUND NEXT TO THE GAME"};
+        return;
+    }
+    const std::string dir = (pref_dir_.empty() ? std::string(".") : pref_dir_) + "server";
+    const std::string info = dir + "/host.txt";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    std::filesystem::remove(info, ec);
+    const std::string port = std::to_string(net::kDefaultPort);
+    const char* args[] = {server.c_str(), "--port", port.c_str(), "--upnp", "--info-file", info.c_str(), "--workdir", dir.c_str(), nullptr};
+    host_process_ = SDL_CreateProcess(args, false);
+    if (!host_process_) {
+        host_failed_ = true;
+        host_lines_ = {std::string("COULD NOT START THE SERVER: ") + SDL_GetError()};
+        return;
+    }
+    host_started_ = double(SDL_GetTicks()) / 1000.0;
+    host_lines_ = {"STARTING THE SERVER AND OPENING THE PORT ON YOUR ROUTER..."};
+}
+
+void App::poll_hosting() {
+    if (screen_ != Screen::Hosting || !host_process_ || host_failed_) return;
+    int code = 0;
+    if (SDL_WaitProcess(host_process_, false, &code)) {
+        SDL_DestroyProcess(host_process_);
+        host_process_ = nullptr;
+        host_failed_ = true;
+        host_lines_ = {"THE SERVER STOPPED (IS PORT " + std::to_string(net::kDefaultPort) + " ALREADY IN USE?)"};
+        return;
+    }
+    const std::string info = (pref_dir_.empty() ? std::string(".") : pref_dir_) + "server/host.txt";
+    std::ifstream f(info);
+    if (!f) {
+        if (double(SDL_GetTicks()) / 1000.0 - host_started_ > 12.0) {
+            host_failed_ = true;
+            host_lines_ = {"THE SERVER DIDN'T START"};
+        }
+        return;
+    }
+    std::string line, lan, pub, upnp;
+    while (std::getline(f, line)) {
+        if (line.rfind("lan=", 0) == 0) lan = line.substr(4);
+        else if (line.rfind("public=", 0) == 0) pub = line.substr(7);
+        else if (line.rfind("upnp=", 0) == 0) upnp = line.substr(5);
+    }
+    if (upnp.empty()) return; // still being written
+    // Share the best address: the internet one when the router forwarded it.
+    const std::string share = upnp == "ok" && !pub.empty() ? pub : lan;
+    if (!share.empty()) SDL_SetClipboardText(share.c_str());
+    host_share_ = "FRIENDS JOIN WITH: " + share + (upnp == "ok" ? "  (COPIED)" : "  (SAME NETWORK ONLY, COPIED)");
+    if (!connect_online("127.0.0.1", net::kDefaultPort, {})) {
+        host_failed_ = true;
+        host_lines_ = {"COULD NOT JOIN YOUR OWN SERVER"};
+    }
+}
+
+void App::stop_hosting() {
+    if (!host_process_) return;
+    SDL_KillProcess(host_process_, false); // lets the server close the port on the router
+    SDL_WaitProcess(host_process_, true, nullptr);
+    SDL_DestroyProcess(host_process_);
+    host_process_ = nullptr;
+    host_share_.clear();
+}
+
 void App::leave_online() {
+    stop_hosting();
     online_.reset();
     net_.reset();
     online_race_ = 0;
@@ -963,6 +1067,7 @@ void App::draw_items(const sim::World& w) {
 void App::render(float alpha, float dt) {
     frame_dt_ = std::clamp(dt, 0.0f, 0.1f);
     if (screen_ == Screen::Title || screen_ == Screen::Options || screen_ == Screen::Online || screen_ == Screen::Course ||
+        screen_ == Screen::OnlineMenu || screen_ == Screen::Join || screen_ == Screen::Hosting ||
         screen_ == Screen::Select) {
         render_menu(dt);
         return;
@@ -1072,7 +1177,7 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
         case TitleChoice::Versus: course_.mode = GameMode::Versus; break;
         case TitleChoice::TimeTrial: course_.mode = GameMode::TimeTrial; break;
         case TitleChoice::Options: screen_ = Screen::Options; return;
-        case TitleChoice::Online: start_matchmaking(); return;
+        case TitleChoice::Online: screen_ = Screen::OnlineMenu; return;
         case TitleChoice::Quit: running = false; return;
         case TitleChoice::None: return;
         }
@@ -1080,10 +1185,57 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
         screen_ = Screen::Course;
         show_track(course_track(course_, tracks_));
         return;
+    case Screen::OnlineMenu:
+        switch (update_online_menu(online_menu_, act)) {
+        case OnlineChoice::Host: start_hosting(); break;
+        case OnlineChoice::Join: start_join(); break;
+        case OnlineChoice::QuickMatch: start_matchmaking(); break;
+        case OnlineChoice::Back: screen_ = Screen::Title; break;
+        case OnlineChoice::None: break;
+        }
+        return;
+    case Screen::Join: {
+        if (act.back && !act.erase) {
+            SDL_StopTextInput(window_);
+            screen_ = Screen::OnlineMenu;
+            return;
+        }
+        if (act.erase && !join_text_.empty()) join_text_.pop_back();
+        std::string add = act.text;
+        if (act.paste)
+            if (char* clip = SDL_GetClipboardText()) {
+                add += clip;
+                SDL_free(clip);
+            }
+        for (char c : add)
+            if ((std::isalnum(uint8_t(c)) || c == '.' || c == ':' || c == '-' || c == '[' || c == ']') && join_text_.size() < 60) join_text_ += c;
+        if (act.enter && !join_text_.empty()) {
+            std::string host = join_text_;
+            uint16_t port = net::kDefaultPort;
+            if (const size_t colon = host.rfind(':'); colon != std::string::npos && host.find(':') == colon) {
+                port = uint16_t(std::atoi(host.c_str() + colon + 1));
+                host = host.substr(0, colon);
+            }
+            settings_.join_address = join_text_;
+            if (const std::string sp = settings_path(); !sp.empty()) settings_.save(sp);
+            SDL_StopTextInput(window_);
+            if (!connect_online(host, port, {})) {
+                join_hint_ = "COULD NOT REACH " + join_text_;
+                SDL_StartTextInput(window_);
+            }
+        }
+        return;
+    }
+    case Screen::Hosting:
+        if (act.back) {
+            stop_hosting();
+            screen_ = Screen::OnlineMenu;
+        }
+        return;
     case Screen::Online:
         if (act.back) {
             online_error_.clear();
-            screen_ = Screen::Title; // a running search finishes in the background and is dropped
+            screen_ = Screen::OnlineMenu; // a running search finishes in the background and is dropped
         } else if (act.accept && !online_error_.empty()) {
             start_matchmaking(); // try again
         }
@@ -1196,6 +1348,11 @@ void App::render_menu(float dt) {
     case Screen::Title: draw_title(renderer_, title_); break;
     case Screen::Options: draw_options(renderer_, options_menu_, settings_); break;
     case Screen::Online: draw_online_status(renderer_, online_error_.empty() ? "SIGNING IN AND FINDING A RACE..." : online_error_, !online_error_.empty()); break;
+    case Screen::OnlineMenu:
+        draw_online_menu(renderer_, online_menu_, !(!options_.master_url.empty() ? options_.master_url : settings_.master_url).empty());
+        break;
+    case Screen::Join: draw_join(renderer_, join_text_, join_hint_, (frame_ / 30) % 2 == 0); break;
+    case Screen::Hosting: draw_hosting(renderer_, host_lines_, host_failed_); break;
     case Screen::Course: draw_course(renderer_, course_, tracks_); break;
     default: {
         const net::LobbyMsg* lobby = online_ && online_->has_lobby() ? &online_->lobby() : nullptr;
@@ -1204,6 +1361,11 @@ void App::render_menu(float dt) {
         else if (!online_ && course_.mode == GameMode::GrandPrix && !tracks_.cups.empty())
             where = tracks_.cups[size_t(course_.cup % int(tracks_.cups.size()))].name + ": " + shown_track_->name;
         draw_select(renderer_, select_, parts_, lobby, where);
+        if (online_ && !host_share_.empty()) {
+            const std::string t = host_share_;
+            renderer_.ui_rect(6.0f, 182.0f, render::Renderer::ui_text_width(t.c_str(), 1.0f) + 12.0f, 16.0f, render::rgba(0, 0, 0, 160));
+            renderer_.ui_text(12.0f, 186.0f, t.c_str(), render::rgba(255, 230, 120), 1.0f);
+        }
         if (online_ && !account_label_.empty()) {
             const std::string t = "SIGNED IN: " + account_label_;
             renderer_.ui_rect(6.0f, 200.0f, render::Renderer::ui_text_width(t.c_str(), 1.0f) + 12.0f, 16.0f, render::rgba(0, 0, 0, 140));
@@ -1254,6 +1416,7 @@ void App::draw_net_status() {
 }
 
 void App::shutdown() {
+    stop_hosting();
     if (matching_.valid()) matching_.wait();
     online_.reset();
     net_.reset();

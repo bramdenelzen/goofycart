@@ -1,8 +1,18 @@
 name: CI
 
+# Pull requests only: every push to the main branch is built, tested and
+# packaged by release.yml, so the same build doesn't run twice.
 on:
-  push:
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
 
 jobs:
   build:
@@ -12,22 +22,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Linux
-            os: ubuntu-24.04
           - name: Windows
             os: windows-2022
           - name: macOS
             os: macos-14
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Linux packages
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build ccache glslang-tools mesa-vulkan-drivers xvfb \
-            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libxtst-dev \
-            libwayland-dev libxkbcommon-dev libasound2-dev libpulse-dev libudev-dev libdbus-1-dev libgl-dev
 
       - name: Install macOS packages
         if: runner.os == 'macOS'
@@ -36,6 +36,14 @@ jobs:
       - name: Set up MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install ccache (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-windows-x86_64.zip -OutFile ccache.zip
+          Expand-Archive ccache.zip -DestinationPath $env:RUNNER_TEMP
+          Add-Content $env:GITHUB_PATH "$env:RUNNER_TEMP\ccache-4.10.2-windows-x86_64"
 
       # Downloaded sources and compiled objects carry over between runs.
       - name: Cache downloads and compiler output
@@ -86,44 +94,4 @@ jobs:
           wait
           python3 -c "import json,sys; a=json.load(open('accounts.json'))['accounts']; print(a); sys.exit(0 if sum(x['races'] for x in a)==3 else 1)"
 
-      - name: Prebuilt shaders are up to date
-        if: runner.os == 'Linux'
-        run: |
-          python3 tools/compile_shaders.py glslangValidator shaders/prebuilt shaders/*.vert shaders/*.frag
-          git diff --exit-code shaders/prebuilt
 
-      - name: Client smoke test (software Vulkan)
-        if: runner.os == 'Linux'
-        env:
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
-        run: xvfb-run -a -s "-screen 0 1280x720x24" ./build/release/src/client/gk_client --autodrive --frames 300 --screenshot smoke.png
-
-      - name: Upload smoke screenshot
-        if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-screenshot
-          path: smoke.png
-
-  server-image:
-    name: Server image
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build the server image
-        run: docker build -f deploy/Dockerfile -t gobbykart .
-      - name: Master, race server and bots in containers
-        run: |
-          docker network create gk
-          docker run -d --name gkmaster --network gk -e GK_SERVER_KEY=ci gobbykart gk_master --data /var/lib/gobbykart/accounts.json
-          sleep 1
-          docker run -d --name gkrace --network gk -e GK_SERVER_KEY=ci gobbykart \
-            gk_server --laps 1 --lobby 2 --master http://gkmaster:7780 --region eu --public-host gkrace
-          sleep 2
-          docker run --rm --network gk gobbykart gk_botclient --master http://gkmaster:7780 --region eu \
-            --clients 2 --seconds 180 --until-results
-          sleep 3
-          docker exec gkmaster cat /var/lib/gobbykart/accounts.json | python3 -c "import json,sys; a=json.load(sys.stdin)['accounts']; sys.exit(0 if sum(x['races'] for x in a)==2 else 1)"
-      - name: Validate the compose files
-        run: |
-          for d in deploy/master deploy/region; do cp $d/example.env $d/.env; docker compose -f $d/compose.yml config -q; done

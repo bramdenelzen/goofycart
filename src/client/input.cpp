@@ -36,7 +36,7 @@ void InputMapper::handle_event(const SDL_Event& e) {
         switch (e.gbutton.button) {
         case SDL_GAMEPAD_BUTTON_START: actions_.pause_pressed = true; break;
         case SDL_GAMEPAD_BUTTON_BACK: actions_.restart_pressed = true; break;
-        case SDL_GAMEPAD_BUTTON_SOUTH: actions_.accept = true; break;
+        case SDL_GAMEPAD_BUTTON_SOUTH: actions_.accept = actions_.enter = true; break;
         case SDL_GAMEPAD_BUTTON_EAST: actions_.back = true; break;
         case SDL_GAMEPAD_BUTTON_DPAD_UP: actions_.menu_up = true; break;
         case SDL_GAMEPAD_BUTTON_DPAD_DOWN: actions_.menu_down = true; break;
@@ -54,8 +54,11 @@ void InputMapper::handle_event(const SDL_Event& e) {
         case SDLK_RIGHT: case SDLK_D: actions_.menu_right = true; break;
         default: break;
         }
+        if (e.key.key == SDLK_BACKSPACE) actions_.erase = true;
+        if (e.key.key == SDLK_V && (e.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI))) actions_.paste = true;
         if (e.key.repeat) break;
         if (e.key.key == SDLK_RETURN || e.key.key == SDLK_SPACE || e.key.key == SDLK_X) actions_.accept = true;
+        if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) actions_.enter = true;
         if (e.key.key == SDLK_BACKSPACE) actions_.back = true;
         if (e.key.key == SDLK_ESCAPE) {
             actions_.pause_pressed = true;
@@ -64,6 +67,9 @@ void InputMapper::handle_event(const SDL_Event& e) {
         if (e.key.key == SDLK_F2) actions_.toggle_resolution_pressed = true;
         if (e.key.key == SDLK_F1) actions_.toggle_help_pressed = true;
         if (e.key.key == SDLK_R) actions_.restart_pressed = true;
+        break;
+    case SDL_EVENT_TEXT_INPUT:
+        actions_.text += e.text.text;
         break;
     case SDL_EVENT_QUIT:
         actions_.quit_requested = true;

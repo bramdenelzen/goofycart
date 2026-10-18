@@ -12,6 +12,7 @@ struct Settings {
     bool rumble = true;
     bool crash_reports = true;          // send crash reports to the master server
     std::string master_url;             // ONLINE's master server (also --master)
+    std::string join_address;           // the last server joined by address
 
     bool load(const std::string& path);
     bool save(const std::string& path) const;

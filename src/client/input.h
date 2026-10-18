@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include "gk/sim/input.h"
 
 #include <SDL3/SDL.h>
@@ -18,6 +19,10 @@ struct ClientActions {
     // Menu navigation (edges, with key repeat for held directions)
     bool menu_up = false, menu_down = false, menu_left = false, menu_right = false;
     bool accept = false, back = false;
+    std::string text;     // typed characters this frame (when text input is on)
+    bool erase = false;   // backspace while typing
+    bool paste = false;   // Ctrl/Cmd+V
+    bool enter = false;   // Return (accept without the X and space keys, for typing)
 };
 
 // Merges keyboard and every connected gamepad into one KartInput. SDL3's

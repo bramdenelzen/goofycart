@@ -20,9 +20,11 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/docs/ DESTINATION docs COMPONENT game)
 # Double-click scripts to host or join a server (tools/host).
 if(WIN32)
   install(PROGRAMS "${PROJECT_SOURCE_DIR}/tools/host/Host a Server.bat" "${PROJECT_SOURCE_DIR}/tools/host/Join a Server.bat"
+    "${PROJECT_SOURCE_DIR}/tools/host/Dedicated Server.bat"
           DESTINATION . COMPONENT game)
 elseif(APPLE)
   install(PROGRAMS "${PROJECT_SOURCE_DIR}/tools/host/Host a Server.command"
+    "${PROJECT_SOURCE_DIR}/tools/host/Dedicated Server.command"
           "${PROJECT_SOURCE_DIR}/tools/host/Join a Server.command" DESTINATION . COMPONENT game)
 endif()
 

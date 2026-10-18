@@ -26,6 +26,10 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+
 jobs:
   package:
     name: ${{ matrix.name }}
@@ -48,6 +52,14 @@ jobs:
       - name: Set up MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install ccache (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-windows-x86_64.zip -OutFile ccache.zip
+          Expand-Archive ccache.zip -DestinationPath $env:RUNNER_TEMP
+          Add-Content $env:GITHUB_PATH "$env:RUNNER_TEMP\ccache-4.10.2-windows-x86_64"
 
       - name: Cache downloads and compiler output
         uses: actions/cache@v4
@@ -74,6 +86,14 @@ jobs:
 
       - name: Unit tests
         run: ctest --preset release
+
+      - name: Online smoke test (4 headless clients, 150 ms, 2% loss)
+        shell: bash
+        run: |
+          ./build/release/src/server/gk_server --port 7802 --ticks 900 &
+          sleep 1
+          ./build/release/src/server/gk_botclient --connect 127.0.0.1:7802 --clients 4 --seconds 8 --lag 150 --loss 2 --jitter 10
+          wait
 
       - name: Package (zip)
         if: runner.os == 'Windows'

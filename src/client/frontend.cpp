@@ -85,6 +85,72 @@ void draw_title(render::Renderer& r, const TitleState& s) {
 
 // ---------------------------------------------------------------- online
 
+namespace {
+constexpr const char* kOnlineItems[] = {"HOST A GAME", "JOIN A GAME", "QUICK MATCH", "BACK"};
+constexpr int kOnlineCount = 4;
+} // namespace
+
+OnlineChoice update_online_menu(OnlineMenuState& s, const ClientActions& act) {
+    if (act.menu_up) s.row = (s.row + kOnlineCount - 1) % kOnlineCount;
+    if (act.menu_down) s.row = (s.row + 1) % kOnlineCount;
+    if (act.back) return OnlineChoice::Back;
+    if (!act.accept) return OnlineChoice::None;
+    switch (s.row) {
+    case 0: return OnlineChoice::Host;
+    case 1: return OnlineChoice::Join;
+    case 2: return OnlineChoice::QuickMatch;
+    default: return OnlineChoice::Back;
+    }
+}
+
+void draw_online_menu(render::Renderer& r, const OnlineMenuState& s, bool quick_match_available) {
+    const float W = float(r.ui_extent().width), H = float(r.ui_extent().height);
+    float y = H * 0.22f;
+    centered(r, y, "ONLINE", rgba(255, 220, 60), 3.0f);
+    y += 44.0f;
+    r.ui_rect(W * 0.5f - 110, y - 8, 220, 24.0f * kOnlineCount + 10, rgba(0, 0, 0, 150));
+    for (int i = 0; i < kOnlineCount; ++i) {
+        const bool sel = i == s.row, dim = i == 2 && !quick_match_available;
+        char buf[48];
+        std::snprintf(buf, sizeof buf, sel ? "> %s <" : "%s", kOnlineItems[i]);
+        centered(r, y, buf, dim ? rgba(140, 140, 140) : sel ? rgba(255, 230, 60) : rgba(255, 255, 255), 2.0f);
+        y += 24.0f;
+    }
+    y += 10.0f;
+    const char* help = s.row == 0   ? "RUN A RACE SERVER ON THIS COMPUTER AND PLAY ON IT"
+                       : s.row == 1 ? "RACE ON A FRIEND'S SERVER: TYPE OR PASTE ITS ADDRESS"
+                       : s.row == 2 ? (quick_match_available ? "FIND A RACE THROUGH THE MATCHMAKING SERVER" : "NEEDS A MATCHMAKING SERVER (--master URL)")
+                                    : "";
+    centered(r, y, help, rgba(200, 220, 255), 1.0f);
+    footer(r, "UP/DOWN: CHOOSE    ENTER / A: OK    ESC: BACK");
+}
+
+void draw_join(render::Renderer& r, const std::string& address, const std::string& hint, bool caret) {
+    const float W = float(r.ui_extent().width), H = float(r.ui_extent().height);
+    r.ui_rect(W * 0.5f - 150, H * 0.3f - 30, 300, 110, rgba(0, 0, 0, 170));
+    centered(r, H * 0.3f - 22, "JOIN A GAME", rgba(255, 230, 60), 2.0f);
+    centered(r, H * 0.3f + 6, "SERVER ADDRESS (THE HOST'S SCREEN SHOWS IT)", rgba(200, 200, 200), 1.0f);
+    r.ui_rect(W * 0.5f - 130, H * 0.3f + 22, 260, 22, rgba(255, 255, 255, 30));
+    const std::string shown = address + (caret ? "_" : " ");
+    centered(r, H * 0.3f + 26, shown.c_str(), rgba(255, 255, 255), 2.0f);
+    centered(r, H * 0.3f + 56, hint.c_str(), rgba(255, 140, 120), 1.0f);
+    footer(r, "TYPE OR CTRL/CMD+V TO PASTE    ENTER: JOIN    ESC: BACK");
+}
+
+void draw_hosting(render::Renderer& r, const std::vector<std::string>& lines, bool failed) {
+    const float W = float(r.ui_extent().width), H = float(r.ui_extent().height);
+    float w = 220.0f;
+    for (const auto& l : lines) w = std::max(w, render::Renderer::ui_text_width(l.c_str(), 1.0f) + 30.0f);
+    r.ui_rect((W - w) * 0.5f, H * 0.3f - 30, w, 46.0f + 14.0f * float(lines.size()), rgba(0, 0, 0, 170));
+    centered(r, H * 0.3f - 22, "HOST A GAME", rgba(255, 230, 60), 2.0f);
+    float y = H * 0.3f + 6;
+    for (const auto& l : lines) {
+        centered(r, y, l.c_str(), failed ? rgba(255, 140, 120) : rgba(255, 255, 255), 1.0f);
+        y += 14.0f;
+    }
+    footer(r, failed ? "ESC: BACK" : "ESC: CANCEL");
+}
+
 void draw_online_status(render::Renderer& r, const std::string& text, bool failed) {
     const float W = float(r.ui_extent().width), H = float(r.ui_extent().height);
     const float w = std::max(200.0f, render::Renderer::ui_text_width(text.c_str(), 1.0f) + 24.0f);

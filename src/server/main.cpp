@@ -13,11 +13,14 @@
 #include "gk/net/transport.h"
 #include "gk/sim/data.h"
 #include "master_link.h"
+#include "upnp.h"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <filesystem>
+#include <fstream>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -29,6 +32,8 @@ void on_signal(int) { g_quit = true; }
 } // namespace
 
 int main(int argc, char** argv) {
+    bool upnp = false;
+    std::string info_file, workdir;
     long max_ticks = -1; // run forever by default
     bool fast = false;   // step as fast as possible (tests)
     uint16_t port = gk::net::kDefaultPort;
@@ -55,11 +60,19 @@ int main(int argc, char** argv) {
         else if (std::strcmp(argv[i], "--public-host") == 0) self.host = next();
         else if (std::strcmp(argv[i], "--crash") == 0) crash = next(); // test the crash reporter
         else if (std::strcmp(argv[i], "--bots") == 0) cfg.idle_without_humans = false; // race even when empty
+        else if (std::strcmp(argv[i], "--upnp") == 0) upnp = true;         // ask the router to forward the port
+        else if (std::strcmp(argv[i], "--info-file") == 0) info_file = next(); // write the addresses to share here
+        else if (std::strcmp(argv[i], "--workdir") == 0) workdir = next();     // where crash reports go
         else if (std::strcmp(argv[i], "--cc") == 0) {
             const int cc = std::atoi(next());
             cfg.engine = cc <= 50 ? gk::sim::EngineClass::cc50 : cc <= 100 ? gk::sim::EngineClass::cc100
                        : cc <= 150 ? gk::sim::EngineClass::cc150 : gk::sim::EngineClass::cc200;
         }
+    }
+    if (!workdir.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(workdir, ec);
+        std::filesystem::current_path(workdir, ec);
     }
     gk::install_crash_handler("crashes", "gk_server", GK_VERSION);
     std::signal(SIGINT, on_signal);
@@ -98,6 +111,43 @@ int main(int argc, char** argv) {
             master = std::make_unique<gk::MasterLink>(master_url, server_key, self);
         }
         if (!crash.empty()) gk::crash_now(crash);
+        // Who can join, and how: forward the port on the router when asked,
+        // and tell the host which addresses to share.
+        gk::Upnp router;
+        {
+            gk::PortForward fw;
+            fw.local_ip = gk::local_ip();
+            if (upnp) {
+                gk::log_info("Asking the router to forward UDP port {}...", port);
+                fw = router.forward_udp(port, "Gobby Kart server");
+                if (fw.ok) gk::log_info("The router forwards UDP port {} to this computer", port);
+                else gk::log_warn("Automatic port forwarding didn't work: {}", fw.error);
+                // Behind a second router (a modem in router mode, or carrier NAT) the
+                // forwarded port only reaches as far as that one.
+                const std::string internet = gk::internet_ip();
+                if (fw.ok && gk::is_private_ip(fw.public_ip)) {
+                    gk::log_warn("Your router is itself behind another router ({}): forward UDP port {} to {} on that one too, "
+                                 "or put it in bridge mode", fw.public_ip, port, fw.public_ip);
+                    fw.ok = false;
+                    fw.error = "double NAT: the router's internet side is " + fw.public_ip;
+                }
+                if (!internet.empty()) fw.public_ip = internet;
+            }
+            const std::string p = port == gk::net::kDefaultPort ? "" : ":" + std::to_string(port);
+            gk::log_info("==============================================================");
+            gk::log_info(" Gobby Kart server is running");
+            gk::log_info(" On this computer, join with:      127.0.0.1{}", p);
+            if (!fw.local_ip.empty()) gk::log_info(" Friends on your network join with: {}{}", fw.local_ip, p);
+            if (fw.ok && !fw.public_ip.empty()) gk::log_info(" Friends anywhere join with:        {}{}", fw.public_ip, p);
+            else if (upnp && !fw.public_ip.empty())
+                gk::log_info(" Friends elsewhere join with {}{} once UDP port {} reaches this computer", fw.public_ip, p, port);
+            gk::log_info("==============================================================");
+            if (!info_file.empty()) {
+                std::ofstream f(info_file, std::ios::trunc);
+                f << "port=" << port << "\nlan=" << fw.local_ip << "\npublic=" << fw.public_ip
+                  << "\nupnp=" << (fw.ok ? "ok" : upnp ? "failed" : "off") << "\nerror=" << fw.error << "\n";
+            }
+        }
         gk::log_info("gk_server ready at {} Hz, {} seats, {} laps, {} races per Grand Prix", gk::kTickRate, cfg.seats,
                      cfg.laps, cfg.races_per_gp);
 
