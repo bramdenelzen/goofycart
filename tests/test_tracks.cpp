@@ -92,7 +92,10 @@ TEST_CASE("every track is a clean lap for a CPU, and a 12-kart race finishes") {
         MESSAGE(def.name << ": first lap " << first_lap / 60.0f << " s, race " << frames / 60.0f << " s, " << respawns
                          << " respawns, " << unforced << " unforced");
         CHECK(done());
-        CHECK(respawns <= 3); // items can knock a kart off an edge now and then
+        CHECK(unforced <= 3); // the road itself: a slip off an edge now and then
+        // A hit mid-glide drops the kart now, so one lightning over a chasm can
+        // take several karts at once; how many depends on the platform's rounding.
+        CHECK(respawns <= 8);
     }
 }
 

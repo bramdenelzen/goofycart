@@ -81,7 +81,6 @@ CpuSkill cpu_skill(CpuLevel level, int seat) {
         s.max_tier = 1; // settles for blue sparks; hard holds the drift for orange and purple
         s.tricks = seat % 2 == 0;
         s.reaction = 6;
-        s.throttle_lift = 3;
         s.rocket_start = seat % 3 != 2;
         break;
     case CpuLevel::Hard:
