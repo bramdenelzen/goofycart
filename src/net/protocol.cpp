@@ -687,7 +687,7 @@ uint32_t hash_constants(const sim::PhysicsTables& t) {
         w.f32(f);
     for (int i : {k.max_coins, k.mt_frames[0], k.mt_frames[1], k.mt_frames[2], k.boost_pad_frames, k.mushroom_frames,
                   k.trick_frames, k.rocket_frames, k.rocket_window_early, k.rocket_window_late, k.burnout_frames,
-                  k.trick_window_frames, k.respawn_frames, k.drift_entry_frames, k.stuck_respawn_frames})
+                  k.trick_window_frames, k.trick_min_air_frames, k.respawn_frames, k.drift_entry_frames, k.stuck_respawn_frames})
         w.i32(i);
     return crc32(w.data());
 }

@@ -184,8 +184,10 @@ void land(KartState& s, const Probe& pr, const KartInput& in, const KartStepCont
     s.trick_window = 0;
     if (s.trick_done) {
         s.trick_done = false;
-        kart_give_boost(s, BoostKind::Trick, int(float(ctx.k.trick_frames) * ctx.p.mt_boost), ctx.k.trick_mult, true);
-        emit(ctx, KartEventType::Boost, int(BoostKind::Trick));
+        if (s.air_frames >= ctx.k.trick_min_air_frames) {
+            kart_give_boost(s, BoostKind::Trick, int(float(ctx.k.trick_frames) * ctx.p.mt_boost), ctx.k.trick_mult, true);
+            emit(ctx, KartEventType::Boost, int(BoostKind::Trick));
+        }
     }
     if (s.drift == DriftState::Hop) {
         const float steer = std::abs(in.steer) > 0.3f ? in.steer : s.hop_steer;
@@ -304,6 +306,9 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     const bool falls_away = pr.hits >= 2 && pr.avg_dist > kLaunchDrop && std::abs(s.speed) > 3.0f;
     if (pr.hits < 2 || falls_away) {
         take_off(s, ctx, 0.0f);
+        // Any lip, crest or ledge taken at speed can be tricked off, not only
+        // the marked ramps; a trick only pays out after real air (`land`).
+        if (std::abs(s.speed) > k.min_drift_speed) s.trick_window = k.trick_window_frames;
         step_air(s, in, drift_pressed, ctx);
         return;
     }

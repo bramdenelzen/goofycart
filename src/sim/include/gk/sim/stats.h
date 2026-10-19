@@ -172,6 +172,7 @@ struct PhysicsConstants {
     float drift_turn_water_scale = 0.9f;// drifts turn a little wider underwater
     int water_hysteresis = 6;           // frames in (or out of) the water before the mode flips
     int trick_window_frames = 18;
+    int trick_min_air_frames = 12; // a trick off a bump this short gives no boost
     int respawn_frames = 90;
     float fall_respawn_drop = 35.0f;    // m below its road a falling kart is carried back from (a mountain is a long way down)
 

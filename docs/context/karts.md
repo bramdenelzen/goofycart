@@ -34,6 +34,9 @@ queries against the track.
   budget (diving gains speed, climbing spends it); stick rolls into a bank.
   Background: `docs/research/glider-flight-models.md`, tests in
   `tests/test_glider.cpp`.
+- Tricks: launch surfaces (trick/glide ramps, pads, vents) and any natural
+  take-off at speed (a lip, crest or ledge) open a trick window; the boost
+  pays out on landing only after `trick_min_air_frames` of air.
 - Rocket start timing is in `kart_on_go`.
 
 ## Data
