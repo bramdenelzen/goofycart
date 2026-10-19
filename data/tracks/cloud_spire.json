@@ -5,7 +5,7 @@
   "half_width": 7,
   "verge": 3,
   "verge_surface": "offroad_light",
-  "_comment": "The spire helix: a long spiral banked into the turn all the way up round the tall spire, passing high over the start, pillars on the summit, then two glides back down with drifting cloud platforms to land on and an off-camber lean on the way. A cloud bridge forms across the middle of the spiral every few seconds, a high cloud road arcs outside the last descent, and from lap 2 a rainbow dash strip runs down the home stretch.",
+  "_comment": "The spire helix: a long spiral banked into the turn all the way up round the tall spire, its first turn a 50 degree wall of grip road the karts stick to, passing high over the start, pillars on the summit, then two glides back down with drifting cloud platforms to land on and an off-camber lean on the way. A cloud bridge forms across the middle of the spiral every few seconds, a high cloud road arcs outside the last descent, and from lap 2 a rainbow dash strip runs down the home stretch.",
   "points": [
     [0.0, 0, 0.0],
     [0.0, 1.5, 67.5],
@@ -171,6 +171,17 @@
       "from": [2, -10],
       "to": [7, 0],
       "angle": -16
+    },
+    {
+      "type": "bank",
+      "from": [2, 10],
+      "to": [4, 20],
+      "angle": -34
+    },
+    {
+      "type": "grip",
+      "from": [2, -30],
+      "to": [5, 0]
     },
     {
       "type": "bank",

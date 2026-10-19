@@ -6,7 +6,7 @@
   "half_width": 6.5,
   "verge": 4,
   "verge_surface": "offroad_heavy",
-  "_comment": "Out of the foundry yard, a slalom between slag blocks, a hairpin banked into the turn, the crusher row of rising blocks, then the climb to the summit and into the lava tube: a tunnel through the volcano where lava wells up along one edge and then the other, in turn. Out of the tube a glide off the shoulder, a lean towards the erupting lava on the way down and the run home past the furnace. The furnace lever opens the conveyor shortcut, lava sloshes across the bridge, and the eruption floods the descent.",
+  "_comment": "Out of the foundry yard, a slalom between slag blocks, a hairpin banked into the turn, the crusher row of rising blocks, then the climb to the summit and into the lava tube: a tunnel through the volcano where lava wells up along one edge and then the other, in turn. Out of the tube a glide off the shoulder, a lean towards the erupting lava on the way down and the run home past the furnace, where two presses slam down on the road in turn. The furnace lever opens the conveyor shortcut, a belt that carries karts up it, lava sloshes across the bridge, and the eruption floods the descent.",
   "points": [
     [0.0, 0, 0.0, 8.5],
     [0.0, 0, 67.5, 8.5],
@@ -249,6 +249,30 @@
       "when": "tube_right"
     },
     {
+      "type": "mover",
+      "at": [22, 6],
+      "offset": -3.2,
+      "kind": "press",
+      "width": 5,
+      "length": 4,
+      "height": 2.4,
+      "drop": 3.5,
+      "period": 3.2,
+      "phase": 0.0
+    },
+    {
+      "type": "mover",
+      "at": [22, 22],
+      "offset": 3.2,
+      "kind": "press",
+      "width": 5,
+      "length": 4,
+      "height": 2.4,
+      "drop": 3.5,
+      "period": 3.2,
+      "phase": 0.5
+    },
+    {
       "type": "bank",
       "from": [4, -15],
       "to": [5, 15],
@@ -316,6 +340,12 @@
         {
           "type": "item_boxes",
           "at": 55
+        },
+        {
+          "type": "conveyor",
+          "from": 15,
+          "to": 95,
+          "push": 7
         }
       ]
     }

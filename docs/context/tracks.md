@@ -1,6 +1,6 @@
 # Tracks
 
-Tracks are data. 13 race tracks plus the built-in `greybox` test track.
+Tracks are data. 15 race tracks plus the built-in `greybox` test track.
 `docs/TRACKS.md` is the full file-format reference (sections: The main
 loop, Point to point, Features, Gates, Branches); read only the section you
 need.

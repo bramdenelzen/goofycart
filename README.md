@@ -195,13 +195,15 @@ times, wall hits and falls: the quickest way to try a layout change.
 | Crane Docks | The pier ramp, a banked turn over the start, moving crane decks, a dip under the water and a glide home |
 | Coral Cove | A beach lap two fifths under the sea: a stream along the lagoon floor, bubble vents, a rip current and a sunken wreck to cut through |
 | Summit Descent | Point to point, 170 m down the mountain in three sections: the glacier, a glide over the crevasse, the dam and the forest with an ice chute, the ski jump and the slalom to the lodge |
+| Vortex Quarry | Up the haul road round the quarry terraces, a glide off the rim, then the corkscrew: a turn and a half of 60° grip road screwing down into the pit, the karts stuck to it and gaining speed all the way |
+| Scrapyard Shift | A night shift in the scrapyard: the intake belt, three rows of presses, the shaker floor, a glide off the scrap heap, a pallet deck swinging across the crane bay and a return belt the shift lever reverses |
 
 | Cup | Tracks (ids) |
 | --- | --- |
 | Acorn Cup | `meadow_circuit`, `dune_drift`, `harbor_hop`, `frost_pass` |
 | Comet Cup | `canyon_run`, `lava_works`, `cloud_spire`, `neon_raceway` |
 | Bazaar Cup | `market_mile`, `twin_bridges`, `crane_docks`, `coral_cove` |
-| Summit Cup | `summit_descent` |
+| Summit Cup | `summit_descent`, `vortex_quarry`, `scrapyard_shift` |
 
 `greybox` is still there as a test track.
 

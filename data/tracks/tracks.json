@@ -31,7 +31,9 @@
     {
       "name": "Summit Cup",
       "tracks": [
-        "summit_descent"
+        "summit_descent",
+        "vortex_quarry",
+        "scrapyard_shift"
       ]
     }
   ]
