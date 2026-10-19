@@ -40,6 +40,51 @@ KartInput gas(float steer = 0.0f, bool drift = false) {
     return in;
 }
 
+// Flat road that steps down by `drop` metres at z = 0: a plain ledge, no
+// ramp or launch surface.
+Track ledge_track(float drop) {
+    Track t;
+    t.name = "ledge";
+    const float e = 2000.0f;
+    auto add_quad = [&](float y, float z0, float z1) {
+        const uint32_t b = uint32_t(t.vertices.size());
+        t.vertices.push_back({-e, y, z0});
+        t.vertices.push_back({-e, y, z1});
+        t.vertices.push_back({e, y, z1});
+        t.vertices.push_back({e, y, z0});
+        t.triangles.push_back({b, b + 1, b + 2, Surface::Road});
+        t.triangles.push_back({b, b + 2, b + 3, Surface::Road});
+    };
+    add_quad(drop, -e, 0.0f);
+    add_quad(0.0f, 0.0f, e);
+    for (int i = 0; i < 1000; ++i) {
+        CenterSample c;
+        c.pos = {0, i * 2.0f < 100.0f ? drop : 0.0f, float(i) * 2.0f - 100.0f};
+        c.tangent = {0, 0, 1};
+        c.right = {-1, 0, 0};
+        c.up = {0, 1, 0};
+        c.s = float(i) * 2.0f;
+        t.center.push_back(c);
+    }
+    t.checkpoints = {0};
+    t.length = 2000.0f;
+    t.finalize();
+    return t;
+}
+
+// Drives off the ledge, pressing drift once in the air while the trick
+// window is open. Returns whether the window opened.
+bool trick_off_ledge(Bench& b) {
+    bool opened = false, pressed = false;
+    for (int f = 0; f < 60 * 6; ++f) {
+        const bool press = !b.kart.grounded && b.kart.trick_window > 0 && !pressed;
+        opened |= b.kart.trick_window > 0;
+        pressed |= press;
+        b.step(gas(0.0f, press));
+    }
+    return opened;
+}
+
 } // namespace
 
 TEST_CASE("stat points sum to Levels clamped to 0..20") {
@@ -291,4 +336,18 @@ TEST_CASE("suspension: pitches under acceleration and braking, rolls out of turn
     CHECK(x.susp_roll == y.susp_roll);
     CHECK(x.susp_roll_v == y.susp_roll_v);
     CHECK(x.pos == y.pos);
+}
+
+TEST_CASE("a trick works off any ledge, but only pays out after real air") {
+    Bench high(ledge_track(2.0f), {0, 2.0f, -80.0f});
+    REQUIRE(trick_off_ledge(high));
+    CHECK(high.count(KartEventType::Trick) == 1);
+    int boosts = 0;
+    for (const auto& e : high.events) boosts += e.type == KartEventType::Boost && e.value == int(BoostKind::Trick);
+    CHECK(boosts == 1);
+
+    // A lip barely below the road: the trick plays, but there's no boost.
+    Bench low(ledge_track(0.12f), {0, 0.12f, -80.0f});
+    trick_off_ledge(low);
+    for (const auto& e : low.events) CHECK_FALSE((e.type == KartEventType::Boost && e.value == int(BoostKind::Trick)));
 }

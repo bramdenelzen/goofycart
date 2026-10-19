@@ -9,7 +9,7 @@ Right now you pick Grand Prix, VS race or Time Trials, a cup or course, an
 engine class and CPU difficulty, then a driver, body, tires and glider (with
 MK8-style stat bars), and race 3 laps on one of 13 themed tracks (or one run down the mountain) against 11
 CPU drivers: drifting with blue, orange and purple mini-turbos,
-hops, tricks off ramps, a glider section over a chasm, dash panels, rocket
+hops, tricks off ramps and any ledge, a glider section over a chasm, dash panels, rocket
 starts, off-road, sand, ice and mud, respawns, and item boxes with all 22
 race items. The same race
 runs online on a dedicated server with up to 12 players.
@@ -235,7 +235,7 @@ Kart select and lobby: Up/Down pick a part, Left/Right change it, Enter (or
 A) to race or ready up, Esc to quit.
 
 Racing: arrows or WASD steer, X or Space accelerate, Z brake, Shift
-hop/drift (press it at a ramp lip to trick), Up/Down pitch the glider, E or
+hop/drift (press it at a ramp lip or any ledge to trick), Up/Down pitch the glider, E or
 Ctrl use item (hold to drag it behind you), C look back, R restart, F1 help, F2 low-res toggle, Esc back to kart
 select (online: quit). After the finish, Enter or A continues.
 
