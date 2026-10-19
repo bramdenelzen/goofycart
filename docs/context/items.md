@@ -1,0 +1,34 @@
+# Items
+
+All 22 MK8 Deluxe race items under our own names (Banana, Green/Red/Spiked
+Shell and triples, Bomb, Mushroom x1/x3/Golden, Bullet, Ink, Lightning,
+Star, Fireball, Boomerang, Chomper, Horn, Lucky Eight, Coin, Ghost).
+
+## Files
+
+- `src/sim/include/gk/sim/items.h`: `Item` enum, `EntityType` (thrown or
+  dropped things: banana, shells, bomb, fireball, boomerang, explosion, oil
+  slick), `ItemEntity`, `HitKind` (spin, tumble, shrink), `ItemTuning`
+  (every timing and speed), `Rng`, `roll_item(rng, place, karts, blocked)`.
+- `src/sim/items.cpp`: roulette weights per place band (provisional, tagged
+  in the file), and the `World` members `items_before_step`, `use_item`,
+  `throw_item`, `shield_blocks`, `apply_hit`, `items_after_step`,
+  `update_entities`. Part of the deterministic step.
+- `World::blocked_items` limits Spiked Shell and Lightning via cooldowns.
+
+## Rules worth knowing
+
+- Two item slots. Holding the button trails a banana, shell or bomb as a
+  shield; Up throws forward, Down throws back. Triples orbit and block one
+  hit each.
+- Spiked Shell seeks the leader; the Horn is the only defence.
+- Test hooks: `World::give_item`, `spawn_explosion`, `apply_hit`; the client
+  has `--give-item N`. Tests: `tests/test_items.cpp`.
+
+## Client side
+
+Item meshes: painted models in `src/client/render/gobby_items.cpp` and
+`gobby_items2.cpp` (after Albert's reference paintings), low-poly fallbacks
+in `item_mesh.cpp`, HUD icons in `item_icons.cpp`. Held and thrown items are
+drawn by `App::draw_held_item` / `App::draw_items` in `src/client/app.cpp`;
+effects by `App::event_particles` and `explosion_burst`.
