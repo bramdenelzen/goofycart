@@ -457,6 +457,8 @@ void App::show_track(const std::string& id) {
             for (const auto& sw : t.switches)
                 g.switches.push_back({renderer_.upload_mesh(render::make_switch_mesh(sw.radius, false)),
                                       renderer_.upload_mesh(render::make_switch_mesh(sw.radius, true), 0, false, true)});
+            for (const auto& v : t.vents) g.vents.push_back(renderer_.upload_mesh(render::make_vent_mesh(v.radius)));
+            for (const auto& cu : t.currents) g.currents.push_back(renderer_.upload_mesh(render::make_current_mesh(t, cu), 0, false, true, true));
         }
         log_info("Track {}: {} props in {} meshes; {} ms (road {}, scenery {}, props and trackside {})", shown_track_->id, placements.size(), ids.size(),
                  ms(), ms_road, ms_scenery - ms_road, ms() - ms_scenery);
@@ -694,6 +696,7 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
             break;
         case sim::KartEventType::Trick: input_.rumble(0.2f, 0.2f, 80); break;
         case sim::KartEventType::WaterExit: wet_lens_ = 1.0f; break;
+        case sim::KartEventType::VentLift: input_.rumble(0.3f, 0.5f, 140); break;
         case sim::KartEventType::Land: input_.rumble(0.5f, 0.2f, 120); break;
         case sim::KartEventType::WallHit: input_.rumble(0.8f, 0.4f, 120); break;
         case sim::KartEventType::Bump: input_.rumble(0.6f, 0.6f, 100); break;
@@ -1002,6 +1005,7 @@ void App::event_sound(const sim::KartEvent& e) {
     case sim::KartEventType::Smash: s = Sfx::Crunch; break;
     case sim::KartEventType::TireKnock: s = Sfx::Bump, pitch = 0.75f; break;
     case sim::KartEventType::TireBounce: s = Sfx::Boing; break;
+    case sim::KartEventType::VentLift: s = Sfx::Boing, pitch = 1.25f; break;
     case sim::KartEventType::Lap:
         if (mine && world()) s = e.value == world()->config().laps ? Sfx::FinalLap : Sfx::Lap;
         break;
@@ -2116,6 +2120,29 @@ void App::draw_gates(const sim::World& w) {
         const mat4 model(vec4(-sw.right, 0.0f), vec4(sw.up, 0.0f), vec4(sw.forward, 0.0f), vec4(sw.pos, 1.0f));
         renderer_.draw(on ? g.switches[i].second : g.switches[i].first, model);
     }
+    // Vents: the crater always, and while one blows a column of bubbles out of it.
+    for (size_t i = 0; i < t.vents.size() && i < g.vents.size(); ++i) {
+        const auto& v = t.vents[i];
+        const mat4 model(vec4(glm::normalize(glm::cross(v.up, vec3(0, 0, 1)) + vec3(1e-5f, 0, 0)), 0.0f), vec4(v.up, 0.0f),
+                         vec4(glm::normalize(glm::cross(glm::cross(v.up, vec3(0, 0, 1)) + vec3(1e-5f, 0, 0), v.up)), 0.0f), vec4(v.pos, 1.0f));
+        renderer_.draw(g.vents[i], model);
+        if (paused_ || !t.vent_active(v, double(w.tick_count()))) continue;
+        const int n = int(60.0f * frame_dt_ * 2.0f + (particles_.rnd() < 60.0f * frame_dt_ * 2.0f - std::floor(60.0f * frame_dt_ * 2.0f) ? 1 : 0));
+        for (int k = 0; k < n; ++k) {
+            const float a = particles_.rnd() * 6.28f, d = particles_.rnd() * v.radius * 0.4f;
+            Particle p;
+            p.pos = v.pos + vec3(std::cos(a) * d, 0.2f, std::sin(a) * d);
+            p.vel = v.up * (v.lift * 0.35f + particles_.rnd() * 2.0f) + vec3((particles_.rnd() - 0.5f) * 1.2f, 0.0f, (particles_.rnd() - 0.5f) * 1.2f);
+            p.life = 1.2f + particles_.rnd() * 0.8f;
+            p.size0 = 0.12f + 0.1f * particles_.rnd(), p.size1 = 0.3f + 0.15f * particles_.rnd();
+            p.sprite = particles_.rnd() < 0.6f ? render::Renderer::Sprite::Ring : render::Renderer::Sprite::Dot;
+            p.color0 = vec4(0.85f, 0.97f, 1.0f, 0.9f), p.color1 = vec4(0.85f, 0.97f, 1.0f, 0.0f);
+            p.drag = 0.6f;
+            particles_.emit(p);
+        }
+    }
+    for (size_t i = 0; i < t.currents.size() && i < g.currents.size(); ++i)
+        if (t.gate_holds(t.currents[i].gate)) renderer_.draw(g.currents[i], mat4(1.0f));
     // Barriers rise out of the road and sink back into it over a moment.
     if (barrier_track_ != t.id || barrier_rise_.size() != t.barriers.size()) {
         barrier_track_ = t.id;

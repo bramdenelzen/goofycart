@@ -328,6 +328,17 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     }
     const bool on_launch = on_glide || pr.touched[int(Surface::TrickRamp)] || pr.touched[int(Surface::BoostPad)];
     s.trick_window = on_launch ? k.trick_window_frames : 0;
+    // A vent on the floor of deep water throws the kart up its column of bubbles.
+    if (s.underwater) {
+        for (const Track::Vent& v : ctx.track.vents) {
+            if (glm::distance(s.pos, v.pos) > v.radius || !ctx.track.vent_active(v, ctx.track.mover_time)) continue;
+            take_off(s, ctx, v.lift);
+            s.trick_window = k.trick_window_frames;
+            emit(ctx, KartEventType::VentLift);
+            step_air(s, in, drift_pressed, ctx);
+            return;
+        }
+    }
 
     const vec3 fwd = s.forward();
     const vec3 up = s.up();
@@ -685,6 +696,7 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     const SuspensionInput before{s.grounded, s.speed, s.velocity(), s.forward(), s.up()};
     if (s.grounded) step_ground(s, in, drift_pressed, ctx);
     else step_air(s, in, drift_pressed, ctx);
+    if (s.underwater) s.pos += ctx.track.current_at(s.pos, s.sample) * kDt; // carried by the water
     collide_walls(s, ctx);
     update_roof(s, ctx);
     step_suspension(s, before, ctx);

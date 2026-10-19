@@ -27,11 +27,22 @@ const TrackCatalog& catalog() {
 
 } // namespace
 
-TEST_CASE("the track catalog has four cups of four") {
+TEST_CASE("the track catalog's cups hold every track once") {
     const TrackCatalog& c = catalog();
-    REQUIRE(c.cups.size() == 4);
-    for (const Cup& cup : c.cups) CHECK(cup.tracks.size() == 4);
-    CHECK(c.tracks.size() == 11);
+    REQUIRE(c.cups.size() >= 3);
+    std::vector<std::string> seen;
+    for (const Cup& cup : c.cups) {
+        CHECK(cup.tracks.size() >= 1);
+        CHECK(cup.tracks.size() <= 4);
+        for (const std::string& id : cup.tracks) {
+            CAPTURE(id);
+            CHECK(c.find(id) >= 0);
+            CHECK(std::find(seen.begin(), seen.end(), id) == seen.end()); // in one cup only
+            seen.push_back(id);
+        }
+    }
+    CHECK(seen.size() == c.tracks.size()); // and every track is in a cup
+    CHECK(c.tracks.size() >= 12);
     std::string err;
     TrackDef bad;
     CHECK_FALSE(parse_track_def(R"({"id":"x","name":"x","points":[[0,0,0]]})", bad, &err));

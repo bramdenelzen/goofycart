@@ -188,6 +188,25 @@ bool Track::in_deep_water(vec3 p, int sample) const {
     return false;
 }
 
+vec3 Track::current_at(vec3 p, int sample) const {
+    vec3 carry(0.0f);
+    for (const Current& cu : currents) {
+        if (sample < cu.first || sample >= cu.first + cu.count || !gate_holds(cu.gate)) continue;
+        const CenterSample& c = road[size_t(sample)];
+        const float lat = glm::dot(p - c.pos, c.right);
+        if (lat < cu.lo || lat > cu.hi) continue;
+        carry += c.tangent * cu.push + c.right * cu.drift;
+    }
+    return carry;
+}
+
+bool Track::vent_active(const Vent& v, double tick) const {
+    if (!gate_holds(v.gate)) return false;
+    if (v.period <= 0) return true;
+    const double t = std::fmod(tick + double(v.phase) * double(v.period), double(v.period));
+    return t < double(v.open);
+}
+
 const Track::Tunnel* Track::tunnel_at(int sample) const {
     for (const Tunnel& t : tunnels)
         if (sample >= t.first && sample < t.first + t.count) return &t;

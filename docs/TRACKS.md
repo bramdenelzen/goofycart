@@ -17,6 +17,11 @@ with `--race` runs a 12-CPU race on it.
 }
 ```
 
+`theme` picks the client's palette, scenery, sky and music: `meadow`,
+`desert`, `harbor`, `snow`, `canyon`, `volcano`, `sky`, `night`, `market` or
+`beach` (sand, palms, the sea all round and a sea floor of coral and kelp
+wherever the road dips under; its tunnels are wrecks).
+
 `points` are the closed loop's control points: x, y (up), z and an optional
 road half-width for that point. Widths blend smoothly between points, so a
 road can pinch to a narrow bridge and open into a wide plaza.
@@ -46,6 +51,8 @@ they are metres from where the branch leaves.
 | `zone` | the road's surface changes while its gate holds | `from`, `to`, `surface`, `when`, `side` or `offset` + `width` |
 | `tunnel` | a roofed stretch: an arched vault over the road | `from`, `to`, `height` (m, default 7), `style` |
 | `bank` | the road tilted across, easing in and out over 15 m | `from`, `to`, `angle` (degrees, + the right side lower, at most 35) |
+| `current` | deep water only: the water moves, carrying karts with it | `from`, `to`, `push` (m/s along), `drift` (m/s across, + right), `when` |
+| `vent` | deep water only: a bubble vent that throws karts up | `at`, `offset`, `width`, `lift` (m/s up), `period`, `open`, `phase`, `when` |
 
 Zone surfaces: `water`, `ice`, `oil`, `sand`, `offroad_*`, `boost` (a dash
 strip) and `lava` (out of bounds: a respawn).
@@ -67,6 +74,28 @@ road under it with the control points:
 
 CPUs drive through deep water like road. Harbor Hop's dip under the west
 quay is the example.
+
+Deep water can move. A `current` carries every kart under it: `push` metres
+per second along the road (negative against the traffic) and `drift` across
+it (positive to the right), as a steady shove on top of the kart's own
+driving. A `vent` is a bubble column `width` metres across at `offset` from
+the centre line; a kart driving over an active one is thrown straight up at
+`lift` m/s, with a trick window like a ramp's, and comes down wherever the
+water puts it. With `period` (seconds) it blows for `open` seconds of each
+period (half of it by default), starting `phase` (0..1) of the way through;
+without one it blows all the time. Both take `when`, so a rip current can
+come and go with a gate and a vent can wake on the last lap:
+
+```json
+{"type": "current", "from": [6, 20], "to": [8, 20], "push": 5},
+{"type": "current", "from": [14, 10], "to": [15, 20], "drift": -2.5, "when": "rip"},
+{"type": "vent", "at": [8, 30], "offset": 2.5, "width": 6, "lift": 13, "when": "last_lap"}
+```
+
+The CPU drivers know nothing of either; keep a current's drift gentle enough
+to steer against and give a vent somewhere to land. Coral Cove's lagoon
+(two fifths of the lap under the sea, a stream along the floor, a rip across
+the grotto, a vent at each end and a wreck to cut through) is the example.
 
 An `obstacle` with a `when` becomes a barrier, since the fixed road can't change.
 
@@ -91,8 +120,9 @@ The road's walls carry on up into an arch whose crown is `height` metres
 (at least 3.5) over the middle of the road; the walls rise straight to 55%
 of that and the arch spans the road and its verges. A tunnel always has its
 walls, even over a `no_walls` stretch. `style` is `rock`, `masonry`, `ice`,
-`concrete` or `lava`; left out, the theme picks one (snow ice, volcano lava,
-night concrete, market and harbor masonry, else rock).
+`concrete`, `lava` or `wreck` (a ship's hull: timber ribs, portholes along
+the sides); left out, the theme picks one (snow ice, volcano lava, night
+concrete, market and harbor masonry, else rock).
 
 * In the race: the roof stops jumps (a kart bumps off it and comes back
   down) and folds the glider away, so keep glide ramps and big trick ramps
@@ -105,9 +135,9 @@ night concrete, market and harbor masonry, else rock).
 * Keep tunnels off a branch's first and last `junction` metres, and clear of
   other roads passing within the arch.
 
-Dune Drift's quarry tunnel and Frost Pass's ice cave are branches with
-tunnels; Canyon Run, Lava Works (a lava tube) and Neon Raceway (an underpass)
-have one on the main loop.
+Dune Drift's quarry tunnel, Frost Pass's ice cave and Coral Cove's sunken
+wreck are branches with tunnels; Canyon Run, Lava Works (a lava tube) and
+Neon Raceway (an underpass) have one on the main loop.
 
 ## Gates: what changes during a race
 

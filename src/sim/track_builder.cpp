@@ -76,8 +76,8 @@ struct Strip {
     struct VergeSpan { Range r; bool left, right; float width; Surface surface; };
     std::vector<VergeSpan> verges;
     std::vector<float> box_rows;
-    std::vector<std::pair<float, const TrackFeature*>> obstacles, movers, barriers, switches;
-    std::vector<std::pair<Range, const TrackFeature*>> zones, tunnels;
+    std::vector<std::pair<float, const TrackFeature*>> obstacles, movers, barriers, switches, vents;
+    std::vector<std::pair<Range, const TrackFeature*>> zones, tunnels, currents;
     std::vector<std::pair<Range, float>> banks; // radians, + right side down
 
     int n() const { return int(c.size()); }
@@ -130,6 +130,8 @@ struct Strip {
         case TrackFeature::Kind::Switch: switches.push_back({a, &f}); break;
         case TrackFeature::Kind::Zone: zones.push_back({range(a, b), &f}); break;
         case TrackFeature::Kind::Bank: banks.push_back({range(a, b), glm::radians(f.angle)}); break;
+        case TrackFeature::Kind::Current: currents.push_back({range(a, b), &f}); break;
+        case TrackFeature::Kind::Vent: vents.push_back({a, &f}); break;
         case TrackFeature::Kind::Tunnel:
             tunnels.push_back({range(a, b), &f});
             no_respawn.push_back(range(a - 2.0f, b + 2.0f)); // the roof is no place to drop a kart onto
@@ -788,6 +790,40 @@ Track build_track(const TrackDef& def) {
             z.first = st.first + a, z.count = std::max(1, count);
             t.zones.push_back(z);
         }
+        for (const auto& [r, f] : st.currents) {
+            Track::Current cu;
+            const int a = st.sample_at(r.a);
+            int count = int(std::round((r.b - r.a) / st.step));
+            if (!st.closed) count = std::min(count, st.n() - a);
+            cu.push = f->push, cu.drift = f->drift;
+            cu.gate = f->gate;
+            if (f->width > 0.0f) cu.lo = f->offset - 0.5f * f->width, cu.hi = f->offset + 0.5f * f->width;
+            else if (!f->left) cu.lo = 0.4f;
+            else if (!f->right) cu.hi = -0.4f;
+            if (st.closed && a + count > st.n()) { // split at the start line, as zones are
+                Track::Current c2 = cu;
+                c2.first = st.first, c2.count = a + count - st.n();
+                t.currents.push_back(c2);
+                count = st.n() - a;
+            }
+            cu.first = st.first + a, cu.count = std::max(1, count);
+            t.currents.push_back(cu);
+        }
+        for (const auto& [s_at, f] : st.vents) {
+            const int si = st.sample_at(s_at);
+            const CenterSample& c = st.c[size_t(si)];
+            Track::Vent v;
+            v.pos = c.pos + c.right * f->offset;
+            v.up = c.up;
+            v.radius = std::max(1.0f, 0.5f * f->width);
+            v.lift = f->lift;
+            v.period = f->period > 0.0f ? std::max(1, int(std::round(f->period * 60.0f))) : 0;
+            v.open = std::max(0, int(std::round(f->open * 60.0f)));
+            v.phase = f->phase;
+            v.sample = st.first + si;
+            v.gate = f->gate;
+            t.vents.push_back(v);
+        }
         for (const auto& [r, f] : st.tunnels) {
             Track::Tunnel tn;
             tn.height = f->height;
@@ -1001,6 +1037,8 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     else if (type == "zone") tf.kind = K::Zone;
     else if (type == "tunnel") tf.kind = K::Tunnel;
     else if (type == "bank") tf.kind = K::Bank;
+    else if (type == "current") tf.kind = K::Current;
+    else if (type == "vent") tf.kind = K::Vent;
     else throw std::runtime_error("unknown feature type " + type);
     if (on_branch && tf.kind == K::Stairs) throw std::runtime_error("stairs only on the main loop");
     auto pos = [&](const nlohmann::json& j) { return on_branch ? TrackPos{0.0f, j.get<float>()} : parse_pos(j); };
@@ -1056,6 +1094,19 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
         if (depth == "deep") tf.deep = true;
         else if (depth != "shallow") throw std::runtime_error("unknown zone depth " + depth);
         tf.level = f.value("level", tf.level);
+    }
+    if (tf.kind == K::Current) {
+        tf.width = f.value("width", 0.0f); // 0: the whole road (or one side of it)
+        tf.push = f.value("push", 0.0f);
+        tf.drift = f.value("drift", 0.0f);
+        if (tf.push == 0.0f && tf.drift == 0.0f) throw std::runtime_error("a current needs a push or a drift");
+    }
+    if (tf.kind == K::Vent) {
+        tf.width = f.value("width", 6.0f);
+        tf.lift = f.value("lift", 12.0f);
+        tf.period = f.value("period", 0.0f);
+        tf.open = f.value("open", tf.period > 0.0f ? 0.5f * tf.period : 0.0f);
+        tf.phase = f.value("phase", 0.0f);
     }
     if (tf.kind == K::Mover) {
         tf.block = f.value("kind", std::string("platform")) == "block";

@@ -30,6 +30,7 @@ enum class KartEventType : uint8_t {
     GliderClose,// the glider folded away (dived into deep water)
     WaterEnter, // went under in deep water
     WaterExit,  // came up out of it
+    VentLift,   // a vent's bubbles threw the kart upwards
 };
 struct KartEvent {
     KartEventType type;

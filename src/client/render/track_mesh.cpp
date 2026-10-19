@@ -114,6 +114,9 @@ const ThemeStyle& theme_style(const std::string& theme) {
         {"market", {rgba(168, 156, 140), rgba(190, 178, 160), rgba(150, 120, 90), rgba(120, 90, 60), rgba(222, 196, 130),
                     rgba(186, 228, 245), rgba(70, 140, 190), rgba(238, 226, 200), rgba(170, 70, 50), rgba(120, 105, 90),
                     rgba(60, 120, 170), {0.62f, 0.8f, 0.97f}, 0.0028f, 0.5f, S::Market}},
+        {"beach", {rgba(150, 140, 124), rgba(236, 214, 160), rgba(208, 186, 140), rgba(176, 150, 110), rgba(240, 220, 170),
+                   rgba(186, 228, 245), rgba(40, 190, 200), rgba(250, 250, 245), rgba(255, 120, 110), rgba(120, 100, 80),
+                   rgba(30, 150, 190), {0.55f, 0.85f, 0.98f}, 0.0028f, 0.5f, S::Beach}},
         {"rainbow", {rgba(120, 100, 160), rgba(90, 80, 140), rgba(80, 70, 120), rgba(60, 50, 90), rgba(200, 180, 220),
                      rgba(200, 220, 255), rgba(60, 60, 140), rgba(255, 120, 200), rgba(120, 220, 255), rgba(40, 30, 60),
                      rgba(30, 20, 60), {0.9f, 0.55f, 0.6f}, 0.0012f, 0.6f, S::Clouds}},
@@ -129,6 +132,7 @@ uint32_t surface_texture(const std::string& theme, sim::Surface s) {
     using sim::Surface;
     auto terrain = [&](bool heavy) -> uint32_t {
         if (theme == "snow") return TexSnow;
+        if (theme == "beach") return TexSand;
         if (theme == "desert") return heavy ? TexDirt : TexSand;
         if (theme == "canyon") return heavy ? TexRock : TexDirt;
         if (theme == "volcano") return TexRock;
@@ -148,7 +152,7 @@ uint32_t surface_texture(const std::string& theme, sim::Surface s) {
     case Surface::GlideRamp: return TexArrows;
     case Surface::TrickRamp: return TexStripes;
     case Surface::Wall: return TexPanel;
-    case Surface::OutOfBounds: return theme == "volcano" ? TexLava : theme == "harbor" ? TexWater : terrain(false); // a lava pool, the sea
+    case Surface::OutOfBounds: return theme == "volcano" ? TexLava : theme == "harbor" || theme == "beach" ? TexWater : terrain(false); // a lava pool, the sea
     case Surface::Oil: return TexAsphalt;
     case Surface::Count: break;
     }
@@ -247,7 +251,7 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles, int group) {
         if (group >= 0 && tri.group != group) continue;
         const vec3 a = t.vertices[tri.a], c1 = t.vertices[tri.b], c2 = t.vertices[tri.c];
         const vec3 centroid = (a + c1 + c2) / 3.0f;
-        if (tri.surface == sim::Surface::OutOfBounds && th.scenery == ThemeStyle::Scenery::Harbor) {
+        if (tri.surface == sim::Surface::OutOfBounds && (th.scenery == ThemeStyle::Scenery::Harbor || th.scenery == ThemeStyle::Scenery::Beach)) {
             sea = true, sea_y = a.y; // the sea, built below as a fine grid that can swell
             continue;
         }
@@ -405,6 +409,7 @@ TunnelLook tunnel_look(const std::string& style, const std::string& theme) {
     if (s == "ice") return {TexIce, TexSnow, rgba(160, 205, 235), rgba(236, 242, 250), rgba(200, 240, 255), {0.62f, 0.86f, 1.0f}};
     if (s == "concrete") return {TexPanel, TexPanel, rgba(90, 92, 110), rgba(70, 72, 88), rgba(120, 240, 255), {0.35f, 0.9f, 1.0f}};
     if (s == "lava") return {TexRock, TexRock, rgba(70, 52, 50), rgba(52, 40, 40), rgba(255, 140, 50), {1.0f, 0.42f, 0.12f}};
+    if (s == "wreck") return {TexWood, TexWood, rgba(118, 84, 54), rgba(88, 62, 42), rgba(140, 240, 220), {0.45f, 0.95f, 0.85f}}; // a sunken hull, lit by what glows down there
     return {TexRock, TexRock, rgba(150, 120, 96), rgba(132, 104, 84), rgba(255, 210, 130), {1.0f, 0.76f, 0.46f}}; // rock
 }
 
@@ -679,8 +684,8 @@ void flags(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, const std:
 void hills(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng& rnd, vec3 mid, float span, float floor_y) {
     using S = ThemeStyle::Scenery;
     if (th.scenery == S::City || th.scenery == S::Clouds || th.scenery == S::Market) return;
-    const uint32_t tex = th.scenery == S::Pines ? TexSnow : th.scenery == S::Cactus ? TexSand : th.scenery == S::Mesas ? TexRock : th.scenery == S::Lava ? TexRock : TexGrass;
-    const uint32_t col = th.scenery == S::Pines ? rgba(236, 242, 250) : th.scenery == S::Cactus ? rgba(222, 190, 128) : th.scenery == S::Mesas ? rgba(196, 130, 80) : th.scenery == S::Lava ? rgba(60, 50, 52) : th.scenery == S::Harbor ? rgba(110, 176, 90) : rgba(96, 168, 70);
+    const uint32_t tex = th.scenery == S::Pines ? TexSnow : th.scenery == S::Cactus || th.scenery == S::Beach ? TexSand : th.scenery == S::Mesas ? TexRock : th.scenery == S::Lava ? TexRock : TexGrass;
+    const uint32_t col = th.scenery == S::Pines ? rgba(236, 242, 250) : th.scenery == S::Cactus ? rgba(222, 190, 128) : th.scenery == S::Beach ? rgba(230, 205, 150) : th.scenery == S::Mesas ? rgba(196, 130, 80) : th.scenery == S::Lava ? rgba(60, 50, 52) : th.scenery == S::Harbor ? rgba(110, 176, 90) : rgba(96, 168, 70);
     b.texture(tex, 6.0f);
     for (int i = 0; i < 70; ++i) {
         const float a = rnd() * 2.0f * kPi;
@@ -875,6 +880,12 @@ void roadside_islands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th,
             if (rnd() < 0.6f) place(rnd() < 0.5f ? "barrel" : "crate", spot(0.8f), rnd() * 6.28f, 1.0f);
             if (rnd() < 0.4f) place("barrel_red", spot(0.8f), rnd() * 6.28f, 1.0f);
             break;
+        case S::Beach:
+            place("tree_palm", spot(0.3f), yaw, 1.0f + rnd() * 0.4f);
+            if (rnd() < 0.5f) place("tree_palm", spot(0.7f), rnd() * 6.28f, 0.7f + rnd() * 0.3f);
+            if (rnd() < 0.5f) place(rnd() < 0.5f ? "rock" : "boulder", spot(0.85f), rnd() * 6.28f, 0.6f + rnd() * 0.6f);
+            if (rnd() < 0.3f) place(rnd() < 0.5f ? "barrel" : "crate", spot(0.8f), rnd() * 6.28f, 0.9f);
+            break;
         case S::Cactus:
             place("cactus", spot(0.4f), yaw, 0.9f + rnd() * 0.5f);
             if (rnd() < 0.6f) place(rnd() < 0.5f ? "rock_red" : "barrel_red", spot(0.8f), rnd() * 6.28f, 0.8f + rnd() * 0.4f);
@@ -1061,6 +1072,7 @@ GroundLook ground_look(const ThemeStyle& th) {
     case S::Pines: return {12.0f, TexSnow, rgba(236, 242, 250), rgba(150, 160, 180)};
     case S::Mesas: return {10.0f, TexDirt, rgba(206, 140, 86), rgba(160, 82, 52)};
     case S::Lava: return {8.0f, TexRock, rgba(66, 54, 56), rgba(38, 30, 32)};
+    case S::Beach: return {4.0f, TexSand, rgba(236, 212, 158), rgba(200, 170, 120)};
     default: return {7.0f, TexGrass, rgba(96, 168, 70), rgba(120, 96, 70)};
     }
 }
@@ -1280,6 +1292,16 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
                     if (rnd() < 0.3f) place("dead_tree", on_ground(base + vec3(3.0f, 0.0f, 0.0f)), rnd() * 6.28f, vec3(1.0f));
                     break;
                 }
+                case S::Beach: {
+                    const int palms = 1 + int(rnd() * 3.0f);
+                    for (int k = 0; k < palms; ++k) {
+                        const vec3 p = base + vec3(rnd() * 8.0f - 4.0f, 0.0f, rnd() * 8.0f - 4.0f);
+                        place("tree_palm", vec3(p.x, ground.height(p.x, p.z), p.z), rnd() * 6.28f, vec3(0.8f + rnd() * 0.6f));
+                    }
+                    if (rnd() < 0.5f) place(pick({"rock", "boulder"}), on_ground(base + vec3(3.5f, 0.0f, 2.0f)), rnd() * 6.28f, vec3(0.7f + rnd() * 0.8f));
+                    if (rnd() < 0.25f) place(pick({"barrel", "crate"}), on_ground(base + vec3(-3.0f, 0.0f, 1.0f)), rnd() * 6.28f, vec3(0.9f));
+                    break;
+                }
                 default: {
                     const int trees = 1 + int(rnd() * 3.0f);
                     for (int k = 0; k < trees; ++k) {
@@ -1345,6 +1367,7 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
                 b.cone(base, 3.0f + rnd() * 4.0f, 1.2f, 10, rgba(230, 196, 132));
                 break;
             }
+            case S::Beach:
             case S::Harbor: {
                 base.y = floor_y + 0.2f;
                 if (props && rnd() < 0.55f) {
@@ -1776,6 +1799,59 @@ MeshData make_switch_mesh(float radius, bool on) {
         const uint32_t cap = on ? rgba(70, 230, 110) : rgba(230, 60, 50);
         up_tri(vec3(0.0f, top, 0.0f), P(a0, radius * 0.66f, top), P(a1, radius * 0.66f, top), cap);
         up_quad(P(a0, radius * 0.66f, top), P(a0, radius * 0.7f, 0.03f), P(a1, radius * 0.7f, 0.03f), P(a1, radius * 0.66f, top), shade(cap, 0.7f));
+    }
+    return b.take();
+}
+
+MeshData make_vent_mesh(float radius) {
+    // A rocky crater round a dark hole, flat on the floor: a lathe from the
+    // hole's lip up over a low rim and down to the ground.
+    MeshBuilder b;
+    b.texture(TexRock, 1.5f);
+    b.lathe(vec3(0.0f), kUp,
+            {{radius * 0.35f, 0.02f}, {radius * 0.55f, 0.45f}, {radius * 0.75f, 0.55f}, {radius * 1.0f, 0.2f}, {radius * 1.25f, 0.0f}},
+            20, rgba(96, 92, 88), 2.0f, 1.0f);
+    b.texture(TexWhite);
+    const int seg = 20;
+    for (int i = 0; i < seg; ++i) { // the hole: a dark disc, lit from within by the vent's glow
+        const float a0 = 2.0f * kPi * float(i) / float(seg), a1 = 2.0f * kPi * float(i + 1) / float(seg);
+        const vec3 p(std::cos(a0) * radius * 0.36f, 0.03f, std::sin(a0) * radius * 0.36f), q(std::cos(a1) * radius * 0.36f, 0.03f, std::sin(a1) * radius * 0.36f);
+        if (glm::cross(q, p).y < 0.0f) b.tri(vec3(0.0f, 0.03f, 0.0f), p, q, rgba(20, 60, 70));
+        else b.tri(vec3(0.0f, 0.03f, 0.0f), q, p, rgba(20, 60, 70));
+    }
+    return b.take();
+}
+
+MeshData make_current_mesh(const sim::Track& t, const sim::Track::Current& cu) {
+    // Pale chevrons laid on the floor every few metres, pointing the way the
+    // water carries: along the road, or across it for a cross-current.
+    MeshBuilder b;
+    b.texture(TexWhite);
+    const uint32_t color = rgba(200, 245, 255, 150);
+    const vec3 along = glm::normalize(vec3(cu.push, 0.0f, 0.0f) + vec3(1e-6f)); // in (across, up, along) terms below
+    (void)along;
+    for (int i = cu.first; i < cu.first + cu.count; i += 3) {
+        const sim::CenterSample& c = t.road[size_t(i)];
+        if (!c.has_floor) continue;
+        const float w = c.half_width + 0.6f;
+        const float lo = std::max(cu.lo, -w), hi = std::min(cu.hi, w);
+        if (hi - lo < 1.0f) continue;
+        // The chevron's direction in the road's frame: along for a push, across for a drift.
+        const vec3 dir = glm::normalize(c.tangent * cu.push + c.right * cu.drift);
+        const vec3 side = glm::normalize(glm::cross(c.up, dir));
+        const int lanes = std::max(1, int((hi - lo) / 3.0f));
+        for (int l = 0; l < lanes; ++l) {
+            const float lat = lo + (hi - lo) * (float(l) + 0.5f) / float(lanes);
+            const vec3 m = c.pos + c.right * lat + c.up * 0.08f;
+            // Two arms of the chevron, each a thin quad swept back from the tip.
+            for (float sgn : {-1.0f, 1.0f}) {
+                const vec3 tip = m + dir * 0.9f, tail = m - dir * 0.5f + side * (sgn * 1.1f);
+                const vec3 n = glm::normalize(glm::cross(dir, side)) * 0.0f + side * (0.18f * sgn);
+                const vec3 p0 = tip - n, p1 = tip + n, p2 = tail + n, p3 = tail - n;
+                if (glm::dot(glm::cross(p1 - p0, p2 - p0), c.up) < 0.0f) b.quad(p0, p3, p2, p1, color);
+                else b.quad(p0, p1, p2, p3, color);
+            }
+        }
     }
     return b.take();
 }

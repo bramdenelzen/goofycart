@@ -7,7 +7,7 @@ empty seats; a dedicated server with server-authoritative racing over UDP.
 Status: early development. See [docs/ROADMAP.md](docs/ROADMAP.md) for phases.
 Right now you pick Grand Prix, VS race or Time Trials, a cup or course, an
 engine class and CPU difficulty, then a driver, body, tires and glider (with
-MK8-style stat bars), and race 3 laps on one of 8 themed tracks against 11
+MK8-style stat bars), and race 3 laps on one of 12 themed tracks against 11
 CPU drivers: drifting with blue, orange and purple mini-turbos,
 hops, tricks off ramps, a glider section over a chasm, dash panels, rocket
 starts, off-road, sand, ice and mud, respawns, and item boxes with all 22
@@ -186,11 +186,16 @@ times, wall hits and falls: the quickest way to try a layout change.
 | Lava Works | A chicane through machinery, a gantry bridge, a glide over the lava, open edges |
 | Cloud Spire | A spiral over the start, pillars at the top, two glides down |
 | Neon Raceway | City blocks, a split lane, a flyover and a jump off its end |
+| Market Mile | A market street of stalls to smash, the town gate, a staircase down to the canal and a glide over it |
+| Twin Bridges | A figure of eight on two levels: a banked climb, a humpback bridge, sliding platforms and a glide over the creek |
+| Crane Docks | The pier ramp, a banked turn over the start, moving crane decks, a dip under the water and a glide home |
+| Coral Cove | A beach lap two fifths under the sea: a stream along the lagoon floor, bubble vents, a rip current and a sunken wreck to cut through |
 
 | Cup | Tracks (ids) |
 | --- | --- |
 | Acorn Cup | `meadow_circuit`, `dune_drift`, `harbor_hop`, `frost_pass` |
 | Comet Cup | `canyon_run`, `lava_works`, `cloud_spire`, `neon_raceway` |
+| Bazaar Cup | `market_mile`, `twin_bridges`, `crane_docks`, `coral_cove` |
 
 `greybox` is still there as a test track.
 

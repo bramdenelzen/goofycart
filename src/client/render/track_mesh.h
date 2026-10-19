@@ -17,7 +17,7 @@ struct ThemeStyle {
     vec3 sky;
     float fog_density;
     float ambient;
-    enum class Scenery { Trees, Cactus, Harbor, Pines, Mesas, Lava, Clouds, City, Market } scenery;
+    enum class Scenery { Trees, Cactus, Harbor, Pines, Mesas, Lava, Clouds, City, Market, Beach } scenery;
 };
 const ThemeStyle& theme_style(const std::string& theme);
 
@@ -78,6 +78,10 @@ MeshData make_zone_mesh(const sim::Track& track, const sim::Track::Zone& zone);
 MeshData make_barrier_mesh(const sim::Track::Barrier& barrier);
 // A switch pad in its own frame, flat on the road: raised and red, or pressed and green.
 MeshData make_switch_mesh(float radius, bool on);
+// A vent on the floor of deep water: a rocky crater around the hole, at the origin.
+MeshData make_vent_mesh(float radius);
+// A current: chevrons along the floor of its stretch, pointing the way it carries.
+MeshData make_current_mesh(const sim::Track& track, const sim::Track::Current& current);
 // A puddle: an irregular flat disc about a unit across, for a dropped oil slick.
 MeshData make_oil_disc_mesh();
 
