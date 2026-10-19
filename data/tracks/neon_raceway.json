@@ -4,31 +4,31 @@
   "theme": "night",
   "half_width": 8,
   "verge": 4,
-  "_comment": "City blocks at night: traffic cruising the avenues, square corners, a split lane, a chicane, then a high flyover across the east avenue and a jump off its end. Traffic lights shut each side of the south avenue in turn, the neon switch opens the back alley round the chicane for a while, and from lap 2 a tanker leaks oil across the east loop.",
+  "_comment": "Night streets between the towers: a chicane that leans the wrong way, blocks shuttling across the road, then the dive: the road drops into a concrete underpass beneath the flyover and climbs out again, then banks up onto the flyover itself and over the top of the dive, with a glide off the far end and a fast run home. The neon switch drops the back alley's barriers, red lights close one half of the road and then the other, and oil leaks across the docks road from lap 2.",
   "points": [
-    [0.0, 0.0, 0.0, 9.0],
-    [0.0, 0.0, 127.5, 9.0],
-    [6.0, 0.0, 168.0, 7.5],
-    [42.0, 0.0, 180.0, 7.0],
-    [90.0, 0.0, 180.0, 7.0],
-    [108.0, 0.0, 150.0],
-    [142.5, 0.0, 138.0],
-    [165.0, 0.0, 177.0],
-    [202.5, 0.0, 186.0],
-    [225.0, 0.0, 150.0, 7.0],
-    [222.0, 0.0, 90.0, 6.5],
-    [187.5, 0.0, 60.0, 6.5],
-    [192.0, 0.0, 21.0],
-    [225.0, 0.0, 9.0, 9.0],
+    [0.0, 0, 0.0, 9.0],
+    [0.0, 0, 127.5, 9.0],
+    [6.0, 0.5, 168.0, 7.5],
+    [42.0, 2.5, 180.0, 7.0],
+    [90.0, 2, 180.0, 7.0],
+    [108.0, -1, 150.0],
+    [142.5, 0.5, 138.0],
+    [165.0, 2.5, 177.0],
+    [202.5, 1, 186.0],
+    [225.0, -1.5, 150.0, 7.0],
+    [222.0, -5, 90.0, 6.5],
+    [187.5, -1.5, 60.0, 6.5],
+    [192.0, 0, 21.0],
+    [225.0, 0, 9.0, 9.0],
     [277.5, 4.8, 15.0, 9.0],
     [300.0, 9.6, 60.0],
     [273.0, 14.4, 99.0],
-    [183.0, 16.0, 102.0, 9.0],
-    [108.0, 16.0, 99.0],
+    [183.0, 16, 102.0, 9.0],
+    [108.0, 16, 99.0],
     [78.0, 11.2, 54.0],
     [75.0, 4.8, -22.5],
     [45.0, 1.6, -75.0, 7.0],
-    [7.5, 0.0, -67.5]
+    [7.5, 0, -67.5]
   ],
   "features": [
     {
@@ -203,6 +203,30 @@
       "to": [10, 25],
       "height": 6,
       "style": "concrete"
+    },
+    {
+      "type": "bank",
+      "from": [15, -10],
+      "to": [16, 30],
+      "angle": 14
+    },
+    {
+      "type": "bank",
+      "from": [17, 20],
+      "to": [18, -10],
+      "angle": 8
+    },
+    {
+      "type": "bank",
+      "from": [5, -10],
+      "to": [6, 10],
+      "angle": -6
+    },
+    {
+      "type": "bank",
+      "from": [11, -10],
+      "to": [11, 25],
+      "angle": 10
     }
   ],
   "gates": {
@@ -226,9 +250,9 @@
       "to": [9, 0],
       "side": "right",
       "points": [
-        [100, 0, 211, 5.5],
-        [150, 0, 217, 5.5],
-        [196, 0, 211, 5.5]
+        [100, 1.5, 211, 5.5],
+        [150, 1.02, 217, 5.5],
+        [196, 0.03, 211, 5.5]
       ],
       "half_width": 5.5,
       "when": "alley",

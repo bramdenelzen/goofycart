@@ -3,31 +3,31 @@
   "name": "Harbor Hop",
   "theme": "harbor",
   "half_width": 7,
-  "_comment": "Square-cornered docks with crates and crane loads swinging over the quay, a high pier bridge over the start straight, a hairpin round the lighthouse and a glide down to the water and a dip under the harbour on the west quay. The drawbridge along the south quay lowers on a timer, the warehouse doors open for a while when someone hits the switch on the quay, and the tide floods the west docks from lap 3.",
+  "_comment": "Docks with crates and crane loads swinging over the quay, a hump over the old pier, off-camber dock turns, a banked climb onto the high pier bridge over the start straight, a banked hairpin round the lighthouse, a banked sweep down to the water and the dive: the road drops under the west quay and you drive along the harbour floor before climbing out. The drawbridge along the south quay lowers on a timer, the warehouse doors open for a while when someone hits the switch on the quay, and the tide floods the west docks from lap 2.",
   "points": [
     [0.0, 0, 0.0, 9.0],
     [0.0, 0, 82.5, 9.0],
     [7.5, 0, 127.5],
-    [45.0, 0, 142.5],
-    [82.5, 0, 117.0],
-    [112.5, 0, 147.0],
+    [45.0, 1.5, 142.5],
+    [82.5, 3, 117.0],
+    [112.5, 1, 147.0],
     [150.0, 0, 144.0],
     [172.5, 1, 105.0],
-    [150.0, 2, 72.0],
+    [150.0, 2.5, 72.0],
     [168.0, 3, 37.5],
-    [150.0, 5, 0.0],
-    [97.5, 9, -7.5, 8.5],
-    [37.5, 12, 33.0, 9.0],
-    [-30.0, 12, 45.0, 9.5],
-    [-90.0, 10, 30.0, 9.0],
-    [-127.5, 7, -15.0],
-    [-165.0, 4, -37.5],
-    [-172.5, 2, -97.5, 8.5],
+    [150.0, 6, 0.0],
+    [97.5, 10, -7.5, 8.5],
+    [37.5, 13, 33.0, 9.0],
+    [-30.0, 13, 45.0, 9.5],
+    [-90.0, 11, 30.0, 9.0],
+    [-127.5, 8, -15.0],
+    [-165.0, 4.5, -37.5],
+    [-172.5, 3.5, -97.5, 8.5],
     [-135.0, 2, -127.5, 6.5],
     [-108.75, -4, -120.0, 6.5],
     [-82.5, 2, -112.5, 6.0],
     [-45.0, 4, -135.0],
-    [22.5, -3, -150.0, 9.0],
+    [22.5, -2, -150.0, 9.0],
     [42.0, -3, -93.0, 9.0],
     [7.5, -1, -45.0]
   ],
@@ -198,6 +198,30 @@
       "to": [20, 0],
       "surface": "water",
       "depth": "deep"
+    },
+    {
+      "type": "bank",
+      "from": [7, -10],
+      "to": [8, 15],
+      "angle": -7
+    },
+    {
+      "type": "bank",
+      "from": [11, 25],
+      "to": [12, 0],
+      "angle": -10
+    },
+    {
+      "type": "bank",
+      "from": [15, 10],
+      "to": [17, -10],
+      "angle": 14
+    },
+    {
+      "type": "bank",
+      "from": [13, 20],
+      "to": [14, 30],
+      "angle": 12
     }
   ],
   "gates": {
@@ -218,9 +242,9 @@
       "to": [6, 15],
       "side": "right",
       "points": [
-        [52, 1.5, 168, 5.5],
-        [88, 3.5, 175, 5.5],
-        [122, 1.5, 168, 5.5]
+        [52, 0.12, 168, 5.5],
+        [88, 2.13, 175, 5.5],
+        [122, 0.15, 168, 5.5]
       ],
       "half_width": 5.5,
       "when": "drawbridge",
@@ -237,13 +261,14 @@
     },
     {
       "name": "warehouse",
-      "from": [6, 25],
-      "to": [10, 35],
+      "from": [6, 45],
+      "to": [11, 0],
       "side": "left",
       "points": [
-        [144, 1.5, 88, 5],
-        [124, 2.5, 62, 5],
-        [122, 3.5, 34, 5]
+        [137.3, 2.41, 79.1, 5],
+        [136.7, 2.65, 46.7, 5],
+        [138.2, 5.78, 19.2, 5],
+        [133.2, 7.08, 7.5, 5]
       ],
       "half_width": 5,
       "when": "warehouse",

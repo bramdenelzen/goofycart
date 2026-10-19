@@ -290,11 +290,18 @@ void race(const TrackDef& def) {
     float max_y = 0.0f, max_pitch = 0.0f, max_roll = 0.0f;
     long busy = 0, pinned = 0, samples = 0;
     int wobbles = 0;
+    // Stalls: the longest each kart spent crawling (under 3 m/s) once racing, and where.
+    std::vector<int> crawl(12, 0), worst(12, 0), worst_at(12, 0);
     auto done = [&] { return std::all_of(w.karts().begin(), w.karts().end(), [](const KartState& k) { return k.finished; }); };
     while (!done() && frames < 60 * 60 * 4) {
         for (int i = 0; i < 12; ++i) in[size_t(i)] = cpu_input(w, i, cpu_skill(i % 3 == 0 ? CpuLevel::Hard : CpuLevel::Normal, i));
         w.tick(in);
         ++frames;
+        for (size_t i = 0; i < w.karts().size() && w.racing() && w.race_ticks() > 240; ++i) {
+            const KartState& k = w.karts()[i];
+            crawl[i] = !k.finished && std::abs(k.speed) < 3.0f ? crawl[i] + 1 : 0;
+            if (crawl[i] > worst[i]) worst[i] = crawl[i], worst_at[i] = k.sample;
+        }
         for (const KartState& k : w.karts()) {
             if (k.finished || !k.grounded) continue;
             ++samples;
@@ -317,6 +324,14 @@ void race(const TrackDef& def) {
             if (e.type == KartEventType::Finish) std::printf("  kart %d finished at %.1f s\n", e.kart, w.race_ticks() / 60.0f);
             if (e.type == KartEventType::Lap && first_lap == 0) first_lap = w.race_ticks();
         }
+    }
+    for (size_t i = 0; i < worst.size(); ++i)
+        if (worst[i] > 120) std::printf("  stall: kart %d crawled %.1f s at sample %d\n", int(i), float(worst[i]) / 60.0f, worst_at[i]);
+    for (size_t i = 0; i < w.karts().size(); ++i) {
+        const KartState& k = w.karts()[i];
+        if (!k.finished)
+            std::printf("  unfinished: kart %d on lap %d at sample %d (%.0f %.0f %.0f), speed %.1f, %s\n", int(i), k.lap, k.sample, k.pos.x, k.pos.y, k.pos.z,
+                        k.speed, k.grounded ? "grounded" : "airborne");
     }
     std::printf("  race: first lap %.1f s, %s after %.1f s, %d respawns, %d wall hits\n", first_lap / 60.0f,
                 done() ? "finished" : "NOT FINISHED", frames / 60.0f, respawns, wall_hits);

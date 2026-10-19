@@ -4,30 +4,30 @@
   "theme": "meadow",
   "ground": true,
   "half_width": 7.5,
-  "_comment": "A figure of eight through rolling farmland: up over the hills, tractors trundling across the back road, a crest jump, then the bridge over the start straight and a glide off it. An orchard lane cuts the far loop, the barn doors on the back road swing shut in turn, the ford floods from lap 2, hay bales land on the start straight from lap 2, and the last lap lays a dash strip down the final bend.",
+  "_comment": "A figure of eight through rolling farmland: down to the ford, up over the barn hill and round the barn carousel, a hairpin banked steep into the turn that drops seven metres round the hill, then up to the crest of the ridge, over the bridge above the start straight and a glide off it, and a rolling run home with an off-camber kink. An orchard lane cuts the far loop, the barn doors on the back road swing shut in turn, the ford floods from lap 2, hay bales land on the start straight from lap 2, and the last lap lays a dash strip down the final bend.",
   "points": [
     [0.0, 0, -120.0, 9.5],
     [0.0, 0, -30.0, 9.5],
-    [0.0, 0, 60.0, 8.5],
-    [21.0, 1, 112.5, 7.5],
-    [-9.0, 2, 157.5],
-    [18.0, 3, 202.5],
-    [75.0, 4, 225.0],
-    [142.5, 7, 210.0],
+    [0.0, -1.0, 60.0, 8.5],
+    [21.0, -1.5, 112.5, 7.5],
+    [-9.0, 3, 157.5],
+    [18.0, 6, 202.5],
+    [75.0, 9, 225.0],
+    [142.5, 13, 210.0],
     [177.0, 10, 165.0],
-    [150.0, 9, 123.0],
+    [150.0, 6, 123.0],
     [99.0, 8, 138.0],
-    [72.0, 9, 93.0],
-    [96.0, 11, 48.0],
-    [78.0, 13, 6.0, 6.5],
-    [22.5, 13, 0.0, 5.5],
-    [-45.0, 13, -3.0, 5.5],
-    [-105.0, 11, -15.0, 6.5],
-    [-150.0, 8, -48.0],
-    [-162.0, 5, -102.0],
+    [72.0, 12, 93.0],
+    [96.0, 17, 48.0],
+    [78.0, 13.5, 6.0, 6.5],
+    [22.5, 14, 0.0, 5.5],
+    [-45.0, 14, -3.0, 5.5],
+    [-105.0, 12.5, -15.0, 6.5],
+    [-150.0, 6, -48.0],
+    [-162.0, 3, -102.0],
     [-198.0, 7, -144.0, 9.0],
-    [-162.0, 4, -186.0, 9.0],
-    [-111.0, 2, -162.0],
+    [-162.0, 3, -186.0, 9.0],
+    [-111.0, 5, -162.0],
     [-78.0, 1, -195.0],
     [-33.0, 0, -183.0, 8.5]
   ],
@@ -201,6 +201,24 @@
       "offset": 0,
       "width": 4,
       "when": "last_lap"
+    },
+    {
+      "type": "bank",
+      "from": [17, -15],
+      "to": [18, 20],
+      "angle": -12
+    },
+    {
+      "type": "bank",
+      "from": [20, 10],
+      "to": [21, 20],
+      "angle": 8
+    },
+    {
+      "type": "bank",
+      "from": [7, 45],
+      "to": [9, 20],
+      "angle": -22.0
     }
   ],
   "gates": {
@@ -224,12 +242,13 @@
     {
       "name": "orchard lane",
       "from": [5, 5],
-      "to": [10, 15],
+      "to": [7, 30],
       "side": "left",
       "points": [
-        [69.1, 3.8, 207.2, 4.5],
-        [98, 6, 186, 4.5],
-        [138.1, 8.5, 142.8, 4.5]
+        [60.9, 8.08, 208.5, 4.5],
+        [79.3, 9.24, 202.3, 4.5],
+        [106.6, 11.45, 199.0, 4.5],
+        [127.3, 12.71, 201.9, 4.5]
       ],
       "half_width": 4.5,
       "verge_surface": "offroad_medium",

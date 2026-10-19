@@ -1090,13 +1090,18 @@ Ground make_ground(const sim::Track& t, const ThemeStyle& th) {
     // bridge never buries the road beneath it.
     // How far each sample's road reaches out, verges included: a wide verge
     // must stay clear of the ground too.
-    std::vector<float> reach(t.road.size(), 0.0f);
+    // And how low it reaches: a banked road's low edge is well below its middle.
+    std::vector<float> reach(t.road.size(), 0.0f), low(t.road.size(), 0.0f);
     for (const sim::Track::Strip& st : t.strips())
         for (int k = 0; k < st.count; ++k) {
             const sim::CenterSample& c = t.road[size_t(st.first + k)];
             const uint32_t v = st.first_vertex + uint32_t(k) * 9; // kStride (track_builder.cpp)
-            for (uint32_t col : {0u, 6u})
-                if (v + col < t.vertices.size()) reach[size_t(st.first + k)] = std::max(reach[size_t(st.first + k)], glm::distance(t.vertices[v + col], c.pos));
+            low[size_t(st.first + k)] = c.pos.y;
+            for (uint32_t col = 0; col < 7; ++col) {
+                if (v + col >= t.vertices.size()) break;
+                if (col == 0 || col == 6) reach[size_t(st.first + k)] = std::max(reach[size_t(st.first + k)], glm::distance(t.vertices[v + col], c.pos));
+                low[size_t(st.first + k)] = std::min(low[size_t(st.first + k)], t.vertices[v + col].y);
+            }
         }
     for (size_t ri = 0; ri < t.road.size(); ++ri) {
         const sim::CenterSample& c = t.road[ri];
@@ -1104,7 +1109,7 @@ Ground make_ground(const sim::Track& t, const ThemeStyle& th) {
         const float inner = edge + 5.0f, outer = edge + 46.0f;
         // A ravine under a glide, and under a road that can vanish.
         const bool can_vanish = c.branch >= 0 && t.branches[size_t(c.branch)].vanish;
-        const float y = c.has_floor && !can_vanish ? c.pos.y - 0.9f : std::min(c.pos.y - 16.0f, ravine_floor);
+        const float y = c.has_floor && !can_vanish ? low[ri] - 0.9f : std::min(c.pos.y - 16.0f, ravine_floor);
         const int i0 = std::max(0, int((c.pos.x - outer - g.x0) / g.cell)), i1 = std::min(g.nx - 1, int((c.pos.x + outer - g.x0) / g.cell) + 1);
         const int j0 = std::max(0, int((c.pos.z - outer - g.z0) / g.cell)), j1 = std::min(g.nz - 1, int((c.pos.z + outer - g.z0) / g.cell) + 1);
         for (int j = j0; j <= j1; ++j)

@@ -5,34 +5,34 @@
   "ground": true,
   "half_width": 6.5,
   "verge_surface": "offroad_heavy",
-  "_comment": "Two icy hairpin switchbacks up the mountain, icicles to smash on the summit road, snowballs rolling across the descent, a frozen staircase and a glide back down to the valley. An ice cave bores through the summit bends, the frozen lake is a shortcut until it cracks on the last lap, avalanches pile snow on the descent from lap 2, and black ice glazes the start straight on the last lap.",
+  "_comment": "Two icy switchbacks up the mountain, banked into the hairpins, icicles to smash on the summit road with an off-camber lean towards the drop, snowballs rolling across the top, a glide off the shoulder and then the bobsled run: three bends banked steep into the turns, dropping ten metres one after the other, down to the frozen staircase and the valley. An ice cave bores through the summit bends, the frozen lake is a shortcut until it cracks on the last lap, avalanches pile snow on the descent from lap 2, and black ice glazes the start straight on the last lap.",
   "points": [
-    [0.0, 0.0, 0.0, 8.0],
-    [0.0, 0.0, 82.5, 7.5],
-    [18.0, 3.2, 127.5, 8.0],
-    [67.5, 6.4, 138.0, 8.0],
+    [0.0, 0, 0.0, 8.0],
+    [0.0, 0, 82.5, 7.5],
+    [18.0, 2.5, 127.5, 8.0],
+    [67.5, 7, 138.0, 8.0],
     [90.0, 9.6, 105.0],
-    [67.5, 12.8, 67.5],
-    [75.0, 16.0, 22.5],
-    [120.0, 19.2, 7.5, 7.0],
-    [142.5, 20.8, 45.0, 6.0],
-    [127.5, 22.4, 90.0, 7.0],
-    [157.5, 24.0, 135.0],
-    [210.0, 25.6, 135.0],
-    [232.5, 27.2, 82.5],
-    [210.0, 28.8, 22.5],
-    [225.0, 28.8, -37.5, 8.0],
-    [180.0, 27.2, -82.5, 8.0],
-    [112.5, 25.6, -90.0],
-    [60.0, 22.4, -60.0, 8.0],
-    [15.0, 19.2, -82.5],
-    [-37.5, 16.0, -67.5, 6.0],
-    [-67.5, 12.8, -15.0],
-    [-60.0, 8.0, 37.5],
-    [-90.0, 3.2, 75.0],
+    [67.5, 13, 67.5],
+    [75.0, 15.5, 22.5],
+    [120.0, 19.5, 7.5, 7.0],
+    [142.5, 21, 45.0, 6.0],
+    [127.5, 22, 90.0, 7.0],
+    [157.5, 25, 135.0],
+    [210.0, 26.5, 135.0],
+    [232.5, 27.5, 82.5],
+    [210.0, 29, 22.5],
+    [225.0, 29, -37.5, 8.0],
+    [180.0, 27.5, -82.5, 8.0],
+    [112.5, 26, -90.0],
+    [60.0, 21, -60.0, 8.0],
+    [15.0, 17.5, -82.5],
+    [-37.5, 14, -67.5, 6.0],
+    [-67.5, 10.5, -15.0],
+    [-60.0, 7, 37.5],
+    [-90.0, 3.5, 75.0],
     [-120.0, 1.6, 37.5, 8.0],
-    [-105.0, 0.0, -30.0],
-    [-52.5, 0.0, -60.0]
+    [-105.0, 0, -30.0],
+    [-52.5, 0, -60.0]
   ],
   "features": [
     {
@@ -180,6 +180,48 @@
       "to": [1, 15],
       "surface": "ice",
       "when": "black_ice"
+    },
+    {
+      "type": "bank",
+      "from": [4, -15],
+      "to": [5, 10],
+      "angle": -12
+    },
+    {
+      "type": "bank",
+      "from": [7, -15],
+      "to": [8, 20],
+      "angle": 12
+    },
+    {
+      "type": "bank",
+      "from": [9, -10],
+      "to": [10, 15],
+      "angle": -12
+    },
+    {
+      "type": "bank",
+      "from": [17, -5],
+      "to": [17, 40],
+      "angle": 25
+    },
+    {
+      "type": "bank",
+      "from": [17, 40],
+      "to": [18, 30],
+      "angle": -22
+    },
+    {
+      "type": "bank",
+      "from": [18, 30],
+      "to": [19, -8],
+      "angle": -25
+    },
+    {
+      "type": "bank",
+      "from": [13, 10],
+      "to": [14, -10],
+      "angle": 6
     }
   ],
   "gates": {
@@ -200,10 +242,10 @@
       "to": [14, 35],
       "side": "left",
       "points": [
-        [217.0, 27.2, 81.8, 6],
-        [186, 27.5, 55, 6],
-        [181, 28.5, 10, 6],
-        [208.8, 28.9, -30.2, 6]
+        [217.0, 27.13, 81.8, 6],
+        [186, 27.92, 55, 6],
+        [181, 28.2, 10, 6],
+        [208.8, 27.99, -30.2, 6]
       ],
       "half_width": 6,
       "surface": "ice",
@@ -249,9 +291,9 @@
       "to": [24, 20],
       "side": "right",
       "points": [
-        [-101.9, 1.8, 38.4, 6.5],
-        [-96, 1.0, 17, 6.5],
-        [-98.6, 0.4, -4.5, 6.5]
+        [-101.9, 2.63, 38.4, 6.5],
+        [-96, 1.41, 17, 6.5],
+        [-98.6, 0.8, -4.5, 6.5]
       ],
       "half_width": 6.5,
       "surface": "ice",

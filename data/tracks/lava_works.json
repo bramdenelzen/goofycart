@@ -6,32 +6,32 @@
   "half_width": 6.5,
   "verge": 4,
   "verge_surface": "offroad_heavy",
-  "_comment": "A chicane through the machinery, lava geysers bursting up through the road, a long gantry bridge over the start straight, a glide over the lava pool and open edges. Pull the furnace lever and a conveyor belt shortcut opens up through the foundry; lava sloshes over one side of the rim road and then the other; on the last lap the volcano erupts across the inside of the far hairpin.",
+  "_comment": "Out of the foundry yard, a slalom between slag blocks, a hairpin banked into the turn, the crusher row of rising blocks, then the climb to the summit and into the lava tube: a tunnel through the volcano where lava wells up along one edge and then the other, in turn. Out of the tube a glide off the shoulder, a lean towards the erupting lava on the way down and the run home past the furnace. The furnace lever opens the conveyor shortcut, lava sloshes across the bridge, and the eruption floods the descent.",
   "points": [
-    [0.0, 0.0, 0.0, 8.5],
-    [0.0, 0.0, 67.5, 8.5],
-    [15.0, 0.0, 112.5],
-    [60.0, 1.5, 127.5, 6.0],
-    [87.0, 3.0, 93.0, 6.0],
-    [72.0, 4.5, 57.0, 6.0],
-    [105.0, 6.0, 27.0],
-    [157.5, 7.5, 36.0],
-    [177.0, 9.0, 75.0],
-    [225.0, 10.5, 87.0, 7.0],
-    [255.0, 13.5, 45.0],
-    [240.0, 16.5, -15.0],
-    [187.5, 19.5, -42.0],
-    [135.0, 19.5, -18.0],
-    [82.5, 19.5, -45.0],
-    [30.0, 19.5, -15.0],
-    [-22.5, 19.5, 30.0],
-    [-67.5, 16.5, 57.0],
-    [-120.0, 10.5, 33.0],
-    [-142.5, 4.5, -22.5, 8.0],
-    [-120.0, 3.0, -75.0],
+    [0.0, 0, 0.0, 8.5],
+    [0.0, 0, 67.5, 8.5],
+    [15.0, 0.5, 112.5],
+    [60.0, 2.5, 127.5, 6.0],
+    [87.0, 4, 93.0, 6.0],
+    [72.0, 3, 57.0, 6.0],
+    [105.0, 6, 27.0],
+    [157.5, 8, 36.0],
+    [177.0, 9.5, 75.0],
+    [225.0, 11, 87.0, 7.0],
+    [255.0, 14, 45.0],
+    [240.0, 17, -15.0],
+    [187.5, 20, -42.0],
+    [135.0, 22.5, -18.0],
+    [82.5, 20, -45.0],
+    [30.0, 21.5, -15.0],
+    [-22.5, 20.5, 30.0],
+    [-67.5, 13, 57.0],
+    [-120.0, 9, 33.0],
+    [-142.5, 5, -22.5, 8.0],
+    [-120.0, 3, -75.0],
     [-75.0, 1.5, -105.0],
-    [-30.0, 0.0, -82.5],
-    [-7.5, 0.0, -42.0]
+    [-30.0, 0, -82.5],
+    [-7.5, 0, -42.0]
   ],
   "features": [
     {
@@ -229,6 +229,42 @@
       "to": [15, -4],
       "height": 7,
       "style": "lava"
+    },
+    {
+      "type": "zone",
+      "from": [14, -10],
+      "to": [14, 25],
+      "surface": "lava",
+      "offset": -4.6,
+      "width": 3.2,
+      "when": "tube_left"
+    },
+    {
+      "type": "zone",
+      "from": [14, 30],
+      "to": [15, -12],
+      "surface": "lava",
+      "offset": 4.6,
+      "width": 3.2,
+      "when": "tube_right"
+    },
+    {
+      "type": "bank",
+      "from": [4, -15],
+      "to": [5, 15],
+      "angle": 15
+    },
+    {
+      "type": "bank",
+      "from": [11, -20],
+      "to": [11, 30],
+      "angle": -12
+    },
+    {
+      "type": "bank",
+      "from": [19, -20],
+      "to": [19, 30],
+      "angle": -8
     }
   ],
   "gates": {
@@ -243,18 +279,25 @@
     },
     "eruption": {
       "from_lap": 3
+    },
+    "tube_left": {
+      "cycle": [7, 2.5, 0]
+    },
+    "tube_right": {
+      "cycle": [7, 2.5, 3.5]
     }
   },
   "branches": [
     {
       "name": "conveyor",
-      "from": [8, 10],
+      "from": [8, 30],
       "to": [12, 10],
       "side": "left",
       "points": [
-        [220.1, 10.6, 72.8, 5],
-        [212, 14, 26, 5],
-        [210.9, 18.1, -20.1, 5]
+        [229.4, 12.02, 67.1, 5],
+        [229.9, 13.81, 42.6, 5],
+        [220.7, 16.86, 1.2, 5],
+        [210.5, 18.48, -21.4, 5]
       ],
       "half_width": 5,
       "when": "conveyor",

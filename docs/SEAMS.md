@@ -165,15 +165,16 @@ grouped props each look up the ground under themselves.
 
 ## What is left
 
-- **Side roads that fold.** `gk_trackmap` warns that these side roads cross
-  over themselves near their ends: Meadow Circuit orchard lane, Harbor Hop
-  warehouse, Canyon Run dry gulch, Lava Works conveyor, Cloud Spire cloud
-  bridge, Market Mile side street, Twin Bridges hill trail and twin bridge,
-  Crane Docks container yard. Where they fold, their island noses and caps
-  overlap their own verges, which is where the remaining steps and some
-  overlaps are (Meadow Circuit 555 m, Harbor Hop 480 to 488 m, Cloud Spire
-  335 m). That is wrong track data, and the track rework replaces those
-  side roads.
+- **Side roads that fold** (fixed in the track rework). Ten side roads
+  crossed over themselves near their ends, which is where the remaining steps
+  and overlaps were; the rework re-seated every one (each now leaves and joins
+  on a straight at a shallow angle, level with the main road) and
+  `gk_trackmap` reports no folds. Banked roads brought a new case, the ground
+  poking up through a bank's low side, fixed by keeping the ground below each
+  cross-section's lowest point. After the rework the check finds only the
+  side roads' sliver tips (below), a few overlaps under 10 cm where hairpins
+  pinch in, and three steps where an island slopes down to a lower side road
+  (Frost Pass's frozen lake, Market Mile's lower town, Twin Bridges).
 - **The tip of each side road.** A side road starts and ends as a 1.2 m
   sliver beside the main road, and the check still sees an open edge across
   its tip (the "crack 0.60" at most branch ends). The cap wall and its floor

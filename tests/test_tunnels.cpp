@@ -105,3 +105,32 @@ TEST_CASE("tunnels: the glider folds away under the roof") {
     CHECK_FALSE(b.kart.gliding);
     CHECK(std::count_if(b.events.begin(), b.events.end(), [](const KartEvent& e) { return e.type == KartEventType::GliderClose; }) == 1);
 }
+
+TEST_CASE("banks: the road tilts across by the angle, easing in and out, and nowhere else") {
+    TrackDef d;
+    std::string err;
+    REQUIRE_MESSAGE(parse_track_def(R"({"id": "b", "name": "B", "half_width": 6,
+        "points": [[0, 0, 0], [0, 0, 120], [80, 0, 120], [80, 0, 0]],
+        "features": [{"type": "bank", "from": [1, 0], "to": [2, 0], "angle": 20},
+                     {"type": "bank", "from": [3, 0], "to": [3, 60], "angle": -10}]})",
+                                    d, &err),
+                    err);
+    const Track t = build_track(d);
+    auto tilt = [&](float s) { // degrees, + the right side down
+        const CenterSample& c = t.center[size_t(int(s / t.length * float(t.center.size())) % int(t.center.size()))];
+        return glm::degrees(std::asin(-c.right.y));
+    };
+    float a1 = 0, b1 = 0;
+    for (const auto& c : t.center) a1 = std::max(a1, glm::degrees(std::asin(-c.right.y))), b1 = std::min(b1, glm::degrees(std::asin(-c.right.y)));
+    CHECK(a1 == doctest::Approx(20.0f).epsilon(0.02));
+    CHECK(b1 == doctest::Approx(-10.0f).epsilon(0.05));
+    CHECK(std::abs(tilt(5.0f)) < 0.5f); // flat by the start line
+    // The road's surface follows: its right edge lower than its left mid-bank.
+    int lower = 0;
+    for (size_t i = 0; i < t.center.size(); ++i)
+        if (glm::degrees(std::asin(-t.center[i].right.y)) > 19.0f)
+            lower += t.vertices[i * 9 + 5].y < t.vertices[i * 9 + 1].y - 3.0f;
+    CHECK(lower > 10);
+    REQUIRE_MESSAGE(!parse_track_def(R"({"id": "b", "name": "B", "points": [[0,0,0],[0,0,120],[80,0,120],[80,0,0]],
+        "features": [{"type": "bank", "from": [1, 0], "to": [2, 0], "angle": 50}]})", d, &err), "too steep is refused");
+}

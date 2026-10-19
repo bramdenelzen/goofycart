@@ -5,32 +5,32 @@
   "half_width": 7,
   "verge": 3,
   "verge_surface": "offroad_light",
-  "_comment": "A spiral up round the tall spire that passes over the start, pillars at the top, then two glides back down with drifting cloud platforms to land on. A cloud bridge forms across the middle of the spiral every few seconds, a high cloud road arcs outside the last descent, and from lap 2 a rainbow dash strip runs down the home stretch.",
+  "_comment": "The spire helix: a long spiral banked into the turn all the way up round the tall spire, passing high over the start, pillars on the summit, then two glides back down with drifting cloud platforms to land on and an off-camber lean on the way. A cloud bridge forms across the middle of the spiral every few seconds, a high cloud road arcs outside the last descent, and from lap 2 a rainbow dash strip runs down the home stretch.",
   "points": [
-    [0.0, 0.0, 0.0],
+    [0.0, 0, 0.0],
     [0.0, 1.5, 67.5],
-    [27.0, 4.5, 120.0],
-    [82.5, 7.5, 138.0],
-    [135.0, 10.5, 108.0],
-    [144.0, 13.5, 52.5],
-    [117.0, 16.5, 9.0],
-    [63.0, 19.5, -12.0],
-    [15.0, 22.5, 12.0],
-    [-27.0, 24.0, 67.5, 8.0],
-    [-12.0, 25.5, 132.0],
-    [42.0, 27.0, 177.0, 9.0],
-    [108.0, 27.0, 192.0, 9.0],
-    [157.5, 25.5, 165.0],
-    [180.0, 22.5, 120.0],
-    [225.0, 18.0, 127.5],
-    [255.0, 13.5, 82.5],
+    [27.0, 5, 120.0],
+    [82.5, 8, 138.0],
+    [135.0, 11.5, 108.0],
+    [144.0, 14.5, 52.5],
+    [117.0, 17.5, 9.0],
+    [63.0, 20.5, -12.0],
+    [15.0, 23, 12.0],
+    [-27.0, 25, 67.5, 8.0],
+    [-12.0, 27, 132.0],
+    [42.0, 29.5, 177.0, 9.0],
+    [108.0, 28, 192.0, 9.0],
+    [157.5, 26.5, 165.0],
+    [180.0, 21, 120.0],
+    [225.0, 18.5, 127.5],
+    [255.0, 13, 82.5],
     [243.0, 10.5, 22.5],
-    [210.0, 7.5, -30.0],
+    [210.0, 8.5, -30.0],
     [165.0, 4.5, -45.0, 6.0],
-    [127.5, 3.0, -82.5, 6.0],
-    [75.0, 1.5, -105.0],
-    [33.0, 0.0, -90.0, 8.0],
-    [6.0, 0.0, -48.0]
+    [127.5, 2.5, -82.5, 6.0],
+    [75.0, 3, -105.0],
+    [33.0, 0, -90.0, 8.0],
+    [6.0, 0, -48.0]
   ],
   "features": [
     {
@@ -165,6 +165,30 @@
       "offset": 0,
       "width": 3.5,
       "when": "rainbow"
+    },
+    {
+      "type": "bank",
+      "from": [2, -10],
+      "to": [7, 0],
+      "angle": -16
+    },
+    {
+      "type": "bank",
+      "from": [10, 20],
+      "to": [11, 30],
+      "angle": -10
+    },
+    {
+      "type": "bank",
+      "from": [16, 10],
+      "to": [17, 30],
+      "angle": -12
+    },
+    {
+      "type": "bank",
+      "from": [14, 10],
+      "to": [15, 10],
+      "angle": 7
     }
   ],
   "gates": {
@@ -182,9 +206,10 @@
       "to": [8, 10],
       "side": "left",
       "points": [
-        [104, 16.5, 32, 6],
-        [76, 19, 25, 6],
-        [50, 21, 12, 6]
+        [115.3, 16.75, 28.0, 6],
+        [85.2, 18.74, 21.1, 6],
+        [70.2, 19.83, 15.8, 6],
+        [46.9, 21.69, 7.6, 6]
       ],
       "half_width": 6,
       "when": "cloud_bridge",

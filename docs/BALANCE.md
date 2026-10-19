@@ -80,3 +80,27 @@ takes Canyon Run, Lava Works and Crane Docks.
 
 Measured before the track reworks; see the end of this file for the numbers
 on the reworked tracks.
+
+## On the reworked tracks
+
+The same measurement after every track got its hills, banks and set-piece
+(same physics as "After"):
+
+| Track | Speed best | Speed mean | Mini-turbo best | Mini-turbo mean | Middle best | Middle mean | Gap (MT vs speed, mean) | Drifting |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Meadow Circuit | 53.78 | 55.90 | 57.08 | 58.23 | 55.78 | 57.67 | +4.2% | 18% |
+| Dune Drift | 54.67 | 56.90 | 57.52 | 58.78 | 56.50 | 57.42 | +3.3% | 25% |
+| Harbor Hop | 48.30 | 50.11 | 50.02 | 52.31 | 48.75 | 50.51 | +4.4% | 28% |
+| Frost Pass | 55.52 | 57.34 | 58.23 | 58.97 | 56.18 | 58.60 | +2.9% | 41% |
+| Canyon Run | 42.87 | 44.53 | 44.25 | 45.12 | 42.93 | 44.92 | +1.3% | 43% |
+| Lava Works | 47.18 | 51.48 | 49.03 | 52.22 | 48.72 | 51.67 | +1.4% | 25% |
+| Cloud Spire | 51.08 | 53.71 | 54.15 | 55.17 | 52.82 | 54.35 | +2.7% | 31% |
+| Neon Raceway | 49.27 | 52.90 | 50.00 | 51.09 | 49.67 | 50.94 | -3.4% | 29% |
+| Market Mile | 38.10 | 39.03 | 40.53 | 41.14 | 39.53 | 40.11 | +5.4% | 20% |
+| Twin Bridges | 40.70 | 42.88 | 42.50 | 43.21 | 41.53 | 43.09 | +0.8% | 34% |
+| Crane Docks | 44.33 | 47.52 | 46.65 | 47.90 | 46.95 | 48.36 | +0.8% | 30% |
+
+The drift-heavy tracks (Frost Pass, Canyon Run, Cloud Spire, Twin Bridges,
+Crane Docks) are 0.8% to 2.9% apart. The speed build edges most tracks by a
+few percent (the climbs and banked sweeps reward top speed), and the
+mini-turbo build takes Neon Raceway, whose chicanes and dive reward drifting.

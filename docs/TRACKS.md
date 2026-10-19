@@ -45,6 +45,7 @@ they are metres from where the branch leaves.
 | `switch` | a pad; driving over it presses it | `at`, `name`, `offset`, `width`, `hold` (seconds) |
 | `zone` | the road's surface changes while its gate holds | `from`, `to`, `surface`, `when`, `side` or `offset` + `width` |
 | `tunnel` | a roofed stretch: an arched vault over the road | `from`, `to`, `height` (m, default 7), `style` |
+| `bank` | the road tilted across, easing in and out over 15 m | `from`, `to`, `angle` (degrees, + the right side lower, at most 35) |
 
 Zone surfaces: `water`, `ice`, `oil`, `sand`, `offroad_*`, `boost` (a dash
 strip) and `lava` (out of bounds: a respawn).
@@ -68,6 +69,17 @@ CPUs drive through deep water like road. Harbor Hop's dip under the west
 quay is the example.
 
 An `obstacle` with a `when` becomes a barrier, since the fixed road can't change.
+
+A `bank` tilts the road (verges and walls with it) about its middle line.
+A positive `angle` lowers the right-hand side, banking a right-hand bend;
+a negative one on a right-hand bend is off-camber. Banks ease in and out over
+their first and last 15 m (a third of them if shorter). Keep a bank off a
+side road's junctions (the side road joins flat), and off stairs. On
+terrain, the ground keeps below the road's low edge.
+
+```json
+{"type": "bank", "from": [7, 45], "to": [9, 20], "angle": -22}
+```
 
 A `tunnel` roofs the road from `from` to `to`, on the main loop or a branch:
 
@@ -133,7 +145,12 @@ or right `side`, through its own control points. The builder makes the
 split: the branch opens out of the main road like an exit lane over
 `junction` metres, then a grass island narrows to a walled nose; the merge is
 the same in reverse. Leave room after the junction before the branch turns
-hard, and keep its control points on its side of the main road.
+hard, and keep its control points on its side of the main road: put its
+first point about 20 m past the junction, beside the main road and level
+with it, and a second one further on and further out, so it leaves at a
+shallow angle (the same in reverse at the merge). Fork and merge on a
+straight, not in a bend. `gk_trackmap` prints a FOLD warning for a side road
+that bends tighter than it is wide.
 
 * `when`: the branch is open while the gate holds. Shut, a barrier closes its
   mouth; with `"vanish": true` the road itself disappears instead (a bridge

@@ -16,7 +16,7 @@ struct TrackPos {
 // One piece of a track layout. Which fields matter depends on the kind.
 struct TrackFeature {
     enum class Kind { TrickRamp, GlideRamp, BoostPad, Road, Verge, ItemBoxes, NoWalls, Obstacle, Stairs, Mover,
-                      Barrier, Switch, Zone, Tunnel };
+                      Barrier, Switch, Zone, Tunnel, Bank };
     Kind kind = Kind::Road;
     TrackPos at, to;        // ramps, pads and boxes use `at`; ranges use at..to
     float length = 8.0f;    // ramps, pads and obstacles (m, along the road)
@@ -42,6 +42,7 @@ struct TrackFeature {
     float level = 1e9f;     // deep water: the surface's height (m); unset = the road's height at the zone's lower end
     std::string name;       // switches: what gates call it; tunnels: the style (rock, masonry, ice, concrete, lava; "" by theme)
     float hold = 10.0f;     // switches: seconds a press lasts
+    float angle = 0.0f;     // banks: degrees, + the right side lower (banked into a right turn)
 };
 
 // A gate as written in a track file (see Track's Gate); a switch by name.

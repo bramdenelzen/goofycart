@@ -78,6 +78,7 @@ struct Strip {
     std::vector<float> box_rows;
     std::vector<std::pair<float, const TrackFeature*>> obstacles, movers, barriers, switches;
     std::vector<std::pair<Range, const TrackFeature*>> zones, tunnels;
+    std::vector<std::pair<Range, float>> banks; // radians, + right side down
 
     int n() const { return int(c.size()); }
     Range range(float a, float b) const { return Range{a, b, closed ? total : kOpenRoad}; }
@@ -128,6 +129,7 @@ struct Strip {
             break;
         case TrackFeature::Kind::Switch: switches.push_back({a, &f}); break;
         case TrackFeature::Kind::Zone: zones.push_back({range(a, b), &f}); break;
+        case TrackFeature::Kind::Bank: banks.push_back({range(a, b), glm::radians(f.angle)}); break;
         case TrackFeature::Kind::Tunnel:
             tunnels.push_back({range(a, b), &f});
             no_respawn.push_back(range(a - 2.0f, b + 2.0f)); // the roof is no place to drop a kart onto
@@ -135,6 +137,18 @@ struct Strip {
         }
     }
 
+    // The road's tilt across at s: each bank eases in and out over its first
+    // and last 15 m (or a third of it, if shorter).
+    float bank_at(float s) const {
+        float a = 0.0f;
+        for (const auto& [r, angle] : banks) {
+            if (!r.contains(s)) continue;
+            const float len = std::max(r.b - r.a, 1e-3f), d = r.progress(s) * len;
+            const float ease = std::min(15.0f, len / 3.0f);
+            a += angle * smooth(std::clamp(std::min(d, len - d) / ease, 0.0f, 1.0f));
+        }
+        return a;
+    }
     float height_offset(float s) const {
         float h = 0.0f;
         for (size_t i = 0; i < trick_ramps.size(); ++i)
@@ -186,6 +200,10 @@ struct Strip {
             cs.tangent = glm::normalize(vec3(base[size_t(b)]) - vec3(base[size_t(a)]));
             cs.right = glm::normalize(glm::cross(cs.tangent, kUp));
             cs.up = glm::normalize(glm::cross(cs.right, cs.tangent));
+            if (const float bank = bank_at(cs.u); bank != 0.0f) { // tilt across: + the right side down
+                cs.right = glm::normalize(cs.right * std::cos(bank) - cs.up * std::sin(bank));
+                cs.up = glm::normalize(glm::cross(cs.right, cs.tangent));
+            }
             cs.half_width = base[size_t(i)].w;
             cs.has_floor = !in_any(gaps, cs.u);
             cs.respawn_ok = !in_any(no_respawn, cs.u);
@@ -982,6 +1000,7 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     else if (type == "switch") tf.kind = K::Switch;
     else if (type == "zone") tf.kind = K::Zone;
     else if (type == "tunnel") tf.kind = K::Tunnel;
+    else if (type == "bank") tf.kind = K::Bank;
     else throw std::runtime_error("unknown feature type " + type);
     if (on_branch && tf.kind == K::Stairs) throw std::runtime_error("stairs only on the main loop");
     auto pos = [&](const nlohmann::json& j) { return on_branch ? TrackPos{0.0f, j.get<float>()} : parse_pos(j); };
@@ -1020,6 +1039,10 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
         tf.name = f.at("name").get<std::string>();
         tf.width = f.value("width", 5.0f);
         tf.hold = f.value("hold", 10.0f);
+    }
+    if (tf.kind == K::Bank) {
+        tf.angle = f.at("angle").get<float>();
+        if (std::abs(tf.angle) > 35.0f) throw std::runtime_error("a bank steeper than 35 degrees");
     }
     if (tf.kind == K::Tunnel) {
         tf.height = f.value("height", 7.0f);
