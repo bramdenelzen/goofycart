@@ -78,7 +78,7 @@ CpuSkill cpu_skill(CpuLevel level, int seat) {
         s.lookahead = 7.5f + jitter;
         s.line_follow = 0.8f;
         s.lane = lane * 0.8f;
-        s.max_tier = 2;
+        s.max_tier = 1; // settles for blue sparks; hard holds the drift for orange and purple
         s.tricks = seat % 2 == 0;
         s.reaction = 6;
         s.rocket_start = seat % 3 != 2;
@@ -139,7 +139,12 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     const Track::LinePoint& lp = t.line[size_t(target_sample)];
     float offset = lp.offset * skill.line_follow + skill.lane;
 
-    const bool wants_box = k.item == Item::None && k.item_next == Item::None && k.roulette == 0;
+    // Head for an item box when empty-handed, but not out of a drift (a
+    // swerve across the road drops the mini-turbo, worth more than the box)
+    // and only a box the kart can still reach: the last box of a row to pass
+    // out of range must not fling the aim at the next one over.
+    const bool wants_box = world.config().items && k.item == Item::None && k.item_next == Item::None && k.roulette == 0 &&
+                           k.drift != DriftState::Drifting && k.drift != DriftState::Hop;
     if (wants_box) {
         float best = 1e9f, best_off = offset;
         for (size_t b = 0; b < t.item_boxes.size(); ++b) {
@@ -148,6 +153,7 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
             if (l.z < 4.0f || l.z > 35.0f || std::abs(l.x) > 10.0f || std::abs(l.y) > 4.0f) continue;
             const float box_off = glm::dot(t.item_boxes[b] - tc.pos, tc.right);
             const float cost = std::abs(box_off - offset);
+            if (cost > l.z * 0.5f) continue; // too far across for the distance left
             if (cost < best) best = cost, best_off = box_off;
         }
         offset = best_off;
@@ -217,18 +223,28 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         if (z.lo - 3.0f > lo - 1.5f && (z.hi + 3.0f > hi + 1.5f || offset - z.lo < z.hi - offset)) offset = z.lo - 3.0f;
         else if (z.hi + 3.0f < hi + 1.5f) offset = z.hi + 3.0f;
     }
-    // Barriers standing up ahead (gates shut, a door down): pass on the open side.
+    // Barriers standing up ahead (gates shut, a door down, hay bales): pass on
+    // the open side. The kart cuts across towards its aim point, so test where
+    // that path crosses the barrier, not where the aim point is: in a slalom
+    // the next bale stands between here and there.
+    const float target_z = std::max(to_local(k, tc.pos + tc.right * offset).z, 1.0f);
     for (const Track::Barrier& b : t.barriers) {
         if (!t.barrier_up(b)) continue;
         const Local l = to_local(k, b.pos);
         if (l.z < -2.0f || l.z > look + 12.0f || std::abs(l.y) > 4.0f) continue;
-        const float across = glm::dot(b.pos - tc.pos, tc.right);
-        const float half = std::abs(glm::dot(b.right, tc.right)) * b.half.x + std::abs(glm::dot(b.forward, tc.right)) * b.half.z + 1.6f;
-        if (offset < across - half || offset > across + half) continue;
+        const CenterSample& bs = t.sample(b.sample);
+        const float here = glm::dot(k.pos - bs.pos, bs.right);
+        const float f = std::clamp(l.z / target_z, 0.15f, 1.0f);
+        const float path = here + (offset - here) * f;
+        const float across = glm::dot(b.pos - bs.pos, bs.right);
+        const float half = std::abs(glm::dot(b.right, bs.right)) * b.half.x + std::abs(glm::dot(b.forward, bs.right)) * b.half.z + 1.6f;
+        if (path < across - half || path > across + half) continue;
         const float left = across - half, right = across + half;
         const bool left_ok = left > lo - 2.0f, right_ok = right < hi + 2.0f;
-        if (left_ok && (!right_ok || offset - left < right - offset)) offset = left;
-        else if (right_ok) offset = right;
+        float want = path;
+        if (left_ok && (!right_ok || path - left < right - path)) want = left;
+        else if (right_ok) want = right;
+        offset = std::clamp(here + (want - here) / f, lo - 1.0f, hi + 1.0f);
     }
     const vec3 target = tc.pos + tc.right * offset;
 
@@ -260,14 +276,20 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     if (k.grounded && k.speed < 2.0f && !k.knocked()) {
         bool blocked = false;
         float side_hit = 0.0f; // > 0: the blockage is more on the right
-        // Once backing off, keep going until there's real room ahead.
-        const float look = k.speed < -0.3f ? 5.0f : 2.2f;
-        for (float side : {-0.7f, 0.0f, 0.7f}) {
-            const auto hit = t.raycast(k.pos + k.up() * 0.5f + k.right() * side, k.forward(), look);
-            if (hit && hit->surface == Surface::Wall) {
+        // Once backing off, keep going until there's real room ahead. Going
+        // nowhere for a moment already (nudging a corner, pulling back a few
+        // inches and nudging it again): back right off instead of dithering.
+        const bool wedged = k.stuck_frames > 30;
+        const float look = k.speed < -0.3f || wedged ? 5.0f : 2.2f;
+        float nearest = 1e9f, near_side = 0.0f;
+        for (float side : {-1.4f, -0.7f, 0.0f, 0.7f, 1.4f}) {
+            const auto hit = t.raycast(k.pos + k.up() * 0.5f + k.right() * side, k.forward(), 5.0f);
+            if (!hit || hit->surface != Surface::Wall) continue;
+            if (std::abs(side) <= 0.7f && hit->distance <= look) {
                 blocked = true;
                 side_hit += side;
             }
+            if (hit->distance < nearest) nearest = hit->distance, near_side = side;
         }
         if (blocked) {
             in.accelerate = false;
@@ -280,6 +302,13 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
             const float lat = glm::dot(k.pos - here.pos, here.right), mid = 0.5f * (band.lo + band.hi);
             const float want = std::abs(mid - lat) > 0.8f ? sign(mid - lat) : side_hit > 0.0f ? -1.0f : 1.0f;
             in.steer = -want;
+            return in;
+        }
+        if (wedged && near_side != 0.0f) {
+            // Crawling clear of something at the nose: steer away from it
+            // rather than back into it towards the line.
+            in.steer = near_side > 0.0f ? -1.0f : 1.0f;
+            in.accelerate = true;
             return in;
         }
     }

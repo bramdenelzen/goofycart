@@ -5,26 +5,26 @@
   "half_width": 6.5,
   "verge": 3,
   "verge_surface": "road",
-  "_comment": "Through the old town on the hill: a narrow market street lined with stalls to smash, the plaza round the fountain at the top, a long flight of stone steps down to the lower town, a glide over the canal and steps back up the hill. From lap 2 the stalls pack up and the side street through the old town opens, market carts park round the plaza, and on the last lap the canal spills over the quay.",
+  "_comment": "Through the old town on the hill: a narrow market street lined with stalls to smash, over the hump at the top of the street, the plaza round the fountain, then the town gate: a stone archway through the old wall that opens straight onto the top of the grand staircase, a long flight of steps down to the lower town, a glide over the canal and steps back up the hill. From lap 2 the stalls pack up and the side street through the old town opens, market carts park round the plaza, and on the last lap the canal spills over the quay.",
   "points": [
     [-18.0, 6, -66.0],
     [0.0, 6, 0.0, 5.5],
-    [0.0, 6, 45.0, 5.5],
-    [-21.0, 7, 82.5, 6.0],
+    [0.0, 7.5, 45.0, 5.5],
+    [-21.0, 6.5, 82.5, 6.0],
     [0.0, 8, 120.0, 6.0],
     [30.0, 10, 147.0],
     [82.5, 12, 156.0, 9.0],
     [127.5, 12, 144.0],
-    [162.0, 10, 111.0],
-    [174.0, 8, 63.0, 7.5],
-    [174.0, 7, 33.0, 7.5],
+    [162.0, 10.5, 111.0],
+    [174.0, 9, 63.0, 7.5],
+    [174.0, 8.5, 33.0, 7.5],
     [174.0, 3, -18.0, 7.5],
     [174.0, 1.5, -48.0],
-    [150.0, 1, -93.0],
+    [150.0, 1.5, -93.0],
     [112.5, 0, -90.0],
     [82.5, 0, -127.5],
     [30.0, 0, -135.0, 8.0],
-    [-22.5, 0, -150.0, 8.0],
+    [-22.5, 0.5, -150.0, 8.0],
     [-67.5, 1.5, -150.0],
     [-105.0, 3, -120.0],
     [-90.0, 4.5, -93.0],
@@ -171,6 +171,31 @@
       "surface": "water",
       "side": "right",
       "when": "spill"
+    },
+    {
+      "type": "tunnel",
+      "from": [10, -6],
+      "to": [10, 26],
+      "height": 6.5,
+      "style": "masonry"
+    },
+    {
+      "type": "bank",
+      "from": [7, 0],
+      "to": [8, 20],
+      "angle": -10
+    },
+    {
+      "type": "bank",
+      "from": [13, -10],
+      "to": [13, 25],
+      "angle": 6
+    },
+    {
+      "type": "bank",
+      "from": [21, -10],
+      "to": [22, 10],
+      "angle": 12
     }
   ],
   "gates": {
@@ -187,14 +212,16 @@
   "branches": [
     {
       "name": "side street",
-      "from": [2, 0],
+      "from": [1, 20],
       "to": [9, 20],
       "side": "left",
       "points": [
-        [20, 6.5, 98, 4.5],
-        [62, 7.0, 101, 4.5],
-        [110, 7.5, 87, 4.5],
-        [142, 7.5, 76, 4.5]
+        [4.2, 7.29, 64.7, 4.5],
+        [2.7, 6.75, 84.3, 4.5],
+        [62, 8.11, 101, 4.5],
+        [110, 8.46, 87, 4.5],
+        [141.7, 10.43, 98.2, 4.5],
+        [158.0, 9.59, 81.0, 4.5]
       ],
       "half_width": 4.5,
       "when": "side_street",

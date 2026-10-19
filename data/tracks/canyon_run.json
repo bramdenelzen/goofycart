@@ -5,29 +5,29 @@
   "ground": true,
   "half_width": 7.5,
   "verge_surface": "offroad_medium",
-  "_comment": "Square corners up onto the high mesa, a chicane between rock pillars, an open ledge along the rim, a long glide back down and rocks tumbling across the canyon floor. A dry gulch cuts inside the chicane while boulders drop into it in turn, updraft vents blow along the canyon floor every few seconds, and from lap 2 rockfalls narrow the rim.",
+  "_comment": "Square corners up onto the high mesa, a chicane between rock pillars, then into the mesa itself: a rock tunnel that climbs inside the rock and bursts out onto the rim, straight into a long glide back down to the canyon floor, an off-camber drop and rocks tumbling across the floor. A dry gulch cuts inside the chicane while boulders drop into it in turn, updraft vents blow along the canyon floor every few seconds, and from lap 2 rockfalls narrow the climb to the mesa.",
   "points": [
-    [0.0, 0.0, 0.0, 8.5],
-    [0.0, 2.0, 105.0, 8.5],
-    [12.0, 4.0, 150.0],
-    [57.0, 6.0, 162.0],
-    [87.0, 8.0, 127.5],
-    [127.5, 10.0, 142.5],
-    [168.0, 12.0, 120.0],
-    [165.0, 12.0, 67.5, 6.5],
-    [132.0, 12.0, 37.5, 6.5],
-    [165.0, 12.0, 0.0],
-    [195.0, 12.0, -45.0],
-    [172.5, 16.0, -90.0, 9.0],
-    [127.5, 20.0, -108.0],
-    [67.5, 12.0, -90.0],
-    [30.0, 6.0, -123.0],
-    [-37.5, 2.0, -142.5, 8.5],
-    [-90.0, 0.0, -120.0],
-    [-120.0, 0.0, -67.5, 6.5],
-    [-82.5, 0.0, -45.0],
-    [-52.5, 0.0, -82.5],
-    [-18.0, 0.0, -60.0]
+    [0.0, 0, 0.0, 8.5],
+    [0.0, 1, 105.0, 8.5],
+    [12.0, 4, 150.0],
+    [57.0, 6, 162.0],
+    [87.0, 7, 127.5],
+    [127.5, 9, 142.5],
+    [168.0, 12, 120.0],
+    [165.0, 11, 67.5, 6.5],
+    [132.0, 12.5, 37.5, 6.5],
+    [165.0, 11.5, 0.0],
+    [195.0, 12, -45.0],
+    [172.5, 17, -90.0, 9.0],
+    [127.5, 21, -108.0],
+    [67.5, 14, -90.0],
+    [30.0, 7, -123.0],
+    [-37.5, 2, -142.5, 8.5],
+    [-90.0, -1, -120.0],
+    [-120.0, 0, -67.5, 6.5],
+    [-82.5, 2.5, -45.0],
+    [-52.5, 0, -82.5],
+    [-18.0, 0, -60.0]
   ],
   "features": [
     {
@@ -53,7 +53,7 @@
     {
       "type": "obstacle",
       "at": [5, 0],
-      "offset": -3.0,
+      "offset": -4.6,
       "shape": "pillar",
       "width": 2.5,
       "length": 2.5,
@@ -89,7 +89,7 @@
     },
     {
       "type": "trick_ramp",
-      "at": [10, 0],
+      "at": [9, 30],
       "length": 9,
       "height": 1.4
     },
@@ -190,6 +190,37 @@
       "length": 3.0,
       "height": 2.0,
       "when": "rockfall"
+    },
+    {
+      "type": "tunnel",
+      "from": [10, 15],
+      "to": [11, 40],
+      "height": 7.5,
+      "style": "rock"
+    },
+    {
+      "type": "bank",
+      "from": [2, -15],
+      "to": [3, 10],
+      "angle": -10
+    },
+    {
+      "type": "bank",
+      "from": [9, -12],
+      "to": [9, 22],
+      "angle": -14
+    },
+    {
+      "type": "bank",
+      "from": [16, 20],
+      "to": [17, 30],
+      "angle": -18
+    },
+    {
+      "type": "bank",
+      "from": [13, 15],
+      "to": [14, 20],
+      "angle": 8
     }
   ],
   "gates": {
@@ -213,9 +244,10 @@
       "to": [8, 15],
       "side": "left",
       "points": [
-        [114, 9.5, 116, 5.5],
-        [132, 11, 90, 5.5],
-        [144.3, 12.0, 67.7, 5.5]
+        [119.5, 8.13, 124.5, 5.5],
+        [136.1, 10.4, 112.4, 5.5],
+        [143.1, 11.26, 88.4, 5.5],
+        [142.5, 11.55, 66.8, 5.5]
       ],
       "half_width": 5.5,
       "verge_surface": "offroad_heavy",

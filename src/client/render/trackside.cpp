@@ -122,6 +122,7 @@ void paint_atlas(Canvas& t, const ThemeStyle& th) {
 }
 
 void paint_road(MeshBuilder& b, const sim::Track& t, const sim::Track::Strip& st);
+void paint_joins(MeshBuilder& b, const sim::Track& t, int group);
 void paint_flags(MeshBuilder& b, const sim::Track& t);
 
 } // namespace
@@ -139,6 +140,7 @@ PaintedModel make_trackside(const sim::Track& t, int group) {
         if (group > 0 && st.branch != group - 1) continue;
         paint_road(b, t, st);
     }
+    paint_joins(b, t, group);
     // The flags line the main loop.
     if (group == 0) paint_flags(b, t);
     m.mesh = b.take();
@@ -265,6 +267,48 @@ void paint_road(MeshBuilder& b, const sim::Track& t, const sim::Track::Strip& st
 
 }
 
+// The walls where two roads meet (a side road's ends bending in to the main
+// road's wall, the noses of the islands between them): painted panels and a
+// rail like the rest, not bare geometry. Each is a quad, two triangles that
+// share their first vertex, built twice (once per face).
+void paint_joins(MeshBuilder& b, const sim::Track& t, int group) {
+    const std::vector<sim::Track::Strip> strips = t.strips();
+    auto strip_of = [&](uint32_t v) {
+        for (size_t k = 0; k < strips.size(); ++k)
+            if (v >= strips[k].first_vertex && v < strips[k].first_vertex + uint32_t(strips[k].count * kStride)) return int(k);
+        return -1;
+    };
+    auto is_top = [&](uint32_t v) {
+        const int k = strip_of(v);
+        return k >= 0 && int((v - strips[size_t(k)].first_vertex) % kStride) >= 7;
+    };
+    auto flat = [](vec3 d) { return glm::length(vec2(d.x, d.z)); };
+    std::vector<std::pair<uint32_t, uint32_t>> rails;
+    for (const auto& tri : t.triangles) {
+        if (tri.surface != sim::Surface::Wall || int(tri.group) != group) continue;
+        const int sa = strip_of(tri.a), sb = strip_of(tri.b), sc = strip_of(tri.c);
+        if (sa < 0 || sb < 0 || sc < 0 || (sa == sb && sb == sc)) continue;
+        const vec3 a = t.vertices[tri.a], p1 = t.vertices[tri.b], p2 = t.vertices[tri.c];
+        const float len = std::max({flat(p1 - a), flat(p2 - a), 0.1f});
+        auto uv = [&](uint32_t v, vec3 p) { return r_wall_plain.at(std::clamp(flat(p - a) / len, 0.0f, 1.0f) * std::min(1.0f, len / 4.0f), is_top(v) ? 0.0f : 1.0f); };
+        b.tri_uv(a, p1, p2, uv(tri.a, a), uv(tri.b, p1), uv(tri.c, p2), kWhite);
+        // The rail along its top edge, once per wall.
+        const uint32_t ids[3] = {tri.a, tri.b, tri.c};
+        for (int i = 0; i < 3; ++i)
+            for (int j = i + 1; j < 3; ++j)
+                if (is_top(ids[i]) && is_top(ids[j]) && strip_of(ids[i]) != strip_of(ids[j])) {
+                    const auto key = std::minmax(ids[i], ids[j]);
+                    if (std::find(rails.begin(), rails.end(), std::pair(key.first, key.second)) == rails.end()) rails.push_back({key.first, key.second});
+                }
+    }
+    region(b, r_rail);
+    for (const auto& [i, j] : rails) {
+        const vec3 lift(0.0f, 0.1f, 0.0f);
+        b.sweep({t.vertices[i] + lift, t.vertices[j] + lift}, 0.15f, kWhite, 6, true);
+    }
+    b.uv_region_off();
+}
+
 // Pennant flags on poles along the main loop, alternating sides and designs.
 void paint_flags(MeshBuilder& b, const sim::Track& t) {
     const int n = int(t.center.size());
@@ -272,7 +316,7 @@ void paint_flags(MeshBuilder& b, const sim::Track& t) {
     auto V = [&](int sample, int col) { return t.vertices[size_t((sample % n) * kStride + col)]; };
     for (int i = 3; i < n; i += 14) {
         const sim::CenterSample& c = t.center[size_t(i)];
-        if (!c.has_floor) continue;
+        if (!c.has_floor || t.tunnel_at(i) || t.tunnel_at(t.wrap(i + 3)) || t.tunnel_at(t.wrap(i - 3))) continue; // no flags under a roof
         const int k = i / 14;
         const int side = k % 2 ? 1 : -1;
         const bool walled = side > 0 ? right[size_t(i)] : left[size_t(i)];

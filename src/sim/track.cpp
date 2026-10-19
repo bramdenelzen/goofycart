@@ -188,6 +188,19 @@ bool Track::in_deep_water(vec3 p, int sample) const {
     return false;
 }
 
+const Track::Tunnel* Track::tunnel_at(int sample) const {
+    for (const Tunnel& t : tunnels)
+        if (sample >= t.first && sample < t.first + t.count) return &t;
+    return nullptr;
+}
+
+std::optional<float> Track::tunnel_roof(vec3 p, int sample) const {
+    const Tunnel* t = tunnel_at(sample);
+    if (!t) return std::nullopt;
+    const CenterSample& c = road[size_t(sample)];
+    return c.pos.y + t->roof_at(sample - t->first, glm::dot(p - c.pos, c.right));
+}
+
 std::optional<Surface> Track::zone_surface(vec3 p, int sample) const {
     for (const Zone& z : zones) {
         if (z.deep || sample < z.first || sample >= z.first + z.count || !gate_holds(z.gate)) continue;

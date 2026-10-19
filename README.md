@@ -263,10 +263,10 @@ rocket starts, head for item boxes, steer round karts and bananas ahead,
 and use items with intent: shells at the kart in front, red shells when not
 leading, bananas and shells held behind as shields, mushrooms on straights,
 the horn against incoming shells. Easy CPUs keep to the middle of the road,
-never drift and lift off the throttle now and then; hard ones drive the full
-line and lean into drifts for faster sparks. Behind the leading player, CPUs
-speed up a little (up to 9% at hard), and they ease off when ahead of every
-player.
+never drift and lift off the throttle now and then; normal ones drift but let
+go at the first spark; hard ones drive the full line and lean into drifts for
+faster sparks. Behind the leading player, CPUs speed up a little (up to 9% at
+hard), and they ease off when ahead of every player.
 
 The CPU driver is a pure function of the world state, so online clients
 predict CPU karts exactly as the server drives them.

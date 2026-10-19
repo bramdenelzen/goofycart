@@ -388,6 +388,7 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
         const float at_speed = 1.0f - 0.25f * std::clamp(std::abs(s.speed) / p.top_speed, 0.0f, 1.0f);
         yaw_rate = in.steer * turn_rate * at_speed;
         if (s.speed < 0.0f) yaw_rate = -yaw_rate;
+        if (s.susp_wobble > 0) yaw_rate *= 1.0f - k.susp_wobble_steer; // still wobbling from a hard landing
     }
     yaw_rate *= std::clamp(std::abs(s.speed) / 4.0f, 0.0f, 1.0f);
 
@@ -460,6 +461,77 @@ void collide_walls(KartState& s, const KartStepContext& ctx) {
     }
 }
 
+
+// What the suspension needs from before a step to see what changed in it.
+struct SuspensionInput {
+    bool grounded;
+    float speed;
+    vec3 velocity, forward, up;
+};
+
+// One damped spring, semi-implicit so it stays stable at 60 Hz.
+void spring_step(float& x, float& v, float target, float omega, float zeta) {
+    v += (omega * omega * (target - x) - 2.0f * zeta * omega * v) * kDt;
+    x += v * kDt;
+}
+
+// The sprung body: compression, pitch and roll over the wheels. Landings
+// kick the compression by the fall speed, the throttle and brakes pitch it,
+// cornering rolls it, and a change in the ground's slope is felt as the body
+// lagging behind the wheels. Bouncy and quick to settle: arcade, not a sim.
+void step_suspension(KartState& s, const SuspensionInput& before, const KartStepContext& ctx) {
+    const auto& k = ctx.k;
+    const float w = std::clamp(ctx.p.weight01, 0.0f, 1.0f);
+    const float omega = glm::mix(k.susp_freq_light, k.susp_freq_heavy, w);
+    const float zeta = glm::mix(k.susp_damping_light, k.susp_damping_heavy, w);
+    if (s.susp_wobble > 0) --s.susp_wobble;
+    float pitch_target = 0.0f, roll_target = 0.0f;
+    if (s.grounded && !before.grounded) {
+        const float fall = std::max(0.0f, -glm::dot(before.velocity, s.up()));
+        s.susp_vy += fall * glm::mix(k.susp_land_gain_light, k.susp_land_gain_heavy, w);
+        s.susp_pitch_v -= fall * 0.05f; // the nose dips into the landing
+    } else if (s.grounded) {
+        const vec3 f = s.forward(), u = s.up();
+        const float accel = std::clamp((s.speed - before.speed) / kDt, -40.0f, 40.0f);
+        // Sideways force from the turn: heading change times speed (+ = turning right).
+        const float yaw = std::asin(std::clamp(glm::dot(glm::cross(f, before.forward), u), -1.0f, 1.0f)) / kDt;
+        const float lateral = std::clamp(yaw * s.speed, -60.0f, 60.0f);
+        pitch_target = accel * k.susp_pitch_per_accel;
+        roll_target = -lateral * k.susp_roll_per_lateral; // the body leans out of the turn
+        // The ground tipping up under the wheels (a ramp, the bottom of a dip)
+        // pushes them up into the body; tipping away (a crest) lets it float.
+        const float dpitch = std::asin(std::clamp(f.y, -1.0f, 1.0f)) - std::asin(std::clamp(before.forward.y, -1.0f, 1.0f));
+        const vec3 r = s.right();
+        const float droll = std::asin(std::clamp(glm::dot(before.up, r), -1.0f, 1.0f)); // > 0: the ground rolled left-side up
+        s.susp_vy += std::abs(s.speed) * dpitch * k.susp_slope_gain;
+        s.susp_pitch -= dpitch * k.susp_slope_lag;
+        s.susp_roll -= droll * k.susp_slope_lag;
+    }
+    const float rest = s.grounded ? 0.0f : -k.susp_air_droop;
+    spring_step(s.susp_y, s.susp_vy, rest, omega, zeta);
+    spring_step(s.susp_pitch, s.susp_pitch_v, std::clamp(pitch_target, -k.susp_max_pitch, k.susp_max_pitch), k.susp_angle_freq, k.susp_angle_damping);
+    spring_step(s.susp_roll, s.susp_roll_v, std::clamp(roll_target, -k.susp_max_roll, k.susp_max_roll), k.susp_angle_freq, k.susp_angle_damping);
+    if (s.susp_y > k.susp_max_compress) {
+        // Bottomed out: the bump stop throws it back and the kart wobbles.
+        if (s.grounded && s.susp_vy > 0.0f) s.susp_wobble = uint8_t(std::clamp(k.susp_wobble_frames, 0, 255));
+        s.susp_y = k.susp_max_compress;
+        if (s.susp_vy > 0.0f) s.susp_vy *= -0.3f;
+    } else if (s.susp_y < -k.susp_max_extend) {
+        s.susp_y = -k.susp_max_extend;
+        if (s.susp_vy < 0.0f) s.susp_vy = 0.0f;
+    }
+    auto cap = [](float& x, float& v, float m) {
+        if (x > m) x = m, v = std::min(v, 0.0f);
+        if (x < -m) x = -m, v = std::max(v, 0.0f);
+    };
+    cap(s.susp_pitch, s.susp_pitch_v, k.susp_max_pitch);
+    cap(s.susp_roll, s.susp_roll_v, k.susp_max_roll);
+}
+
+void reset_suspension(KartState& s) {
+    s.susp_y = s.susp_vy = s.susp_pitch = s.susp_pitch_v = s.susp_roll = s.susp_roll_v = 0.0f;
+    s.susp_wobble = 0;
+}
 } // namespace
 
 float drift_turn_target(const PhysicsConstants& k, const KartParams& p, float rel) {
@@ -543,6 +615,23 @@ void update_water(KartState& s, const KartStepContext& ctx) {
         emit(ctx, KartEventType::WaterExit);
     }
 }
+// Under a tunnel's roof: no room for the glider, and a jump stops at the
+// roof with a bump back down.
+void update_roof(KartState& s, const KartStepContext& ctx) {
+    const auto roof = ctx.track.tunnel_roof(s.pos, s.sample);
+    if (!roof) return;
+    if (s.gliding || s.glide_armed) {
+        s.gliding = false;
+        s.glide_armed = false;
+        s.glide_bank = s.glide_pitch = 0.0f;
+        emit(ctx, KartEventType::GliderClose);
+    }
+    constexpr float kHeadroom = 1.4f; // the kart's height over its base
+    if (!s.grounded && s.pos.y + kHeadroom > *roof) {
+        s.pos.y = *roof - kHeadroom;
+        if (s.air_vel.y > 0.0f) s.air_vel.y *= -0.25f;
+    }
+}
 } // namespace
 
 void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
@@ -551,6 +640,7 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     s.wall_bump = std::max(0.0f, s.wall_bump - 4.0f * kDt);
     if (s.respawn_frames > 0) {
         step_respawn(s, ctx);
+        reset_suspension(s);
         return;
     }
     if (ctx.frozen) {
@@ -574,17 +664,22 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     }
 
     update_water(s, ctx);
+    const SuspensionInput before{s.grounded, s.speed, s.velocity(), s.forward(), s.up()};
     if (s.grounded) step_ground(s, in, drift_pressed, ctx);
     else step_air(s, in, drift_pressed, ctx);
     collide_walls(s, ctx);
+    update_roof(s, ctx);
+    step_suspension(s, before, ctx);
 
     if (s.pos.y < ctx.track.kill_y || (s.grounded && s.surface == Surface::OutOfBounds)) {
         start_respawn(s, ctx);
         return;
     }
-    // Wedged against something: trying to drive but going nowhere.
-    if (s.grounded && !s.finished && (in.accelerate || in.brake) && std::abs(s.speed) < 1.5f) {
-        if (++s.stuck_frames >= ctx.k.stuck_respawn_frames) {
+    // Wedged against something: trying to drive but going nowhere. Only
+    // moving clears the count, not a moment off the pedals (a CPU lifting
+    // the throttle now and then must not sit wedged for good).
+    if (s.grounded && !s.finished && std::abs(s.speed) < 1.5f) {
+        if ((in.accelerate || in.brake) && ++s.stuck_frames >= ctx.k.stuck_respawn_frames) {
             s.stuck_frames = 0;
             start_respawn(s, ctx);
             return;

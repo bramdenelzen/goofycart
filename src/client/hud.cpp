@@ -74,6 +74,7 @@ void draw_minimap(render::Renderer& r, const sim::World& w, int player, bool sho
             uint32_t color = pass == 0 ? rgba(10, 10, 20, 170) : rgba(v, v, uint8_t(std::min(255, v + 15)), 230);
             if (pass == 1 && sg.state == 1) color = rgba(v, uint8_t(v * 0.55f), uint8_t(v * 0.5f), 150); // shut: reddish
             if (pass == 1 && sg.state == 2) color = rgba(v, v, v, 60);
+            if (pass == 1 && t.tunnel_at(sg.a) && (sg.a / 2) % 2) color = rgba(uint8_t(v * 0.35f), uint8_t(v * 0.35f), uint8_t(v * 0.4f), 230); // a tunnel: dashed
             r.ui_quad(pa - ext_d - across, pb + ext_d - across, pb + ext_d + across, pa - ext_d + across, color);
         }
     // Checkpoints: a short line across the road where each region starts.

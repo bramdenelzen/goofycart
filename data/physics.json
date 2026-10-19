@@ -2,8 +2,8 @@
   "_comment": "Level tables and kart rules. 'source' says where a number comes from: 'datamined' = MK8 Deluxe game data via Super Mario Wiki; 'official' = Nintendo tutorial timings; 'provisional' = placeholder to be replaced by measurements from 60 fps captures of MK8 Deluxe.",
   "engine_class_speed": { "source": "provisional", "50cc": 0.78, "100cc": 0.89, "150cc": 1.0, "200cc": 1.33 },
   "curves": {
-    "speed_ground":    { "source": "provisional", "unit": "m/s top speed at 150cc", "points": [[0, 19.5], [20, 27.0]] },
-    "speed_water":     { "source": "datamined Float_SpdMaxFwd = Drive_SpdMaxFwd: the water table equals the ground one, parts' water points make the spread", "unit": "m/s", "points": [[0, 19.5], [20, 27.0]] },
+    "speed_ground":    { "source": "provisional, narrowed from 19.5..27 to balance against mini-turbo (docs/BALANCE.md)", "unit": "m/s top speed at 150cc", "points": [[0, 22.0], [20, 24.4]] },
+    "speed_water":     { "source": "datamined Float_SpdMaxFwd = Drive_SpdMaxFwd: the water table equals the ground one, parts' water points make the spread; values provisional, narrowed with speed_ground", "unit": "m/s", "points": [[0, 22.0], [20, 24.4]] },
     "speed_air":       { "source": "provisional", "unit": "m/s glide speed", "points": [[0, 20.0], [20, 27.0]] },
     "acceleration":    { "source": "datamined Drive_AccLmtFwd; scale to m/s^2 provisional", "points": [[0, 0.035], [1, 0.035], [10, 0.08], [20, 0.13]], "scale": 105.0 },
     "weight":          { "source": "datamined KartBound_MassL/MassH midpoint", "points": [[0, 8.0], [1, 8.0], [10, 22.5], [20, 60.0]] },
@@ -11,13 +11,13 @@
     "handling_water":  { "source": "provisional", "unit": "rad/s", "points": [[0, 1.35], [20, 2.45]] },
     "handling_air":    { "source": "provisional", "unit": "rad/s", "points": [[0, 1.1], [20, 2.0]] },
     "traction":        { "source": "provisional", "unit": "0..1 slip resistance on sand and ice", "points": [[0, 0.0], [20, 1.0]] },
-    "mini_turbo":      { "source": "provisional", "unit": "charge rate multiplier", "points": [[0, 0.85], [20, 1.25]] },
+    "mini_turbo":      { "source": "provisional, raised from 0.85..1.25 (docs/BALANCE.md)", "unit": "charge rate multiplier", "points": [[0, 0.85], [20, 1.8]] },
     "invincibility":   { "source": "provisional", "unit": "frames", "points": [[0, 40], [20, 100]] }
   },
   "extra_curves": {
     "sand_grip":       { "source": "datamined BrakeRt_SAND_L", "points": [[0, 0.981], [1, 0.981], [20, 1.0]] },
     "ice_grip":        { "source": "datamined BrakeRt_ICE_L", "points": [[0, 0.971], [1, 0.971], [20, 0.99]] },
-    "mt_boost":        { "source": "provisional", "unit": "boost duration multiplier", "points": [[0, 0.8], [20, 1.3]] }
+    "mt_boost":        { "source": "provisional, raised from 0.8..1.3 (docs/BALANCE.md)", "unit": "boost duration multiplier", "points": [[0, 0.8], [20, 2.0]] }
   },
   "constants": {
     "gravity": 32.0,
@@ -47,7 +47,7 @@
     "spark_threshold": { "source": "datamined (MK8 Wii U)", "value": 135.0 },
     "mt_thresholds": { "source": "datamined (MK8 Wii U) for blue and orange; purple provisional", "value": [270.0, 570.0, 870.0] },
     "mt_frames": { "source": "official tutorial 0.621 s, 1.674 s, 2.633 s", "value": [37, 100, 158] },
-    "mt_boost_mult": 1.22,
+    "mt_boost_mult": { "source": "provisional, raised from 1.22 (docs/BALANCE.md)", "value": 1.25 },
     "offroad_light": { "source": "datamined BrakeRt_DIRT light, used as a top-speed multiplier (interpretation provisional)", "value": 0.7 },
     "offroad_medium": { "source": "datamined BrakeRt_DIRT medium", "value": 0.5 },
     "offroad_heavy": { "source": "datamined BrakeRt_DIRT heavy", "value": 0.3 },
@@ -69,6 +69,17 @@
     "water_hysteresis": 6,
     "trick_window_frames": 18,
     "respawn_frames": 90,
+    "_suspension": "provisional, tuned by feel: a sprung body over the ground contact. Pairs run lightest to heaviest by the weight Level. Compression in metres (+ down), angles in radians. Only the landing wobble (steering lost after bottoming out) touches driving.",
+    "susp_freq_light": 16.0, "susp_freq_heavy": 12.0,
+    "susp_damping_light": 0.38, "susp_damping_heavy": 0.40,
+    "susp_land_gain_light": 0.35, "susp_land_gain_heavy": 0.2,
+    "susp_angle_freq": 11.0, "susp_angle_damping": 0.35,
+    "susp_pitch_per_accel": 0.004, "susp_roll_per_lateral": 0.0022,
+    "susp_slope_gain": 0.6, "susp_slope_lag": 0.5,
+    "susp_max_compress": 0.18, "susp_max_extend": 0.12,
+    "susp_max_pitch": 0.14, "susp_max_roll": 0.12,
+    "susp_air_droop": 0.06,
+    "susp_wobble_frames": 10, "susp_wobble_steer": 0.45,
     "stuck_respawn_frames": 300
   }
 }

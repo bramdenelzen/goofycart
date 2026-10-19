@@ -111,6 +111,13 @@ struct KartState {
     int chomper_frames = 0;
     int chomper_cooldown = 0;
 
+    // Suspension: the body's offset from the wheels. Compression is + down,
+    // pitch + nose up, roll + right side down. Only the wobble affects driving.
+    float susp_y = 0.0f, susp_vy = 0.0f;
+    float susp_pitch = 0.0f, susp_pitch_v = 0.0f;
+    float susp_roll = 0.0f, susp_roll_v = 0.0f;
+    uint8_t susp_wobble = 0;       // frames of reduced steering after bottoming out
+
     // Visual-only helpers (the client may also derive these)
     float visual_drift_yaw = 0.0f;
     float wall_bump = 0.0f;

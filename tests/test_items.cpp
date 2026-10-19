@@ -214,6 +214,29 @@ TEST_CASE("lightning shrinks everyone else and takes their items") {
     CHECK(b.kart(0).shrink_frames > b.kart(2).shrink_frames); // the leader stays small longest
 }
 
+TEST_CASE("a hit in the air folds the glider and the kart drops") {
+    World w = test::racing_world();
+    int frames = 0;
+    while (!w.karts()[0].gliding && frames < 60 * 60) {
+        KartInput in = autopilot(w.karts()[0], w.track());
+        w.tick(std::span(&in, 1));
+        ++frames;
+    }
+    REQUIRE(w.karts()[0].gliding);
+    w.apply_hit(0, HitKind::Spin, -1);
+    CHECK_FALSE(w.karts()[0].gliding);
+    CHECK_FALSE(w.karts()[0].glide_armed);
+    CHECK(ItemBench::has(w.events(), KartEventType::GliderClose, 0));
+    // Falling, not flying: back on the road or respawned well inside the time a glide takes.
+    int down = 0;
+    for (; down < 60 * 8 && !w.karts()[0].grounded && w.karts()[0].respawn_frames == 0; ++down) {
+        KartInput in = autopilot(w.karts()[0], w.track());
+        w.tick(std::span(&in, 1));
+    }
+    CHECK(down < 60 * 8);
+    CHECK_FALSE(w.karts()[0].gliding);
+}
+
 TEST_CASE("the spiked shell finds the leader and the horn stops it") {
     ItemBench b(3);
     b.place(0, 500.0f);

@@ -77,7 +77,8 @@ struct Strip {
     std::vector<VergeSpan> verges;
     std::vector<float> box_rows;
     std::vector<std::pair<float, const TrackFeature*>> obstacles, movers, barriers, switches;
-    std::vector<std::pair<Range, const TrackFeature*>> zones;
+    std::vector<std::pair<Range, const TrackFeature*>> zones, tunnels;
+    std::vector<std::pair<Range, float>> banks; // radians, + right side down
 
     int n() const { return int(c.size()); }
     Range range(float a, float b) const { return Range{a, b, closed ? total : kOpenRoad}; }
@@ -128,9 +129,26 @@ struct Strip {
             break;
         case TrackFeature::Kind::Switch: switches.push_back({a, &f}); break;
         case TrackFeature::Kind::Zone: zones.push_back({range(a, b), &f}); break;
+        case TrackFeature::Kind::Bank: banks.push_back({range(a, b), glm::radians(f.angle)}); break;
+        case TrackFeature::Kind::Tunnel:
+            tunnels.push_back({range(a, b), &f});
+            no_respawn.push_back(range(a - 2.0f, b + 2.0f)); // the roof is no place to drop a kart onto
+            break;
         }
     }
 
+    // The road's tilt across at s: each bank eases in and out over its first
+    // and last 15 m (or a third of it, if shorter).
+    float bank_at(float s) const {
+        float a = 0.0f;
+        for (const auto& [r, angle] : banks) {
+            if (!r.contains(s)) continue;
+            const float len = std::max(r.b - r.a, 1e-3f), d = r.progress(s) * len;
+            const float ease = std::min(15.0f, len / 3.0f);
+            a += angle * smooth(std::clamp(std::min(d, len - d) / ease, 0.0f, 1.0f));
+        }
+        return a;
+    }
     float height_offset(float s) const {
         float h = 0.0f;
         for (size_t i = 0; i < trick_ramps.size(); ++i)
@@ -154,8 +172,12 @@ struct Strip {
             if (v.r.contains(s) && (right ? v.right : v.left)) return {v.width, v.surface};
         return {verge, verge_surface};
     }
+    bool in_tunnel(float s) const {
+        return std::any_of(tunnels.begin(), tunnels.end(), [&](const auto& t) { return t.first.contains(s); });
+    }
     bool walled(float s, bool right) const {
-        return !in_any(right ? no_walls_r : no_walls_l, s) && !in_any(right ? open_r : open_l, s);
+        if (in_any(right ? open_r : open_l, s)) return false;
+        return in_tunnel(s) || !in_any(right ? no_walls_r : no_walls_l, s); // a tunnel always has its walls
     }
 
     // Centre samples from the resampled spline: frames, widths, floors.
@@ -178,6 +200,10 @@ struct Strip {
             cs.tangent = glm::normalize(vec3(base[size_t(b)]) - vec3(base[size_t(a)]));
             cs.right = glm::normalize(glm::cross(cs.tangent, kUp));
             cs.up = glm::normalize(glm::cross(cs.right, cs.tangent));
+            if (const float bank = bank_at(cs.u); bank != 0.0f) { // tilt across: + the right side down
+                cs.right = glm::normalize(cs.right * std::cos(bank) - cs.up * std::sin(bank));
+                cs.up = glm::normalize(glm::cross(cs.right, cs.tangent));
+            }
             cs.half_width = base[size_t(i)].w;
             cs.has_floor = !in_any(gaps, cs.u);
             cs.respawn_ok = !in_any(no_respawn, cs.u);
@@ -462,7 +488,21 @@ Track build_track(const TrackDef& def) {
             const CenterSample& c = st.c[size_t(i)];
             const float hw = c.half_width;
             const float sl = st.verge_at(c.u, false).first, sr = st.verge_at(c.u, true).first;
-            const float lat[kCols] = {-(hw + sl), -hw, -hw * 0.5f, 0.0f, hw * 0.5f, hw, hw + sr};
+            float lat[kCols] = {-(hw + sl), -hw, -hw * 0.5f, 0.0f, hw * 0.5f, hw, hw + sr};
+            // On the inside of a bend tighter than the road is wide, the
+            // edges would cross over themselves: keep them inside the bend's
+            // radius (a hairpin's inner verge and wall pinch in instead).
+            {
+                const vec3 t0 = st.c[size_t(st.wrap(i - 3))].tangent, t1 = st.c[size_t(st.wrap(i + 3))].tangent;
+                const float arc = glm::distance(st.c[size_t(st.wrap(i - 3))].pos, st.c[size_t(st.wrap(i + 3))].pos);
+                const float turn = -glm::cross(t0, t1).y; // > 0 turning right
+                const float angle = std::acos(std::clamp(glm::dot(t0, t1), -1.0f, 1.0f));
+                if (arc > 0.1f && angle > 1e-3f) {
+                    const float limit = 0.92f * arc / angle; // the bend's radius, less a little
+                    for (float& l : lat)
+                        if (turn > 0.0f ? l > limit : l < -limit) l = turn > 0.0f ? limit : -limit;
+                }
+            }
             for (float l : lat) t.vertices.push_back(c.pos + c.right * l);
             t.vertices.push_back(c.pos + c.right * lat[0] + c.up * kWallHeight);
             t.vertices.push_back(c.pos + c.right * lat[kCols - 1] + c.up * kWallHeight);
@@ -495,6 +535,36 @@ Track build_track(const TrackDef& def) {
     for (Strip& st : strips) {
         emit(st);
         t.branches[size_t(st.branch)].first_vertex = st.first_vertex;
+    }
+    // Stitch each side road to the main one: along the stretches where they
+    // share an edge, the side road's inner edge is moved onto the main road's
+    // (their own splines only come within a few centimetres of each other,
+    // which shows as a crack or a step).
+    for (Strip& st : strips) {
+        const int side = t.branches[size_t(st.branch)].side;
+        const int col_m = side > 0 ? kCols - 2 : 1, col_b = side > 0 ? 1 : kCols - 2, foot_b = side > 0 ? 0 : kCols - 1;
+        const int top_b = side > 0 ? kCols : kCols + 1;
+        const std::vector<Range>& open = side > 0 ? st.open_l : st.open_r;
+        for (int k = 0; k < st.n(); ++k) {
+            if (!in_any(open, st.c[size_t(k)].u)) continue;
+            vec3& p = t.vertices[st.V(k, col_b)];
+            vec3 best = p;
+            float best_d = 0.75f; // only edges that are meant to meet
+            for (int i = 0; i < main.n(); ++i) {
+                const vec3 a = t.vertices[main.V(i, col_m)], b = t.vertices[main.V(i + 1, col_m)];
+                const vec3 ab = b - a;
+                const float f = std::clamp(glm::dot(p - a, ab) / std::max(glm::dot(ab, ab), 1e-6f), 0.0f, 1.0f);
+                const vec3 q = a + ab * f;
+                const float d = glm::distance(p, q);
+                if (d < best_d) best_d = d, best = q;
+            }
+            const bool foot_with_edge = glm::distance(t.vertices[st.V(k, foot_b)], p) < 1e-3f;
+            p = best;
+            if (foot_with_edge) {
+                t.vertices[st.V(k, foot_b)] = best;
+                t.vertices[st.V(k, top_b)] = best + st.c[size_t(k)].up * kWallHeight;
+            }
+        }
     }
 
     // ---- islands between the roads, their noses, and the gates on branches
@@ -718,6 +788,34 @@ Track build_track(const TrackDef& def) {
             z.first = st.first + a, z.count = std::max(1, count);
             t.zones.push_back(z);
         }
+        for (const auto& [r, f] : st.tunnels) {
+            Track::Tunnel tn;
+            tn.height = f->height;
+            tn.style = f->name;
+            const int a = st.sample_at(r.a);
+            int count = int(std::round((r.b - r.a) / st.step)) + 1;
+            if (!st.closed) count = std::min(count, st.n() - a);
+            auto spans = [&](int from, int n) {
+                std::vector<float> out;
+                for (int k = 0; k < n; ++k) {
+                    const int i = st.wrap(from + k);
+                    const vec3 c = st.c[size_t(i)].pos;
+                    out.push_back(std::max(glm::distance(t.vertices[st.V(i, 0)], c), glm::distance(t.vertices[st.V(i, kCols - 1)], c)));
+                }
+                return out;
+            };
+            // On the loop a tunnel can't run over the start line: split it there.
+            if (st.closed && a + count > st.n()) {
+                Track::Tunnel t2 = tn;
+                t2.first = st.first, t2.count = a + count - st.n();
+                t2.half_span = spans(0, t2.count);
+                t.tunnels.push_back(t2);
+                count = st.n() - a;
+            }
+            tn.first = st.first + a, tn.count = std::max(1, count);
+            tn.half_span = spans(a, tn.count);
+            t.tunnels.push_back(tn);
+        }
         // Item box rows: four boxes across the road.
         for (float s_box : st.box_rows) {
             if (st.closed) s_box = std::fmod(std::fmod(s_box, st.total) + st.total, st.total);
@@ -901,6 +999,8 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     else if (type == "barrier") tf.kind = K::Barrier;
     else if (type == "switch") tf.kind = K::Switch;
     else if (type == "zone") tf.kind = K::Zone;
+    else if (type == "tunnel") tf.kind = K::Tunnel;
+    else if (type == "bank") tf.kind = K::Bank;
     else throw std::runtime_error("unknown feature type " + type);
     if (on_branch && tf.kind == K::Stairs) throw std::runtime_error("stairs only on the main loop");
     auto pos = [&](const nlohmann::json& j) { return on_branch ? TrackPos{0.0f, j.get<float>()} : parse_pos(j); };
@@ -939,6 +1039,15 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
         tf.name = f.at("name").get<std::string>();
         tf.width = f.value("width", 5.0f);
         tf.hold = f.value("hold", 10.0f);
+    }
+    if (tf.kind == K::Bank) {
+        tf.angle = f.at("angle").get<float>();
+        if (std::abs(tf.angle) > 35.0f) throw std::runtime_error("a bank steeper than 35 degrees");
+    }
+    if (tf.kind == K::Tunnel) {
+        tf.height = f.value("height", 7.0f);
+        tf.name = f.value("style", std::string());
+        if (tf.height < 3.5f) throw std::runtime_error("a tunnel needs a roof at least 3.5 m up");
     }
     if (tf.kind == K::Zone) {
         tf.width = f.value("width", 0.0f); // 0: the whole road (or one side of it)

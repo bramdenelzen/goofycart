@@ -53,7 +53,8 @@ struct AppOptions {
     bool host = false;            // start hosting a game straight away (the "Host a Server" shortcut)
     std::string preview_model;    // show this manifest item on the title screen instead of the kart
     std::string export_assets;    // write the built-in models as OBJ + PNG into this folder
-    bool hide_ui = false;         // menus and HUD off, for screenshots      // with --track: a Time Trial instead of a VS race
+    bool hide_ui = false;         // menus and HUD off, for screenshots
+    std::string seam_tour;        // --seam-tour DIR: photograph every junction, bridge, stair, zone and gap, then quit      // with --track: a Time Trial instead of a VS race
     // Online play: connect to a gk_server instead of racing locally.
     std::string connect_host;
     uint16_t connect_port = net::kDefaultPort;
@@ -307,7 +308,8 @@ private:
     static void spring(float& x, float& v, float target, float omega, float dt);
     float frame_dt_ = 1.0f / 60.0f;
     const KartVisual& build_visual(const sim::Build& b, int slot);
-    void draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle);
+    // `body`: the sprung part (body and driver) when it moves apart from the wheels.
+    void draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle, const mat4* body = nullptr);
     void draw_glider_visual(const KartVisual& v, const mat4& m, vec4 tint);
     void set_kart_meshes(const std::vector<sim::Build>& builds);
     sim::Build ghost_build_;
@@ -321,6 +323,16 @@ private:
     HudMessage message_;
     bool show_help_ = true;
     uint64_t frame_ = 0;
+    float tunnel_dark_ = 0.0f; // 0 in daylight .. 1 under a tunnel's roof
+    // --seam-tour: where the camera goes and what each shot is called.
+    struct TourStop {
+        std::string name;
+        vec3 pos, look;
+    };
+    std::vector<TourStop> tour_;
+    int tour_frame_ = -1;
+    bool tour_done_ = false;
+    void seam_tour_step(const sim::Track& t);
 };
 
 } // namespace gk

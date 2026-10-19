@@ -172,6 +172,13 @@ void write_kart(Writer& w, const sim::KartState& s) {
     w.u8(s.lucky_index);
     w.u8(s.draft);
     w.u8(s.water_frames);
+    w.q16(s.susp_y, 1.0f);
+    w.q16(s.susp_vy, 20.0f);
+    w.q16(s.susp_pitch, 1.0f);
+    w.q16(s.susp_pitch_v, 20.0f);
+    w.q16(s.susp_roll, 1.0f);
+    w.q16(s.susp_roll_v, 20.0f);
+    w.u8(s.susp_wobble);
     // Item effect timers: a mask of the running ones, then each as u16.
     const int timers[] = {s.spin_frames, s.tumble_frames, s.shrink_frames, s.star_frames, s.bullet_frames, s.ghost_frames,
                           s.ink_frames, s.golden_frames, s.fire_frames, s.chomper_frames, s.chomper_cooldown};
@@ -249,6 +256,13 @@ sim::KartState read_kart(Reader& r) {
     s.lucky_index = r.u8();
     s.draft = r.u8();
     s.water_frames = r.u8();
+    s.susp_y = r.q16(1.0f);
+    s.susp_vy = r.q16(20.0f);
+    s.susp_pitch = r.q16(1.0f);
+    s.susp_pitch_v = r.q16(20.0f);
+    s.susp_roll = r.q16(1.0f);
+    s.susp_roll_v = r.q16(20.0f);
+    s.susp_wobble = r.u8();
     int* timers[] = {&s.spin_frames, &s.tumble_frames, &s.shrink_frames, &s.star_frames, &s.bullet_frames, &s.ghost_frames,
                      &s.ink_frames, &s.golden_frames, &s.fire_frames, &s.chomper_frames, &s.chomper_cooldown};
     const uint16_t mask = r.u16();

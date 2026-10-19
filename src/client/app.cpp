@@ -8,6 +8,7 @@
 
 #include "gk/online/master_client.h"
 #include "render/lava.h"
+#include "render/seam_check.h"
 #include "render/track_mesh.h"
 #include "render/item_icons.h"
 #include "render/sky.h"
@@ -20,6 +21,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cctype>
 #include <cstdio>
 #include <fstream>
@@ -98,6 +100,7 @@ int App::run(const AppOptions& options) {
         render(scripted ? 1.0f : step.alpha(), scripted ? kDt : float(elapsed));
         ++frame_;
         if (scripted && int(frame_) >= options_.max_frames) running = false;
+        if (tour_done_) running = false;
     }
     shutdown();
     return 0;
@@ -334,12 +337,13 @@ void App::draw_model(const GpuModel& model, const mat4& m, vec4 tint) {
     for (render::MeshId id : model.meshes) renderer_.draw(id, m, tint);
 }
 
-void App::draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle) {
-    const mat4 lifted = glm::translate(m, vec3(0, v.layout.lift, 0));
+void App::draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle, const mat4* body) {
+    const mat4& bm = body ? *body : m;
+    const mat4 lifted = glm::translate(bm, vec3(0, v.layout.lift, 0));
     if (v.body_model) draw_model(*v.body_model, lifted, tint);
-    if (v.body) renderer_.draw(v.body, m, tint);
-    if (v.driver_model) draw_model(*v.driver_model, glm::translate(m, v.layout.seat), tint);
-    if (v.driver) renderer_.draw(v.driver, m, tint);
+    if (v.body) renderer_.draw(v.body, bm, tint);
+    if (v.driver_model) draw_model(*v.driver_model, glm::translate(bm, v.layout.seat), tint);
+    if (v.driver) renderer_.draw(v.driver, bm, tint);
     if (v.tire_model) {
         for (const auto& w : v.layout.wheels) {
             const float ref = v.tire_model->bounds_max.y - v.tire_model->bounds_min.y;
@@ -419,6 +423,7 @@ void App::show_track(const std::string& id) {
                 else if (p.name == "neon_pink") l.pos = vec3(p.transform * vec4(0.0f, 1.6f, 0.6f, 1.0f)), l.color = vec3(1.0f, 0.35f, 0.8f), l.radius = 14.0f, l.intensity = 1.1f;
                 else if (p.name == "neon_cyan") l.pos = vec3(p.transform * vec4(0.0f, 1.6f, 0.6f, 1.0f)), l.color = vec3(0.3f, 0.9f, 1.0f), l.radius = 14.0f, l.intensity = 1.1f;
                 else if (p.name == "lantern") l.pos = vec3(p.transform * vec4(0.0f, 0.0f, 0.0f, 1.0f)), l.color = vec3(1.0f, 0.72f, 0.38f), l.radius = 8.0f, l.intensity = 0.8f;
+                else if (p.name == "tunnel_light") l.pos = vec3(p.transform[3]), l.color = render::tunnel_light_color(*shown_track_, l.pos), l.radius = 13.0f, l.intensity = 1.6f;
                 else if (p.name == "lava_rock") l.pos = vec3(p.transform * vec4(0.0f, 0.6f, 0.0f, 1.0f)), l.color = vec3(1.0f, 0.42f, 0.1f), l.radius = 11.0f, l.intensity = dark ? 0.9f : 0.5f;
                 else continue;
                 lights.push_back(l);
@@ -1097,12 +1102,140 @@ void App::update_camera(float alpha, float dt) {
     const vec3 cam_target = pos - dir * cam_dist_ + kUp * cam_height_;
     if (!cam_init_ || back != cam_back_) cam_y_ = cam_target.y;
     else cam_y_ += (cam_target.y - cam_y_) * (1.0f - std::exp(-10.0f * dt)); // soften hops and bumps
+    {   // Under a tunnel's roof (the kart's or the camera's): stay below it.
+        const sim::Track& t = world()->track();
+        const vec3 at(cam_target.x, cam_y_, cam_target.z);
+        float limit = 1e9f;
+        if (const auto r = t.tunnel_roof(at, t.nearest_sample(at, now.sample))) limit = *r - 0.8f;
+        if (const auto r = t.tunnel_roof(pos, now.sample)) limit = std::min(limit, *r - 0.8f);
+        cam_y_ = std::min(cam_y_, limit);
+    }
     cam_pos_ = vec3(cam_target.x, cam_y_, cam_target.z);
     cam_look_ = pos + dir * 3.0f + kUp * 0.9f;
     cam_back_ = back;
     cam_init_ = true;
     const float target_fov = now.boost_frames > 0 ? 82.0f : 72.0f;
     cam_fov_ += (target_fov - cam_fov_) * (1.0f - std::exp(-5.0f * dt));
+}
+
+// The seam tour: a chase view every 80 m round the main loop, and a chase
+// view and a view from above at every fork, merge, crossing, flight of
+// stairs, zone and glide gap, one screenshot each, then quit.
+void App::seam_tour_step(const sim::Track& t) {
+    if (tour_frame_ < 0) {
+        auto chase = [&](const std::string& name, int i, float back = 10.0f) {
+            const sim::CenterSample& c = t.sample(i);
+            tour_.push_back({name + "_chase", c.pos - c.tangent * back + kUp * 4.5f, c.pos + c.tangent * 8.0f + kUp * 0.8f});
+        };
+        auto above = [&](const std::string& name, int i) {
+            const sim::CenterSample& c = t.sample(i);
+            tour_.push_back({name + "_above", c.pos - c.tangent * 12.0f + kUp * 24.0f, c.pos});
+        };
+        const int n = int(t.center.size());
+        auto back_from = [&](int i, int k) { return ((i - k) % n + n) % n; };
+        for (float s = 0.0f; s < t.length; s += 80.0f) chase("loop_" + std::to_string(int(s)) + "m", int(s / t.length * float(n)) % n);
+        for (size_t b = 0; b < t.branches.size(); ++b) {
+            const auto& br = t.branches[b];
+            const std::string id = "branch" + std::to_string(b);
+            chase(id + "_fork", br.fork, 22.0f);
+            above(id + "_fork", br.fork);
+            chase(id + "_merge", br.first + std::max(0, br.count - 8));
+            above(id + "_merge", br.merge);
+        }
+        // Crossings: one road over another (or itself), seen from the lower one.
+        int last = -100;
+        for (int i = 0; i < int(t.road.size()); i += 2) {
+            for (int j = 0; j < int(t.road.size()); j += 2) {
+                const auto &a = t.road[size_t(i)], &c = t.road[size_t(j)];
+                if (std::abs(a.s - c.s) < 40.0f && a.branch == c.branch) continue;
+                const vec2 d(a.pos.x - c.pos.x, a.pos.z - c.pos.z);
+                if (glm::length(d) < 4.0f && c.pos.y - a.pos.y > 3.0f && i - last > 30) {
+                    last = i;
+                    tour_.push_back({"under" + std::to_string(i), a.pos - a.tangent * 14.0f + kUp * 2.5f, a.pos + kUp * 2.0f});
+                    above("over" + std::to_string(j), j);
+                }
+            }
+        }
+        for (size_t k = 0; k < t.stairs.size(); ++k) {
+            const int i = t.nearest_sample(t.center[size_t(int(t.stairs[k].first / t.length * float(n)) % n)].pos);
+            chase("stairs" + std::to_string(k), back_from(i, 4));
+            above("stairs" + std::to_string(k), i);
+        }
+        for (size_t z = 0; z < t.zones.size(); ++z) above("zone" + std::to_string(z), t.zones[z].first + t.zones[z].count / 2);
+        for (size_t k = 0; k < t.tunnels.size(); ++k) {
+            const auto& tn = t.tunnels[k];
+            const std::string id = "tunnel" + std::to_string(k);
+            const int before = tn.first >= int(t.center.size()) ? tn.first - 8 : back_from(tn.first, 8); // on a side road, or round the loop
+            chase(id + "_in", std::max(0, before), 6.0f);
+            chase(id + "_mid", tn.first + tn.count / 2);
+            chase(id + "_out", tn.first + tn.count - 3);
+            above(id, tn.first + tn.count / 2);
+        }
+        for (int i = 0; i < n; ++i)
+            if (!t.center[size_t(i)].has_floor && t.center[size_t(back_from(i, 1))].has_floor) {
+                chase("gap" + std::to_string(i), back_from(i, 6));
+                int land = i;
+                while (land < n - 1 && !t.center[size_t(land)].has_floor) ++land;
+                above("landing" + std::to_string(land), land);
+            }
+        // GK_TOUR_LOOK="x,y,z;x,y,z": extra stops looking straight down at those points (debugging a seam).
+        if (const char* look = std::getenv("GK_TOUR_LOOK")) {
+            std::string rest = look;
+            for (size_t at = 0; at < rest.size();) {
+                const size_t end = std::min(rest.find(';', at), rest.size());
+                vec3 p(0.0f);
+                if (std::sscanf(rest.substr(at, end - at).c_str(), "%f,%f,%f", &p.x, &p.y, &p.z) == 3)
+                    tour_.push_back({"look" + std::to_string(at), p + vec3(0.3f, 6.0f, -1.5f), p});
+                at = end + 1;
+            }
+        }
+        // Everything the seam check finds, worst first, each from close by.
+        std::vector<render::SeamIssue> issues = render::find_seams(t);
+        auto issue_stop = [&](const std::string& name, vec3 pos) {
+            const sim::CenterSample& c = t.sample(t.nearest_sample(pos));
+            const vec3 side = glm::dot(pos - c.pos, c.right) >= 0.0f ? c.right : -c.right;
+            tour_.push_back({name, pos - c.tangent * 6.0f - side * 2.0f + kUp * 3.0f, pos});
+        };
+        // GK_TOUR_ISSUE="x,y,z;...": stops framed like the issue shots, for before and after pictures.
+        if (const char* list = std::getenv("GK_TOUR_ISSUE")) {
+            std::string rest = list;
+            int n_at = 0;
+            for (size_t at = 0; at < rest.size(); ++n_at) {
+                const size_t end = std::min(rest.find(';', at), rest.size());
+                vec3 p(0.0f);
+                if (std::sscanf(rest.substr(at, end - at).c_str(), "%f,%f,%f", &p.x, &p.y, &p.z) == 3) issue_stop("spot" + std::to_string(n_at), p);
+                at = end + 1;
+            }
+        }
+        if (FILE* f = std::fopen((options_.seam_tour + "/" + t.id + "_seams.txt").c_str(), "w")) {
+            for (const auto& is : issues)
+                std::fprintf(f, "%s\t%.2f\tx%d\tsample %d (%.0f m%s)\tat %.1f %.1f %.1f\t%s\n", is.kind.c_str(), is.size, is.count, is.sample,
+                             t.sample(is.sample).s, t.sample(is.sample).branch >= 0 ? (", branch " + std::to_string(t.sample(is.sample).branch)).c_str() : "",
+                             is.pos.x, is.pos.y, is.pos.z, is.what.c_str());
+            std::fclose(f);
+        }
+        std::stable_sort(issues.begin(), issues.end(), [](const auto& a, const auto& b) { return a.size * float(a.count) > b.size * float(b.count); });
+        for (size_t k = 0; k < issues.size() && k < 24; ++k) {
+            issue_stop("issue_" + issues[k].kind + "_" + std::to_string(k), issues[k].pos);
+        }
+        tour_frame_ = 0;
+    }
+    const int per = 6; // frames per stop: the screenshot is read back on the last
+    const int idx = tour_frame_ / per;
+    if (idx >= int(tour_.size())) {
+        tour_done_ = true;
+        return;
+    }
+    cam_pos_ = tour_[size_t(idx)].pos;
+    cam_look_ = tour_[size_t(idx)].look;
+    cam_fov_ = 72.0f;
+    cam_init_ = true;
+    if (tour_frame_ % per == per - 2) {
+        char num[8];
+        std::snprintf(num, sizeof num, "%02d", idx);
+        renderer_.request_screenshot(options_.seam_tour + "/" + t.id + "_" + num + "_" + tour_[size_t(idx)].name + ".png");
+    }
+    ++tour_frame_;
 }
 
 void App::spring(float& x, float& v, float target, float omega, float dt) {
@@ -1134,7 +1267,8 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     {
         const float dt = paused_ ? 0.0f : frame_dt_;
         const float slide = glm::dot(s.slide, s.right());
-        const float roll_target = (s.drift == sim::DriftState::Drifting ? float(s.drift_dir) * 0.085f : 0.0f) + std::clamp(slide * 0.012f, -0.06f, 0.06f);
+        // The drift's lean comes from the suspension (sim) now; this is the slide's.
+        const float roll_target = std::clamp(slide * 0.012f, -0.06f, 0.06f);
         spring(pose.yaw, pose.yaw_v, s.visual_drift_yaw, 14.0f, dt);
         spring(pose.roll, pose.roll_v, s.grounded ? roll_target : 0.0f, 11.0f, dt);
         // A nod when a boost kicks in and when the kart lands.
@@ -1176,6 +1310,18 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         m = glm::rotate(m, std::sin(t * kPi) * 0.6f, vec3(0, 1, 0));
     }
     if (s.shrink_frames > 0) m = glm::scale(m, vec3(0.55f));
+    // The sprung body over the wheels: it sinks, pitches and rolls about a
+    // point near the axles while the wheels stay on the ground.
+    mat4 body = m;
+    {
+        const float y = glm::mix(p.susp_y, s.susp_y, alpha);
+        const float pitch = glm::mix(p.susp_pitch, s.susp_pitch, alpha), roll = glm::mix(p.susp_roll, s.susp_roll, alpha);
+        const vec3 pivot(0.0f, 0.35f, 0.0f);
+        body = glm::translate(body, pivot - vec3(0.0f, y, 0.0f));
+        body = glm::rotate(body, -pitch, vec3(1, 0, 0)); // + nose up
+        body = glm::rotate(body, roll, vec3(0, 0, 1));   // + right side down
+        body = glm::translate(body, -pivot);
+    }
     vec4 tint(1.0f);
     if (s.respawn_frames > 0 || (s.invincible_frames > 0 && (frame_ / 4) % 2)) tint = vec4(1, 1, 1, 1) * 0.6f + 0.4f;
     // The glow shader: a white-to-red flash when hit, gold while tricking,
@@ -1205,7 +1351,7 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         draw_flame(base, vec3(0, 0.8f, -1.3f), vec3(0, 0, -1), 0.8f, 1.9f * flicker, vec3(0.4f, 0.7f, 1.0f), float(index) * 0.137f);
     } else {
         renderer_.set_fx(fx);
-        draw_kart_visual(visual, m, tint, index < 12 ? wheel_angle_[size_t(index)] : 0.0f);
+        draw_kart_visual(visual, m, tint, index < 12 ? wheel_angle_[size_t(index)] : 0.0f, &body);
         renderer_.set_fx(0);
     }
     if (s.chomper_frames > 0) {
@@ -1214,7 +1360,7 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     }
     if (s.item != sim::Item::None && s.roulette == 0 && s.bullet_frames == 0)
         draw_held_item(s.item, s.item_uses, base, s.trailing);
-    if (s.gliding) draw_glider_visual(visual, m, tint);
+    if (s.gliding) draw_glider_visual(visual, body, tint);
 
     const auto& kc = world()->tables().constants;
     emit_kart_particles(index, s, m);
@@ -1232,10 +1378,10 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
             for (float side : {-1.0f, 1.0f}) {
                 const vec3 d = glm::normalize(vec3(side * 0.22f, 0.2f, -1.0f));
                 const vec3 pipe = vec3(side * 0.26f, 0.7f, -1.02f) + glm::normalize(vec3(side * 0.25f, 0.55f, -1.0f)) * 0.3f;
-                draw_flame(m, pipe, d, 0.32f, (0.9f + 0.5f * strength) * flicker, c, phase + (side > 0 ? 0.3f : 0.0f));
+                draw_flame(body, pipe, d, 0.32f, (0.9f + 0.5f * strength) * flicker, c, phase + (side > 0 ? 0.3f : 0.0f));
             }
         } else {
-            draw_flame(m, vec3(0, 0.3f, -0.95f), vec3(0, 0, -1), 0.42f, (1.1f + 0.5f * strength) * flicker, c, phase);
+            draw_flame(body, vec3(0, 0.3f, -0.95f), vec3(0, 0, -1), 0.42f, (1.1f + 0.5f * strength) * flicker, c, phase);
         }
     }
 }
@@ -2211,6 +2357,7 @@ void App::render(float alpha, float dt) {
     }
     const sim::World* w = world();
     if (w && size_t(player_) < w->karts().size()) update_camera(alpha, dt);
+    if (w && !options_.seam_tour.empty()) seam_tour_step(w->track());
     render::Camera cam;
     cam.position = cam_init_ ? cam_pos_ : vec3(0, 12, -25);
     cam.target = cam_init_ ? cam_look_ : vec3(0, 0, 20);
@@ -2219,6 +2366,20 @@ void App::render(float alpha, float dt) {
     update_lava(w, cam.position);
     // Under deep water: a blue-green world that fades out close by.
     render::SceneLighting lit = light_;
+    // In a tunnel: the daylight fades and the lamps do the work.
+    if (w && size_t(player_) < w->karts().size()) {
+        const sim::Track& t = w->track();
+        const auto roof = t.tunnel_roof(cam.position, t.nearest_sample(cam.position, w->karts()[size_t(player_)].sample));
+        const float target = roof && cam.position.y < *roof ? 1.0f : 0.0f;
+        tunnel_dark_ += (target - tunnel_dark_) * (1.0f - std::exp(-5.0f * std::max(dt, 0.0f)));
+        if (!options_.seam_tour.empty()) tunnel_dark_ = target; // the tour jumps from place to place
+        lit.ambient *= glm::mix(1.0f, 0.4f, tunnel_dark_);
+        lit.sun *= glm::mix(1.0f, 0.2f, tunnel_dark_);
+        // No daylight haze inside: what little fog there is is dark.
+        lit.fog_density *= glm::mix(1.0f, 0.3f, tunnel_dark_);
+        lit.sky = glm::mix(lit.sky, lit.sky * 0.3f, tunnel_dark_);
+        lit.zenith = glm::mix(lit.zenith, lit.zenith * 0.3f, tunnel_dark_);
+    }
     if (w && size_t(player_) < w->karts().size()) {
         const sim::Track& t = w->track();
         if (t.in_deep_water(cam.position, t.nearest_sample(cam.position, w->karts()[size_t(player_)].sample))) {
@@ -2264,10 +2425,11 @@ void App::render(float alpha, float dt) {
         particles_.draw(renderer_);
         if (!online_) draw_ghost(alpha); // translucent, so after the solid karts
         const bool server_results = online_ && online_->results() && online_->phase() == net::RoomPhase::Results;
-        if (size_t(player_) < karts.size()) draw_speed_lines(karts[size_t(player_)], w->params(player_).top_speed);
+        if (size_t(player_) < karts.size() && options_.seam_tour.empty()) draw_speed_lines(karts[size_t(player_)], w->params(player_).top_speed);
         draw_water_overlay(*w, cam.position);
-        draw_hud(renderer_, *w, player_, kart_names(), paused_ ? HudMessage{} : message_, show_help_ && !server_results && !paused_, !server_results,
-                 settings_.show_checkpoints || options_.checkpoints);
+        if (!options_.hide_ui)
+            draw_hud(renderer_, *w, player_, kart_names(), paused_ ? HudMessage{} : message_, show_help_ && !server_results && !paused_, !server_results,
+                     settings_.show_checkpoints || options_.checkpoints);
         if (server_results) draw_online_results();
         if (ghost_) {
             char buf[64];

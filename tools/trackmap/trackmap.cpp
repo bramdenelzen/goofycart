@@ -6,6 +6,12 @@
 //
 // --race also runs a 12-CPU, 2-lap race on each track and prints lap times
 // and where karts fell off.
+// --crop x,z,size draws only that square, close up, triangle by triangle.
+// --balance runs top-difficulty CPU time trials at 150cc (no items, no
+// rubber band, five seeds) for the parts catalogue's max-speed build, its
+// max-mini-turbo build and a build between them, and prints best and mean
+// laps and the gap between the two extremes as Markdown table rows
+// (docs/BALANCE.md). GK_LAPS=1 also prints every lap, wall hit and respawn.
 #include "gk/sim/ai.h"
 #include "gk/sim/data.h"
 #include "gk/sim/stats.h"
@@ -17,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -114,6 +121,17 @@ void draw(const TrackDef& def, const std::string& out_dir) {
         const vec2 p = to_px(t.line_point(int(i)));
         img.put(int(p.x), int(p.y), t.road[i].branch < 0 ? 0x30ff60 : 0x30e0ff, t.road[i].pos.y + 0.1f);
     }
+    // Tunnels: a dark roof stripe down the middle with ribs across it.
+    for (const Track::Tunnel& tn : t.tunnels)
+        for (int k = 0; k < tn.count; ++k) {
+            const CenterSample& c = t.road[size_t(tn.first + k)];
+            const float span = tn.half_span.empty() ? c.half_width : tn.half_span[size_t(k)];
+            for (float o = -span; o <= span; o += 0.5f)
+                if (std::abs(o) < 1.0f || k % 4 == 0) {
+                    const vec2 p = to_px(c.pos + c.right * o);
+                    img.put(int(p.x), int(p.y), 0x282830, c.pos.y + 0.3f);
+                }
+        }
     // Zones (tinted), barriers (red-orange bars) and switches (yellow discs).
     for (const Track::Zone& z : t.zones)
         for (int i = z.first; i < z.first + z.count; ++i) {
@@ -197,6 +215,60 @@ void draw(const TrackDef& def, const std::string& out_dir) {
     if (wi >= 0) std::printf("  closest overlap: samples %d / %d, %.1f m apart vertically\n", wi, wj, worst);
 }
 
+// --crop x,z,size: a close-up from above of one square of track, 40 px per
+// metre, every triangle outlined (floors by surface, wall bases as thick red
+// lines), for working out how the meshes meet at a junction.
+void crop(const TrackDef& def, const std::string& out_dir, float cx, float cz, float size) {
+    const Track t = build_track(def);
+    const float px = 40.0f;
+    const int n = int(size * px);
+    Image img(n, n);
+    auto to_px = [&](vec3 p) { return vec2((p.x - cx + size * 0.5f) * px, (p.z - cz + size * 0.5f) * px); };
+    auto line = [&](vec2 a, vec2 b, uint32_t c, float z, int thick) {
+        const int steps = int(glm::length(b - a)) + 1;
+        for (int k = 0; k <= steps; ++k) {
+            const vec2 p = glm::mix(a, b, float(k) / float(steps));
+            for (int dx = -thick; dx <= thick; ++dx)
+                for (int dy = -thick; dy <= thick; ++dy) img.put(int(p.x) + dx, int(p.y) + dy, c, z);
+        }
+    };
+    for (const auto& tri : t.triangles) {
+        if (tri.surface == Surface::OutOfBounds) continue;
+        const vec3 a = t.vertices[tri.a], b = t.vertices[tri.b], c = t.vertices[tri.c];
+        const vec2 pa = to_px(a), pb = to_px(b), pc = to_px(c);
+        if (std::max({pa.x, pb.x, pc.x}) < 0 || std::min({pa.x, pb.x, pc.x}) > float(n) || std::max({pa.y, pb.y, pc.y}) < 0 ||
+            std::min({pa.y, pb.y, pc.y}) > float(n))
+            continue;
+        const float area = (pb.x - pa.x) * (pc.y - pa.y) - (pb.y - pa.y) * (pc.x - pa.x);
+        if (tri.surface == Surface::Wall || std::abs(area) < 1.0f) {
+            // A wall from above: its foot.
+            const vec3* v[3] = {&a, &b, &c};
+            std::sort(std::begin(v), std::end(v), [](const vec3* x, const vec3* y) { return x->y < y->y; });
+            line(to_px(*v[0]), to_px(*v[1]), 0xff2020, 1e6f, 2);
+            continue;
+        }
+        const int x0 = std::max(0, int(std::min({pa.x, pb.x, pc.x}))), x1 = std::min(n - 1, int(std::max({pa.x, pb.x, pc.x})) + 1);
+        const int y0 = std::max(0, int(std::min({pa.y, pb.y, pc.y}))), y1 = std::min(n - 1, int(std::max({pa.y, pb.y, pc.y})) + 1);
+        for (int y = y0; y <= y1; ++y)
+            for (int x = x0; x <= x1; ++x) {
+                const vec2 p(float(x) + 0.5f, float(y) + 0.5f);
+                const float u = ((pb.x - p.x) * (pc.y - p.y) - (pb.y - p.y) * (pc.x - p.x)) / area;
+                const float v = ((pc.x - p.x) * (pa.y - p.y) - (pc.y - p.y) * (pa.x - p.x)) / area;
+                const float w = 1.0f - u - v;
+                if (u < 0 || v < 0 || w < 0) continue;
+                const float z = u * a.y + v * b.y + w * c.y;
+                // Overlapping floors show as a magenta checker.
+                const size_t i = size_t(y * n + x);
+                if (img.depth[i] > -1e8f && std::abs(img.depth[i] - z) < 0.12f) { img.rgb[i * 3] = 255, img.rgb[i * 3 + 1] = 0, img.rgb[i * 3 + 2] = 255; continue; }
+                img.put(x, y, surface_rgb(tri.surface), z);
+            }
+        line(pa, pb, 0x202020, 1e5f, 0), line(pb, pc, 0x202020, 1e5f, 0), line(pc, pa, 0x202020, 1e5f, 0);
+    }
+    const std::string path = out_dir + "/" + def.id + "_crop.png";
+    stbi_write_png(path.c_str(), n, n, 3, img.rgb.data(), n * 3);
+    std::printf("%s\n", path.c_str());
+}
+
 void race(const TrackDef& def) {
     PhysicsTables tables;
     PartsCatalog parts;
@@ -214,11 +286,32 @@ void race(const TrackDef& def) {
     }
     std::vector<KartInput> in(12);
     int frames = 0, first_lap = 0, respawns = 0, wall_hits = 0;
+    // Suspension: how hard it works over the race, to tune it by.
+    float max_y = 0.0f, max_pitch = 0.0f, max_roll = 0.0f;
+    long busy = 0, pinned = 0, samples = 0;
+    int wobbles = 0;
+    // Stalls: the longest each kart spent crawling (under 3 m/s) once racing, and where.
+    std::vector<int> crawl(12, 0), worst(12, 0), worst_at(12, 0);
     auto done = [&] { return std::all_of(w.karts().begin(), w.karts().end(), [](const KartState& k) { return k.finished; }); };
     while (!done() && frames < 60 * 60 * 4) {
         for (int i = 0; i < 12; ++i) in[size_t(i)] = cpu_input(w, i, cpu_skill(i % 3 == 0 ? CpuLevel::Hard : CpuLevel::Normal, i));
         w.tick(in);
         ++frames;
+        for (size_t i = 0; i < w.karts().size() && w.racing() && w.race_ticks() > 240; ++i) {
+            const KartState& k = w.karts()[i];
+            crawl[i] = !k.finished && std::abs(k.speed) < 3.0f ? crawl[i] + 1 : 0;
+            if (crawl[i] > worst[i]) worst[i] = crawl[i], worst_at[i] = k.sample;
+        }
+        for (const KartState& k : w.karts()) {
+            if (k.finished || !k.grounded) continue;
+            ++samples;
+            max_y = std::max(max_y, k.susp_y);
+            max_pitch = std::max(max_pitch, std::abs(k.susp_pitch));
+            max_roll = std::max(max_roll, std::abs(k.susp_roll));
+            busy += std::abs(k.susp_y) > 0.02f || std::abs(k.susp_pitch) > 0.03f || std::abs(k.susp_roll) > 0.03f;
+            pinned += std::abs(k.susp_pitch) >= tables.constants.susp_max_pitch - 1e-4f || std::abs(k.susp_roll) >= tables.constants.susp_max_roll - 1e-4f;
+            wobbles += k.susp_wobble == uint8_t(tables.constants.susp_wobble_frames - 1);
+        }
         for (const auto& e : w.events()) {
             if (e.type == KartEventType::Respawn && !w.karts()[size_t(e.kart)].finished) {
                 ++respawns;
@@ -232,8 +325,131 @@ void race(const TrackDef& def) {
             if (e.type == KartEventType::Lap && first_lap == 0) first_lap = w.race_ticks();
         }
     }
+    for (size_t i = 0; i < worst.size(); ++i)
+        if (worst[i] > 120) std::printf("  stall: kart %d crawled %.1f s at sample %d\n", int(i), float(worst[i]) / 60.0f, worst_at[i]);
+    for (size_t i = 0; i < w.karts().size(); ++i) {
+        const KartState& k = w.karts()[i];
+        if (!k.finished)
+            std::printf("  unfinished: kart %d on lap %d at sample %d (%.0f %.0f %.0f), speed %.1f, %s\n", int(i), k.lap, k.sample, k.pos.x, k.pos.y, k.pos.z,
+                        k.speed, k.grounded ? "grounded" : "airborne");
+    }
     std::printf("  race: first lap %.1f s, %s after %.1f s, %d respawns, %d wall hits\n", first_lap / 60.0f,
                 done() ? "finished" : "NOT FINISHED", frames / 60.0f, respawns, wall_hits);
+    std::printf("  suspension: max compression %.2f m, pitch %.2f, roll %.2f rad; moving %.0f%% of the time, at a cap %.1f%%, %d hard landings\n",
+                max_y, max_pitch, max_roll, 100.0 * double(busy) / double(std::max(1L, samples)),
+                100.0 * double(pinned) / double(std::max(1L, samples)), wobbles);
+}
+
+struct BalanceBuilds {
+    Build speed, turbo, middle;
+};
+
+// The real combinations at the ends: the fastest build (the best mini-turbo
+// among them), the best mini-turbo build (the fastest among them), and the
+// combination nearest the midpoint of the two.
+BalanceBuilds balance_builds(const PartsCatalog& parts) {
+    std::vector<std::pair<Build, StatArray>> all;
+    for (int d = 0; d < int(parts.drivers.size()); ++d)
+        for (int b = 0; b < int(parts.bodies.size()); ++b)
+            for (int t = 0; t < int(parts.tires.size()); ++t)
+                for (int g = 0; g < int(parts.gliders.size()); ++g) {
+                    const Build x{d, b, t, g};
+                    all.emplace_back(x, parts.levels(x));
+                }
+    const int S = int(Stat::SpeedGround), M = int(Stat::MiniTurbo);
+    auto best = [&](int primary, int secondary) {
+        return std::max_element(all.begin(), all.end(), [&](const auto& a, const auto& b) {
+            return std::pair(a.second[size_t(primary)], a.second[size_t(secondary)]) < std::pair(b.second[size_t(primary)], b.second[size_t(secondary)]);
+        });
+    };
+    BalanceBuilds r;
+    const auto sp = best(S, M), mt = best(M, S);
+    r.speed = sp->first, r.turbo = mt->first;
+    const float ms = 0.5f * float(sp->second[size_t(S)] + mt->second[size_t(S)]), mm = 0.5f * float(sp->second[size_t(M)] + mt->second[size_t(M)]);
+    r.middle = std::min_element(all.begin(), all.end(), [&](const auto& a, const auto& b) {
+        auto d = [&](const StatArray& l) { return std::pow(float(l[size_t(S)]) - ms, 2.0f) + std::pow(float(l[size_t(M)]) - mm, 2.0f); };
+        return d(a.second) < d(b.second);
+    })->first;
+    return r;
+}
+
+struct LapStats {
+    float best = 1e9f, mean = 0.0f;
+    float drifting = 0.0f; // share of race time spent drifting
+    int laps = 0;
+    bool finished = true;
+};
+
+LapStats time_trial(const TrackDef& def, const PhysicsTables& tables, const PartsCatalog& parts, Build b, int seeds) {
+    LapStats st;
+    float sum = 0.0f;
+    long drift_frames = 0, all_frames = 0;
+    for (int seed = 0; seed < seeds; ++seed) {
+        World w(build_track(def), tables, RaceConfig{.laps = 3, .countdown_frames = 180, .items = false, .seed = uint64_t(seed + 1)});
+        KartParams p = tables.params(parts.levels(b), parts.body(b), EngineClass::cc150);
+        w.add_kart(p);
+        const CpuSkill skill = cpu_skill(CpuLevel::Hard, seed);
+        std::vector<KartInput> in(1);
+        int last = 0, frames = 0;
+        while (!w.karts()[0].finished && frames < 60 * 60 * 6) {
+            in[0] = cpu_input(w, 0, skill);
+            w.tick(in);
+            ++frames;
+            if (w.racing()) ++all_frames, drift_frames += w.karts()[0].drift == DriftState::Drifting;
+            for (const auto& e : w.events()) {
+                if (std::getenv("GK_LAPS") && (e.type == KartEventType::Respawn || e.type == KartEventType::WallHit || e.type == KartEventType::Hit || e.type == KartEventType::Smash || e.type == KartEventType::TireBounce))
+                    std::printf("    event %d at sample %d, %.1f s\n", int(e.type), w.karts()[0].sample, w.race_ticks() / 60.0f);
+                if (e.type == KartEventType::Lap || e.type == KartEventType::Finish) {
+                    if (e.type == KartEventType::Finish && w.race_ticks() == last) continue; // the last lap also fires Lap
+                    const float t = float(w.race_ticks() - last) / 60.0f;
+                    last = w.race_ticks();
+                    if (std::getenv("GK_LAPS")) std::printf("  seed %d lap %.2f\n", seed, t);
+                    st.best = std::min(st.best, t);
+                    sum += t;
+                    ++st.laps;
+                }
+            }
+        }
+        st.finished = st.finished && w.karts()[0].finished;
+        if (!w.karts()[0].finished) std::fprintf(stderr, "  %s: seed %d did not finish (lap %d, sample %d)\n", def.id.c_str(), seed, w.karts()[0].lap, w.karts()[0].sample);
+    }
+    st.drifting = float(drift_frames) / float(std::max(1L, all_frames));
+    st.mean = st.laps ? sum / float(st.laps) : 0.0f;
+    return st;
+}
+
+void balance(const std::vector<TrackDef>& tracks, const std::string& only) {
+    PhysicsTables tables;
+    PartsCatalog parts;
+    std::string err;
+    if (!tables.load(data_path("physics.json"), &err) || !parts.load(data_path("parts.json"), &err)) {
+        std::fprintf(stderr, "%s\n", err.c_str());
+        return;
+    }
+    const BalanceBuilds bb = balance_builds(parts);
+    auto describe = [&](const char* name, Build b) {
+        const StatArray l = parts.levels(b);
+        const KartParams p = tables.params(l, parts.body(b), EngineClass::cc150);
+        std::printf("%s: %s / %s / %s / %s, speed %d, mini-turbo %d, accel %d, handling %d, weight %d -> top %.2f m/s, charge x%.2f, boost x%.2f\n", name,
+                    parts.drivers[size_t(b.driver)].name.c_str(), parts.bodies[size_t(b.body)].name.c_str(), parts.tires[size_t(b.tires)].name.c_str(),
+                    parts.gliders[size_t(b.glider)].name.c_str(), l[int(Stat::SpeedGround)], l[int(Stat::MiniTurbo)], l[int(Stat::Acceleration)],
+                    l[int(Stat::HandlingGround)], l[int(Stat::Weight)], p.top_speed, p.mt_charge, p.mt_boost);
+    };
+    describe("speed build", bb.speed);
+    describe("mini-turbo build", bb.turbo);
+    describe("middle build", bb.middle);
+    std::printf("\n| Track | Speed best | Speed mean | Mini-turbo best | Mini-turbo mean | Middle best | Middle mean | Gap (MT vs speed, mean) | Drifting |\n");
+    std::printf("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
+    constexpr int kSeeds = 5;
+    for (const TrackDef& d : tracks) {
+        if (!only.empty() && d.id != only) continue;
+        const LapStats a = time_trial(d, tables, parts, bb.speed, kSeeds), b = time_trial(d, tables, parts, bb.turbo, kSeeds),
+                       c = time_trial(d, tables, parts, bb.middle, kSeeds);
+        const float gap = 100.0f * (b.mean - a.mean) / a.mean;
+        std::printf("| %s | %.2f | %.2f | %.2f | %.2f | %.2f | %.2f | %+.1f%%%s | %.0f%% |\n", d.name.c_str(), a.best, a.mean, b.best, b.mean, c.best, c.mean, gap,
+                    a.finished && b.finished && c.finished ? "" : " (DNF)", 100.0f * c.drifting);
+        std::fflush(stdout);
+    }
 }
 
 } // namespace
@@ -250,13 +466,24 @@ int main(int argc, char** argv) {
         return 1;
     }
     std::string only;
-    bool racing = false;
+    bool racing = false, balancing = false;
+    float crop_x = 0, crop_z = 0, crop_size = 0;
     for (int i = 3; i < argc; ++i) {
         if (std::string(argv[i]) == "--race") racing = true;
+        else if (std::string(argv[i]) == "--crop" && i + 1 < argc) std::sscanf(argv[++i], "%f,%f,%f", &crop_x, &crop_z, &crop_size);
+        else if (std::string(argv[i]) == "--balance") balancing = true;
         else only = argv[i];
+    }
+    if (balancing) {
+        balance(cat.tracks, only);
+        return 0;
     }
     for (const TrackDef& d : cat.tracks)
         if (only.empty() || d.id == only) {
+            if (crop_size > 0.0f) {
+                crop(d, argv[2], crop_x, crop_z, crop_size);
+                continue;
+            }
             draw(d, argv[2]);
             if (racing) race(d);
         }

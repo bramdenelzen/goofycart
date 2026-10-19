@@ -5,26 +5,26 @@
   "half_width": 8,
   "verge": 3,
   "verge_surface": "offroad_light",
-  "_comment": "Up from the quay onto the high pier, over the start road, across the moving crane decks, then down the switchbacks to the water and a glide home. Hit the crane switch and the container yard opens a way through the stacks, where the cranes lower containers one side and then the other; the tide creeps over the waterfront from lap 2, and on the last lap containers land on the pier.",
+  "_comment": "The pier ramp: straight up from the quay onto the high pier, steep enough to feel it, over a crest at the top and into a turn banked hard round the end of the pier, then over the start road, across the moving crane decks, down the banked switchbacks to the water and a dip along the waterfront, an off-camber quay and a glide home. Hit the crane switch and the container yard opens a way through the stacks, where the cranes lower containers one side and then the other; the tide creeps over the waterfront from lap 2, and on the last lap containers land on the pier.",
   "points": [
-    [0.0, 0.0, 0.0, 9.0],
-    [0.0, 0.0, 90.0, 9.0],
-    [30.0, 1.4, 144.0],
-    [90.0, 5.6, 162.0],
-    [144.0, 11.2, 129.0, 7.0],
-    [153.0, 14.0, 69.0],
-    [114.0, 14.0, 18.0],
-    [48.0, 14.0, -9.0, 9.5],
-    [-18.0, 14.0, -15.0, 9.5],
-    [-78.0, 12.6, -6.0],
-    [-120.0, 9.8, 27.0],
-    [-114.0, 8.4, 78.0, 6.5],
-    [-156.0, 5.6, 108.0, 6.5],
-    [-198.0, 2.8, 63.0],
-    [-183.0, 1.4, -12.0],
-    [-123.0, 0.0, -66.0, 8.0],
-    [-48.0, 0.0, -78.0],
-    [-9.0, 0.0, -39.0]
+    [0.0, 0, 0.0, 9.0],
+    [0.0, 0, 90.0, 9.0],
+    [30.0, 0.5, 144.0],
+    [90.0, 7, 162.0],
+    [144.0, 14.5, 129.0, 7.0],
+    [153.0, 15.5, 69.0],
+    [114.0, 14, 18.0],
+    [48.0, 14.5, -9.0, 9.5],
+    [-18.0, 14, -15.0, 9.5],
+    [-78.0, 12, -6.0],
+    [-120.0, 10, 27.0],
+    [-114.0, 8, 78.0, 6.5],
+    [-156.0, 5.5, 108.0, 6.5],
+    [-198.0, 2, 63.0],
+    [-183.0, -1, -12.0],
+    [-123.0, 0, -66.0, 8.0],
+    [-48.0, 0.5, -78.0],
+    [-9.0, 0, -39.0]
   ],
   "features": [
     {
@@ -215,6 +215,30 @@
       "length": 6.0,
       "height": 2.6,
       "when": "drop"
+    },
+    {
+      "type": "bank",
+      "from": [5, 10],
+      "to": [6, -5],
+      "angle": -20
+    },
+    {
+      "type": "bank",
+      "from": [10, -15],
+      "to": [11, 15],
+      "angle": -15
+    },
+    {
+      "type": "bank",
+      "from": [12, -15],
+      "to": [13, 15],
+      "angle": 15
+    },
+    {
+      "type": "bank",
+      "from": [15, -10],
+      "to": [16, -10],
+      "angle": -6
     }
   ],
   "gates": {
@@ -241,9 +265,11 @@
       "to": [7, 0],
       "side": "left",
       "points": [
-        [132, 13.8, 82, 5.5],
-        [108, 14, 58, 5.5],
-        [84, 14, 38, 5.5]
+        [139.6, 15.57, 83.0, 5.5],
+        [122.2, 15.15, 65.8, 5.5],
+        [108, 15.17, 58, 5.5],
+        [98.7, 14.01, 40.4, 5.5],
+        [81.2, 14.13, 17.8, 5.5]
       ],
       "half_width": 5.5,
       "when": "yard",

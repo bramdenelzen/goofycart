@@ -202,6 +202,7 @@ void ClientGame::apply_snapshot(const SnapshotMsg& m) {
     for (size_t i = 0; i < karts.size(); ++i) before[i] = karts[i].pos + visual_offset_[i];
     const bool had_local = seat_ >= 0 && size_t(seat_) < karts.size();
     const vec3 local_before = had_local ? karts[size_t(seat_)].pos : vec3(0.0f);
+    const bool knocked_before = had_local && karts[size_t(seat_)].knocked();
 
     sim::WorldState ws;
     ws.tick = m.tick;
@@ -231,7 +232,11 @@ void ClientGame::apply_snapshot(const SnapshotMsg& m) {
         if (glm::length(off) > kSnapDistance || snapshots_applied_ == 1) off = vec3(0.0f);
         visual_offset_[i] = off;
     }
-    if (had_local && snapshots_applied_ > 1) {
+    // A hit we only learn about now (an item fired by a lagging player) moves
+    // the kart, but that is the hit, not a prediction error: the spin-out
+    // animation covers it, so it doesn't count as a correction.
+    const bool newly_hit = had_local && !knocked_before && karts[size_t(seat_)].knocked();
+    if (had_local && snapshots_applied_ > 1 && !newly_hit) {
         last_correction_ = glm::length(local_before - karts[size_t(seat_)].pos);
         max_correction_ = std::max(max_correction_, last_correction_);
     }

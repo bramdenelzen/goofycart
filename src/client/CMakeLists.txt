@@ -54,6 +54,7 @@ add_executable(gk_client
   render/trackside.cpp
   render/textures.cpp
   render/track_mesh.cpp
+  render/seam_check.cpp
   render/kart_mesh.cpp
   render/item_mesh.cpp
   render/renderer.cpp
