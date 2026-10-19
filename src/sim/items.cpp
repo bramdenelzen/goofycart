@@ -432,6 +432,16 @@ void World::apply_hit(int kart, HitKind kind, int from) {
     if (kind != HitKind::Shrink && k.untouchable()) return;
     if (k.trailing) consume(k); // the held item is knocked away
     k.trailing = false;
+    if (k.gliding || k.glide_armed) {
+        // Knocked out of the air: the glider folds and the kart drops, onto
+        // the road or off it. Flying on with no control would carry it off
+        // the landing and leave it sinking under the track until the kill
+        // height, a long dead glide.
+        k.gliding = false;
+        k.glide_armed = false;
+        k.glide_bank = k.glide_pitch = 0.0f;
+        emit(events_, KartEventType::GliderClose, kart);
+    }
     k.drift = DriftState::None;
     k.mt_charge = 0.0f;
     k.boost_frames = 0;
@@ -491,15 +501,19 @@ void World::items_after_step() {
         for (int* f : {&k.star_frames, &k.bullet_frames, &k.ghost_frames, &k.ink_frames, &k.golden_frames,
                        &k.chomper_frames, &k.chomper_cooldown, &k.shrink_frames})
             if (*f > 0) --*f;
+        // Spinning or tumbling sheds speed, in the air too: a kart knocked
+        // out of a glide drops near where it was hit instead of flying on.
         if (k.spin_frames > 0) {
             --k.spin_frames;
             k.speed *= 0.93f;
             k.slide *= 0.9f;
+            if (!k.grounded) k.air_vel.x *= 0.93f, k.air_vel.z *= 0.93f;
         }
         if (k.tumble_frames > 0) {
             --k.tumble_frames;
             k.speed *= 0.85f;
             k.slide *= 0.8f;
+            if (!k.grounded) k.air_vel.x *= 0.85f, k.air_vel.z *= 0.85f;
         }
         if (k.shrink_frames > 0 && k.boost_frames == 0) k.speed = std::min(k.speed, p.top_speed * t.shrink_speed);
         if (k.fire_frames > 0 && --k.fire_frames == 0 && k.item == Item::Fireball) {

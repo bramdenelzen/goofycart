@@ -675,9 +675,11 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
         start_respawn(s, ctx);
         return;
     }
-    // Wedged against something: trying to drive but going nowhere.
-    if (s.grounded && !s.finished && (in.accelerate || in.brake) && std::abs(s.speed) < 1.5f) {
-        if (++s.stuck_frames >= ctx.k.stuck_respawn_frames) {
+    // Wedged against something: trying to drive but going nowhere. Only
+    // moving clears the count, not a moment off the pedals (a CPU lifting
+    // the throttle now and then must not sit wedged for good).
+    if (s.grounded && !s.finished && std::abs(s.speed) < 1.5f) {
+        if ((in.accelerate || in.brake) && ++s.stuck_frames >= ctx.k.stuck_respawn_frames) {
             s.stuck_frames = 0;
             start_respawn(s, ctx);
             return;
