@@ -7,7 +7,7 @@ empty seats; a dedicated server with server-authoritative racing over UDP.
 Status: early development. See [docs/ROADMAP.md](docs/ROADMAP.md) for phases.
 Right now you pick Grand Prix, VS race or Time Trials, a cup or course, an
 engine class and CPU difficulty, then a driver, body, tires and glider (with
-MK8-style stat bars), and race 3 laps on one of 12 themed tracks against 11
+MK8-style stat bars), and race 3 laps on one of 13 themed tracks (or one run down the mountain) against 11
 CPU drivers: drifting with blue, orange and purple mini-turbos,
 hops, tricks off ramps, a glider section over a chasm, dash panels, rocket
 starts, off-road, sand, ice and mud, respawns, and item boxes with all 22
@@ -160,8 +160,10 @@ builds the low-poly kart from, so new parts need no art files.
 
 ## Tracks
 
-Tracks are data: each file in `data/tracks/` is a closed spline of
-`[x, y, z, half_width]` control points plus features placed by
+Tracks are data: each file in `data/tracks/` is a spline of
+`[x, y, z, half_width]` control points, a closed loop raced in laps or
+(`point_to_point`) an open road raced once from a start line to a finish
+line and counted in sections, plus features placed by
 `[control point, metres]`: trick ramps, glide ramps over a gap, boost pads
 (by lane), road surfaces (offroad, sand, ice, water), verges, item box rows,
 stretches without walls and obstacles (`block` or `pillar`, placed by
@@ -190,12 +192,14 @@ times, wall hits and falls: the quickest way to try a layout change.
 | Twin Bridges | A figure of eight on two levels: a banked climb, a humpback bridge, sliding platforms and a glide over the creek |
 | Crane Docks | The pier ramp, a banked turn over the start, moving crane decks, a dip under the water and a glide home |
 | Coral Cove | A beach lap two fifths under the sea: a stream along the lagoon floor, bubble vents, a rip current and a sunken wreck to cut through |
+| Summit Descent | Point to point, 170 m down the mountain in three sections: the glacier, a glide over the crevasse, the dam and the forest with an ice chute, the ski jump and the slalom to the lodge |
 
 | Cup | Tracks (ids) |
 | --- | --- |
 | Acorn Cup | `meadow_circuit`, `dune_drift`, `harbor_hop`, `frost_pass` |
 | Comet Cup | `canyon_run`, `lava_works`, `cloud_spire`, `neon_raceway` |
 | Bazaar Cup | `market_mile`, `twin_bridges`, `crane_docks`, `coral_cove` |
+| Summit Cup | `summit_descent` |
 
 `greybox` is still there as a test track.
 

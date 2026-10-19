@@ -27,6 +27,12 @@
         "crane_docks",
         "coral_cove"
       ]
+    },
+    {
+      "name": "Summit Cup",
+      "tracks": [
+        "summit_descent"
+      ]
     }
   ]
 }

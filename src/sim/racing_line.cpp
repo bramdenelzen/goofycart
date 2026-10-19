@@ -112,7 +112,7 @@ void build_racing_line(Track& t) {
     t.line.assign(size_t(total), {});
     if (n < 8) return;
     const float spacing = t.length > 0.0f ? t.length / float(n) : glm::length(t.center[1].pos - t.center[0].pos);
-    t.closed = glm::length(t.center[size_t(n - 1)].pos - t.center[0].pos) < 3.0f * spacing;
+    t.closed = t.closed && glm::length(t.center[size_t(n - 1)].pos - t.center[0].pos) < 3.0f * spacing;
 
     // The roads as chains of samples: the loop, and each branch with the
     // main road around it for context.

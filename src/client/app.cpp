@@ -710,10 +710,14 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
         case sim::KartEventType::Blocked: input_.rumble(0.4f, 0.4f, 100); break;
         case sim::KartEventType::ItemGet: input_.rumble(0.1f, 0.3f, 60); break;
         case sim::KartEventType::Burnout: message_ = {"BURNOUT! (too early)", render::rgba(255, 90, 60), 2.0f}; break;
-        case sim::KartEventType::Lap:
-            message_ = {e.value == world()->config().laps ? "FINAL LAP!" : "LAP " + std::to_string(e.value),
-                        render::rgba(255, 255, 255), 2.0f};
+        case sim::KartEventType::Lap: {
+            const bool last = e.value == world()->config().laps;
+            const std::string text = !world()->track().point_to_point ? (last ? "FINAL LAP!" : "LAP " + std::to_string(e.value))
+                                     : last ? "FINAL SECTION!"
+                                            : "SECTION " + std::to_string(e.value) + "/" + std::to_string(world()->config().laps);
+            message_ = {text, render::rgba(255, 255, 255), 2.0f};
             break;
+        }
         default: break;
         }
     }

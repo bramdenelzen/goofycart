@@ -173,6 +173,7 @@ struct PhysicsConstants {
     int water_hysteresis = 6;           // frames in (or out of) the water before the mode flips
     int trick_window_frames = 18;
     int respawn_frames = 90;
+    float fall_respawn_drop = 35.0f;    // m below its road a falling kart is carried back from (a mountain is a long way down)
 
     // Suspension: a sprung body over the kart's ground contact, visual apart
     // from a short landing wobble. Pairs are (lightest, heaviest) and the

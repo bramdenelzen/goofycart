@@ -11,6 +11,7 @@ namespace gk::sim {
 
 World::World(Track track, PhysicsTables tables, RaceConfig config)
     : track_(std::move(track)), tables_(std::move(tables)), config_(config), countdown_left_(config.countdown_frames) {
+    if (track_.point_to_point) config_.laps = track_.sections(); // an open road is raced once, in its own sections
     track_.laps = config_.laps;
     box_respawn_.assign(track_.item_boxes.size(), 0);
     props_.assign(track_.obstacles.size(), PropState{});

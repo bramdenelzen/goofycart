@@ -77,15 +77,21 @@ struct BranchDef {
     float ai_share = 0.5f;
 };
 
-// A track as data: a closed spline through control points (x, y, z, and an
+// A track as data: a spline through control points (x, y, z, and an
 // optional road half-width) plus features placed along it. The geometry,
-// centre line, checkpoints and item boxes are generated from it.
+// centre line, checkpoints and item boxes are generated from it. The spline
+// is a closed loop raced in laps, or (point_to_point) an open road from a
+// start line to a finish line, raced once and reported in sections.
 struct TrackDef {
     std::string id;
     std::string name;
     std::string theme = "meadow"; // the client's palette and scenery
     bool ground = false;          // the track sits on rolling terrain instead of floating islands
-    int laps = 3;
+    int laps = 3;                 // point-to-point: the number of sections
+    bool point_to_point = false;
+    TrackPos start{0.0f, 60.0f};  // point-to-point: the start line (the grid forms behind it)
+    TrackPos finish{-1.0f, 0.0f}; // point-to-point: the finish line (ctrl < 0: 80 m before the road's end)
+    std::vector<TrackPos> sections; // point-to-point: where each section after the first begins (empty: equal parts)
     float half_width = 7.0f;
     float verge = 5.0f;           // default verge width each side (m)
     Surface verge_surface = Surface::OffroadLight;

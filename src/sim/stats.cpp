@@ -251,6 +251,7 @@ bool PhysicsTables::load(const std::string& path, std::string* error) {
             read_const(c, "glide_cap_mult", k.glide_cap_mult);
             read_const(c, "glide_bank_drag", k.glide_bank_drag);
             read_const(c, "glide_pitch_speed", k.glide_pitch_speed);
+            read_const(c, "fall_respawn_drop", k.fall_respawn_drop);
             read_const(c, "water_gravity_scale", k.water_gravity_scale);
             read_const(c, "water_terminal_fall", k.water_terminal_fall);
             read_const(c, "water_pitch_gain", k.water_pitch_gain);

@@ -70,6 +70,7 @@
     "glide_cap_mult": 1.32,
     "glide_bank_drag": 0.25,
     "glide_pitch_speed": 0.18,
+    "fall_respawn_drop": 35,
     "_water": "underwater (deep water zones), all provisional: gravity scale and fall cap while airborne, the stick's pull on the sink (half the glider's), drift turn scale, frames before the mode flips",
     "water_gravity_scale": 0.5,
     "water_terminal_fall": 6.0,

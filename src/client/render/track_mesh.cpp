@@ -584,10 +584,11 @@ mat4 frame_at(const sim::CenterSample& c, vec3 pos) {
     return mat4(vec4(c.right, 0.0f), vec4(c.up, 0.0f), vec4(c.tangent, 0.0f), vec4(pos, 1.0f));
 }
 
-void start_gantry(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th) {
+void start_gantry(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, int at) {
     constexpr int kStride = 9;
-    const sim::CenterSample& c = t.center.front();
-    const vec3 l = t.vertices[0], r = t.vertices[kStride - 3];
+    at = std::clamp(at, 0, int(t.center.size()) - 1);
+    const sim::CenterSample& c = t.center[size_t(at)];
+    const vec3 l = t.vertices[size_t(at * kStride)], r = t.vertices[size_t(at * kStride + kStride - 3)];
     const float half = 0.5f * glm::length(r - l) + 0.9f;
     const float h = 6.5f;
     MeshBuilder g;
@@ -624,7 +625,7 @@ void grandstands(MeshBuilder& b, const sim::Track& t, const ThemeStyle& th, Rng&
     const int n = int(t.center.size());
     // A stand on each side of the straight after the start, where there is room.
     for (int side = -1; side <= 1; side += 2) {
-        const int at = 6 % n;
+        const int at = t.wrap(t.start + 6);
         const sim::CenterSample& c = t.center[size_t(at)];
         const vec3 base_v = t.vertices[size_t(at * kStride + (side > 0 ? 6 : 0))];
         const float off = glm::length(base_v - c.pos) + 3.0f;
@@ -1543,7 +1544,8 @@ MeshData make_scenery_mesh(const sim::Track& t, std::vector<PropPlacement>* prop
         kerbs(b, t);
         wall_rails(b, t, th);
     }
-    start_gantry(b, t, th);
+    start_gantry(b, t, th, t.start);
+    if (t.point_to_point) start_gantry(b, t, th, t.finish);
     grandstands(b, t, th, rnd);
     {
         const auto [left, right] = walls_of(t);

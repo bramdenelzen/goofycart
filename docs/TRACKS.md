@@ -29,6 +29,40 @@ road can pinch to a narrow bridge and open into a wide plaza.
 Positions along the loop are `[control point, metres]`: `[4, 20]` is 20 m
 past point 4.
 
+## Point to point
+
+A track built around one run instead of laps:
+
+```json
+{
+  "id": "summit_descent", "name": "Summit Descent", "theme": "snow", "ground": true,
+  "point_to_point": true, "start": [1, 0], "finish": [24, 0], "sections": [[11, 0], [19, 0]],
+  "points": [[0, 170, 560, 9.5], ..., [65, 0, -720, 9.5]], ...
+}
+```
+
+With `point_to_point` the spline is an open road from its first point to
+its last, with a wall across each end. The race is one run from the
+`start` line to the `finish` line (default: 60 m in and 80 m before the
+end): the grid forms on the road before the start line, so leave 50 m of
+road before it, and the road runs on past the finish for the karts to roll
+out on. Progress is shown in sections instead of laps: `sections` lists
+where each section after the first begins (two entries for three sections),
+or is a count for equal parts (default 3). The rest of the file is as a
+loop's, with `[point, metres]` positions along the road; a gate's `laps`,
+`lap` and `from_lap` read the leader's section, and `sections`, `section`
+and `from_section` say the same thing in the track's own words.
+
+Every mode races it the same way: VS and Grand Prix place by distance along
+the road, Time Trial ghosts replay it, online rooms run it, the CPUs drive
+it, and the HUD counts "SECTION 2/3" where a loop counts laps. The road is
+one way, so there is no lap length to go round twice: make it long. The
+checkpoints run from the start line to the finish, which begins the last
+checkpoint region; entering it in order is finishing. A glide on a descent
+lands only where the road falls away slower than the glider sinks (about 1
+in 6), so flatten the road after a glide ramp or the glider carries on.
+Summit Descent is the example.
+
 ## Features
 
 On the main loop, `at`, `from` and `to` are `[point, metres]`; on a branch
@@ -152,7 +186,8 @@ clients predict it exactly:
 }
 ```
 
-* `{"laps": [2, 3]}`, `{"lap": 2}`, `{"from_lap": 2}`: the leader's lap.
+* `{"laps": [2, 3]}`, `{"lap": 2}`, `{"from_lap": 2}`: the leader's lap (on a
+  point-to-point track their section; `sections`, `section` and `from_section` are the same).
 * `{"cycle": [period, open, offset]}`: seconds of race time; holds for `open` of every `period`.
 * `{"switch": "name"}`: while that switch is pressed.
 * `"invert": true` flips any of them. A `when` can name a gate (`"when": "lever"`,

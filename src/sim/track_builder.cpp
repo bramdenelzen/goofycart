@@ -1,4 +1,5 @@
-// Builds track geometry from a TrackDef: a closed Catmull-Rom spline through
+// Builds track geometry from a TrackDef: a Catmull-Rom spline (a closed
+// loop, or an open road from start to finish) through
 // the control points, resampled every ~2 m, with a road of four lanes,
 // verges, walls, ramps, boost pads, glide gaps and item box rows; then each
 // side road the same way along its own open spline, joined to the main road
@@ -269,40 +270,43 @@ Track build_track(const TrackDef& def) {
     const int nc = int(ctrl.size());
     if (nc < 4) return t;
 
-    // ---- the main loop: dense sampling of the spline, then resampling by arc length
+    // ---- the main road: dense sampling of the spline, then resampling by arc length
+    // A loop runs through every control point and back to the first; an open
+    // road ends at its last point (the spline clamped at both ends).
+    const bool closed = !def.point_to_point;
     std::vector<vec4> dense;
     std::vector<float> dense_ctrl; // fractional control index of each dense point
-    for (int i = 0; i < nc; ++i) {
-        const vec4& p0 = ctrl[size_t((i - 1 + nc) % nc)];
-        const vec4& p1 = ctrl[size_t(i)];
-        const vec4& p2 = ctrl[size_t((i + 1) % nc)];
-        const vec4& p3 = ctrl[size_t((i + 2) % nc)];
+    auto at = [&](int i) { return ctrl[size_t(closed ? (i % nc + nc) % nc : std::clamp(i, 0, nc - 1))]; };
+    for (int i = 0; i < (closed ? nc : nc - 1); ++i) {
         for (int k = 0; k < 64; ++k) {
-            dense.push_back(catmull_rom(p0, p1, p2, p3, float(k) / 64.0f));
+            dense.push_back(catmull_rom(at(i - 1), at(i), at(i + 1), at(i + 2), float(k) / 64.0f));
             dense_ctrl.push_back(float(i) + float(k) / 64.0f);
         }
     }
+    if (!closed) dense.push_back(ctrl.back()), dense_ctrl.push_back(float(nc - 1));
     auto xyz = [](const vec4& v) { return vec3(v); };
-    std::vector<float> dense_s(dense.size() + 1, 0.0f);
-    for (size_t i = 1; i <= dense.size(); ++i)
-        dense_s[i] = dense_s[i - 1] + glm::length(xyz(dense[i % dense.size()]) - xyz(dense[i - 1]));
+    // The arc length to each dense point; a loop's last entry closes it.
+    const size_t nd = dense.size();
+    std::vector<float> dense_s(nd + (closed ? 1 : 0), 0.0f);
+    for (size_t i = 1; i < dense_s.size(); ++i)
+        dense_s[i] = dense_s[i - 1] + glm::length(xyz(dense[i % nd]) - xyz(dense[i - 1]));
     const float total = dense_s.back();
     constexpr float kSpacing = 2.0f;
-    const int n = int(std::round(total / kSpacing));
-    const float step = total / float(n);
+    const int n = int(std::round(total / kSpacing)) + (closed ? 0 : 1); // an open road keeps its last sample
+    const float step = closed ? total / float(n) : total / float(n - 1);
 
     Strip main;
     main.base.resize(size_t(n));
-    main.step = step, main.total = total, main.closed = true;
+    main.step = step, main.total = total, main.closed = closed;
     main.verge = def.verge, main.verge_surface = def.verge_surface;
     std::vector<float> ctrl_at(static_cast<size_t>(n));
     size_t di = 0;
     for (int i = 0; i < n; ++i) {
-        const float s = float(i) * step;
-        while (di + 1 < dense.size() && dense_s[di + 1] < s) ++di;
+        const float s = std::min(float(i) * step, total);
+        while (di + 2 < dense_s.size() && dense_s[di + 1] < s) ++di;
         const float seg = dense_s[di + 1] - dense_s[di];
-        const float f = seg > 0 ? (s - dense_s[di]) / seg : 0.0f;
-        main.base[size_t(i)] = glm::mix(dense[di], dense[(di + 1) % dense.size()], f);
+        const float f = seg > 0 ? std::clamp((s - dense_s[di]) / seg, 0.0f, 1.0f) : 0.0f;
+        main.base[size_t(i)] = glm::mix(dense[di], dense[(di + 1) % nd], f);
         ctrl_at[size_t(i)] = dense_ctrl[di];
     }
     auto s_of = [&](TrackPos p) {
@@ -321,6 +325,24 @@ Track build_track(const TrackDef& def) {
     main.make_samples([](float u) { return u; });
     t.center = main.c;
     t.length = total;
+    t.closed = closed;
+    t.point_to_point = !closed;
+    if (!closed) {
+        // The lines: a start with room for the grid before it, a finish with
+        // road to roll out on after it; the sections between them.
+        const float start_s = std::clamp(s_of(def.start), 48.0f, std::max(48.0f, total - 100.0f));
+        const float finish_s = std::clamp(def.finish.ctrl < 0.0f ? total - 80.0f : s_of(def.finish), start_s + 40.0f, total - 20.0f);
+        t.start = main.sample_at(start_s);
+        t.finish = main.sample_at(finish_s);
+        if (def.sections.empty()) {
+            const int parts = std::max(def.laps, 1);
+            for (int k = 1; k < parts; ++k) t.section_s.push_back(start_s + (finish_s - start_s) * float(k) / float(parts));
+        } else {
+            for (const TrackPos& p : def.sections) t.section_s.push_back(std::clamp(s_of(p), start_s, finish_s));
+            std::sort(t.section_s.begin(), t.section_s.end());
+        }
+        t.laps = t.sections();
+    }
 
     for (const GateDef& g : def.gates) t.gates.push_back(g.gate);
     auto inverted = [&](int g) {
@@ -534,6 +556,18 @@ Track build_track(const TrackDef& def) {
         }
     };
     emit(main);
+    if (!main.closed) {
+        // An open road ends in a wall at each end, tall enough to catch a glider.
+        for (const int end : {0, main.n() - 1}) {
+            const CenterSample& c = main.c[size_t(end)];
+            const uint32_t l = main.V(end, 0), r = main.V(end, kCols - 1);
+            const uint32_t base_v = uint32_t(t.vertices.size());
+            t.vertices.push_back(t.vertices[l] + c.up * (kWallHeight * 4.0f));
+            t.vertices.push_back(t.vertices[r] + c.up * (kWallHeight * 4.0f));
+            quad(l, r, base_v + 1, base_v, Surface::Wall, 0);
+            quad(l, base_v, base_v + 1, r, Surface::Wall, 0);
+        }
+    }
     for (Strip& st : strips) {
         emit(st);
         t.branches[size_t(st.branch)].first_vertex = st.first_vertex;
@@ -883,10 +917,15 @@ Track build_track(const TrackDef& def) {
     quad(base_v, base_v + 1, base_v + 2, base_v + 3, Surface::OutOfBounds, 0);
     t.kill_y = floor_y - 10.0f;
 
-    // Checkpoint regions roughly every 40 m; region 0 starts at the line.
+    // Checkpoint regions roughly every 40 m; region 0 starts at the line. On
+    // an open road region 0 is the grid, region 1 starts at the line, and the
+    // finish line begins the last region: entering it in order is finishing.
     const int per = std::max(1, int(40.0f / step));
-    for (int i = 0; i < n; i += per) t.checkpoints.push_back(i);
-    if (t.checkpoints.size() > 1 && n - t.checkpoints.back() < per / 2) t.checkpoints.pop_back();
+    const int first = closed ? 0 : t.start, last = closed ? n : t.finish;
+    if (!closed) t.checkpoints.push_back(0);
+    for (int i = first; i < last; i += per) t.checkpoints.push_back(i);
+    if (t.checkpoints.size() > 1 && last - t.checkpoints.back() < per / 2) t.checkpoints.pop_back();
+    if (!closed) t.checkpoints.push_back(t.finish);
 
     t.finalize();
     return t;
@@ -971,16 +1010,23 @@ int ticks(float seconds) { return int(std::lround(seconds * 60.0f)); }
 // any of them with "invert": true; or a name from the track's "gates", "!name" for its opposite.
 GateDef parse_gate(const nlohmann::json& w) {
     GateDef g;
-    if (w.contains("laps")) {
+    // On an open road the leader's "lap" is their section, so the same gates
+    // read as sections: "sections", "section", "from_section".
+    auto key = [&](const char* lap, const char* section) -> const nlohmann::json* {
+        if (w.contains(lap)) return &w[lap];
+        if (w.contains(section)) return &w[section];
+        return nullptr;
+    };
+    if (const auto* laps = key("laps", "sections")) {
         g.gate.when = Gate::When::Laps;
-        g.gate.lap_lo = w["laps"].at(0).get<int>();
-        g.gate.lap_hi = w["laps"].size() > 1 ? w["laps"].at(1).get<int>() : g.gate.lap_lo;
-    } else if (w.contains("lap")) {
+        g.gate.lap_lo = laps->at(0).get<int>();
+        g.gate.lap_hi = laps->size() > 1 ? laps->at(1).get<int>() : g.gate.lap_lo;
+    } else if (const auto* lap = key("lap", "section")) {
         g.gate.when = Gate::When::Laps;
-        g.gate.lap_lo = g.gate.lap_hi = w["lap"].get<int>();
-    } else if (w.contains("from_lap")) {
+        g.gate.lap_lo = g.gate.lap_hi = lap->get<int>();
+    } else if (const auto* from = key("from_lap", "from_section")) {
         g.gate.when = Gate::When::Laps;
-        g.gate.lap_lo = w["from_lap"].get<int>();
+        g.gate.lap_lo = from->get<int>();
     } else if (w.contains("cycle")) {
         const auto& c = w["cycle"];
         g.gate.when = Gate::When::Cycle;
@@ -991,7 +1037,7 @@ GateDef parse_gate(const nlohmann::json& w) {
         g.gate.when = Gate::When::Switch;
         g.sw = w["switch"].get<std::string>();
     } else {
-        throw std::runtime_error("a gate needs laps, lap, from_lap, cycle or switch");
+        throw std::runtime_error("a gate needs laps, lap, from_lap (or sections, section, from_section), cycle or switch");
     }
     g.gate.invert = w.value("invert", false);
     return g;
@@ -1150,6 +1196,21 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
         d.name = j.at("name").get<std::string>();
         d.theme = j.value("theme", d.theme);
         d.laps = j.value("laps", d.laps);
+        d.point_to_point = j.value("point_to_point", false);
+        if (d.point_to_point) {
+            if (j.contains("start")) d.start = parse_pos(j["start"]);
+            if (j.contains("finish")) d.finish = parse_pos(j["finish"]);
+            if (j.contains("sections")) {
+                const auto& secs = j["sections"];
+                if (secs.is_number()) d.laps = std::max(1, secs.get<int>());
+                else {
+                    for (const auto& p : secs) d.sections.push_back(parse_pos(p));
+                    d.laps = int(d.sections.size()) + 1;
+                }
+            } else {
+                d.laps = 3;
+            }
+        }
         d.ground = j.value("ground", d.ground);
         d.half_width = j.value("half_width", d.half_width);
         d.verge = j.value("verge", d.verge);

@@ -167,12 +167,12 @@ int Track::advance(int i, int steps, uint32_t route) const {
 int Track::main_sample(int i) const {
     const int n = int(center.size());
     if (i < n || n == 0) return i;
-    const float step = length / float(n);
+    const float step = length / float(closed ? n : std::max(n - 1, 1));
     return wrap(int(std::round(road[size_t(i)].s / std::max(step, 1e-3f))));
 }
 
 std::vector<Track::Strip> Track::strips() const {
-    std::vector<Strip> out{{0, int(center.size()), 0, true, -1}};
+    std::vector<Strip> out{{0, int(center.size()), 0, closed, -1}};
     for (size_t b = 0; b < branches.size(); ++b)
         out.push_back({branches[b].first, branches[b].count, branches[b].first_vertex, false, int(b)});
     return out;
@@ -235,6 +235,12 @@ int Track::wrap(int sample) const { // on the main loop
     if (n == 0) return 0;
     if (closed) return ((sample % n) + n) % n;
     return std::clamp(sample, 0, n - 1);
+}
+
+int Track::section_at(float s) const {
+    int section = 1;
+    for (const float b : section_s) section += s >= b;
+    return section;
 }
 
 vec3 Track::line_point(int sample) const {
@@ -391,7 +397,7 @@ int Track::nearest_sample(vec3 p, int hint) const {
         for (int i = nm; i < n; ++i) {
             if (windowed) {
                 float ds = std::abs(road[size_t(i)].s - s0);
-                ds = std::min(ds, total - ds);
+                if (closed) ds = std::min(ds, total - ds);
                 if (ds > 80.0f) continue;
             }
             const float d = d2(i);
@@ -411,6 +417,7 @@ int Track::nearest_sample(vec3 p, int hint) const {
         const int h = main_sample(hint);
         constexpr int kWindow = 40; // 80 m either side
         for (int k = -kWindow; k <= kWindow; ++k) {
+            if (!closed && (h + k < 0 || h + k >= nm)) continue; // an open road has no other side
             const int i = ((h + k) % nm + nm) % nm;
             const float d = d2(i);
             if (d < best_d) best_d = d, best = i;
@@ -437,7 +444,8 @@ int Track::checkpoint_of(int sample) const {
 Track::Slot Track::grid_slot(int index) const {
     const int row = index / 2, col = index % 2;
     const float behind = 8.0f + float(row) * 6.0f + (col ? 3.0f : 0.0f);
-    float s = length - behind;
+    // Behind the start line: the end of a loop, or before a point-to-point road's line.
+    const float s = (point_to_point ? center[size_t(std::clamp(start, 0, int(center.size()) - 1))].s : length) - behind;
     int i = int(center.size()) - 1;
     while (i > 0 && center[size_t(i)].s > s) --i;
     const CenterSample& c = center[size_t(i)];

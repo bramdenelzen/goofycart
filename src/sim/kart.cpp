@@ -682,7 +682,9 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
         --s.stun_frames;
         in = KartInput{};
     }
-    if (s.finished) in = KartInput{.accelerate = true}; // coast through the finish; bots take over later
+    // Coast through the finish (bots take over later); an open road ends
+    // just past it, so there the kart rolls to a stop instead.
+    if (s.finished) in = KartInput{.accelerate = ctx.track.closed};
     const bool drift_pressed = in.drift && !s.drift_button_prev;
     s.drift_button_prev = in.drift;
 
@@ -701,7 +703,11 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     update_roof(s, ctx);
     step_suspension(s, before, ctx);
 
-    if (s.pos.y < ctx.track.kill_y || (s.grounded && s.surface == Surface::OutOfBounds)) {
+    // Lost: below the floor, on lava, or fallen a long way below the road
+    // (a glider or a dive under water is meant to be down there).
+    const bool fallen = !s.grounded && !s.gliding && !s.underwater && s.air_vel.y < 0.0f &&
+                        s.pos.y < ctx.track.sample(s.sample).pos.y - ctx.k.fall_respawn_drop;
+    if (s.pos.y < ctx.track.kill_y || (s.grounded && s.surface == Surface::OutOfBounds) || fallen) {
         start_respawn(s, ctx);
         return;
     }
@@ -733,6 +739,25 @@ bool kart_update_progress(KartState& s, const Track& track) {
     // so on one the next few regions may go by in a single step.
     const int ahead = ((region - s.checkpoint) % ncp + ncp) % ncp;
     const bool on_branch = track.sample(s.sample).branch >= 0;
+    if (track.point_to_point) {
+        // An open road: the regions in order up to the last, which begins at
+        // the finish line; `lap` is the section, by distance along the road.
+        const int sections = track.sections();
+        if (s.lap > sections) return false;
+        if (region == next || (on_branch && ahead > 0 && ahead <= 4)) {
+            s.checkpoint = region;
+            if (region == ncp - 1) {
+                s.lap = sections + 1;
+                return true;
+            }
+        }
+        const int section = std::min(track.section_at(track.sample(s.sample).s), sections);
+        if (section > s.lap) {
+            s.lap = section;
+            return true;
+        }
+        return false;
+    }
     if (region == next || (on_branch && ahead > 0 && ahead <= 4)) {
         const bool lapped = region == next ? next == 0 : s.checkpoint + ahead >= ncp;
         s.checkpoint = region;
@@ -747,6 +772,7 @@ bool kart_update_progress(KartState& s, const Track& track) {
 float kart_race_distance(const KartState& s, const Track& track) {
     if (track.center.empty()) return 0.0f;
     float along = track.sample(s.sample).s;
+    if (track.point_to_point) return along; // one run from start to finish; `lap` is the section
     if (s.checkpoint == 0 && along > track.length * 0.5f) along -= track.length; // still before the line
     return float(s.lap - 1) * track.length + along;
 }
