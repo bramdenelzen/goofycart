@@ -342,8 +342,8 @@ void World::throw_item(int i, Item item, bool backwards, bool forwards) {
     ItemEntity e;
     e.owner = int8_t(i);
     e.sample = int16_t(k.sample);
-    // Along the road's floor: level on ordinary road, up a steep bank on grip road.
-    const vec3 up = track_.grip_up(k.sample);
+    // Along the road under the kart: up a slope, round a steep bank on grip road.
+    const vec3 up = k.grounded ? k.up() : track_.grip_up(k.sample);
     vec3 fwd = k.forward();
     fwd -= up * glm::dot(fwd, up);
     fwd = glm::length(fwd) > 0.1f ? glm::normalize(fwd) : vec3(0, 0, 1);
@@ -643,16 +643,16 @@ void World::update_entities() {
             const vec3 to_target = tk.pos - e.pos;
             vec3 dest;
             if (glm::length(to_target) < 14.0f) {
-                dest = tk.pos + kUp * 0.5f;
+                dest = tk.pos + tk.up() * 0.5f;
             } else {
                 // Advance along the centre line towards the leader's sample.
                 const uint32_t route = shell_route(tk);
                 for (int step = 0; step < 6 && e.sample != tk.sample; ++step) {
-                    const vec3 c = track_.sample(e.sample).pos + kUp * 3.0f;
+                    const vec3 c = track_.sample(e.sample).pos + track_.sample(e.sample).up * 3.0f;
                     if (glm::length(c - e.pos) > 4.0f) break;
                     e.sample = int16_t(track_.next(e.sample, route));
                 }
-                dest = track_.sample(e.sample).pos + kUp * 3.0f;
+                dest = track_.sample(e.sample).pos + track_.sample(e.sample).up * 3.0f;
             }
             const vec3 d = dest - e.pos;
             const float dist = glm::length(d);
@@ -665,7 +665,10 @@ void World::update_entities() {
         case EntityType::RedShell:
             if (e.target >= 0 && e.target < nk) {
                 const KartState& tk = karts_[size_t(e.target)];
-                const float speed = std::max(t.red_speed, glm::length(vec3(e.vel.x, 0, e.vel.z)));
+                // Steers in the plane of the road under it, so a slope or a
+                // bank costs it neither aim nor speed.
+                const vec3 ru = track_.sample(e.sample).up;
+                const float speed = std::max(t.red_speed, glm::length(e.vel - ru * glm::dot(e.vel, ru)));
                 vec3 dest;
                 if (glm::length(tk.pos - e.pos) < 22.0f) {
                     dest = tk.pos;
@@ -673,17 +676,15 @@ void World::update_entities() {
                     const uint32_t route = shell_route(tk);
                     for (int step = 0; step < 6; ++step) {
                         const vec3 c = track_.sample(e.sample).pos;
-                        if (glm::length(vec3(c.x - e.pos.x, 0, c.z - e.pos.z)) > 5.0f) break;
+                        const vec3 off = c - e.pos;
+                        if (glm::length(off - ru * glm::dot(off, ru)) > 5.0f) break;
                         e.sample = int16_t(track_.next(e.sample, route));
                     }
                     dest = track_.sample(e.sample).pos;
                 }
                 vec3 d = dest - e.pos;
-                d.y = 0.0f;
-                if (glm::length(d) > 1e-3f) {
-                    const vec3 want = glm::normalize(d) * speed;
-                    e.vel = vec3(want.x, e.vel.y, want.z);
-                }
+                d -= ru * glm::dot(d, ru);
+                if (glm::length(d) > 1e-3f) e.vel = glm::normalize(d) * speed + ru * glm::dot(e.vel, ru);
             }
             break;
         case EntityType::Boomerang:
@@ -703,13 +704,21 @@ void World::update_entities() {
 
         if (e.type != EntityType::Boomerang) {
             // Ground: shells and fireballs skim along it, bananas and bombs
-            // land and stay. On grip road "down" is into the road.
+            // land and stay. On grip road "down" is into the road. Resting and
+            // riding go by the road's own normal, so a slope or a bank holds
+            // an item as it holds a kart.
+            if (e.type != EntityType::RedShell && e.type != EntityType::SpikedShell) // those keep their progress in `sample`
+                e.sample = int16_t(track_.nearest_sample(e.pos, e.sample));
             const vec3 up = track_.grip_up(e.sample);
             const auto hit = track_.raycast(e.pos + up * 1.0f, -up, 3.0f);
-            const bool on_ground = hit && glm::dot(hit->normal, up) > 0.5f && glm::dot(e.pos - hit->point, up) < 0.5f && glm::dot(e.vel, up) <= 0.5f;
+            const vec3 n = hit ? hit->normal : up;
+            const bool on_ground = hit && glm::dot(n, up) > 0.5f && glm::dot(e.pos - hit->point, n) < 0.5f && glm::dot(e.vel, n) <= 0.5f;
             if (on_ground) {
-                e.pos = hit->point + up * kEntityRadius;
-                e.vel -= up * glm::dot(e.vel, up);
+                e.pos -= n * (glm::dot(e.pos - hit->point, n) - kEntityRadius); // out along the normal: no creep down a slope
+                // Riding along: over a change of slope it keeps its speed.
+                const float was = glm::length(e.vel);
+                e.vel -= n * glm::dot(e.vel, n);
+                if (e.grounded && glm::length(e.vel) > 1e-3f) e.vel *= was / glm::length(e.vel);
                 if (!e.grounded && e.type == EntityType::Bomb && e.life == 0) e.life = int16_t(t.bomb_fuse);
                 e.grounded = true;
                 if (e.type == EntityType::Banana || e.type == EntityType::Bomb || e.type == EntityType::OilSlick) e.vel = vec3(0.0f);

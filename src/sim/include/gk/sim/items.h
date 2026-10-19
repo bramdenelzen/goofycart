@@ -55,7 +55,7 @@ struct ItemEntity {
     bool returning = false;// boomerang on its way back
     vec3 pos{0.0f};
     vec3 vel{0.0f};
-    int16_t sample = 0;    // centre-line progress (red and spiked shells)
+    int16_t sample = 0;    // road sample it's over (red and spiked shells: progress along the road)
     int16_t age = 0;       // ticks since spawned
     int16_t life = 0;      // ticks left; 0 = forever
 };

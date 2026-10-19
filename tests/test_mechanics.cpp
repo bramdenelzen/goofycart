@@ -404,3 +404,222 @@ TEST_CASE("flat out on flat road the kart never leaves it") {
         CHECK(w.karts()[0].grounded);
     }
 }
+
+namespace {
+
+// A straight road that runs flat, then bends smoothly into a climb of
+// `degrees` from about z = 100 on.
+Track slope_track(float degrees) {
+    Track t;
+    t.name = "slope";
+    const float rise = std::tan(glm::radians(degrees)), L = 10.0f;
+    auto y = [&](float z) { return rise * L * std::log1p(std::exp((z - 100.0f) / L)); };
+    auto dy = [&](float z) { return rise / (1.0f + std::exp(-(z - 100.0f) / L)); };
+    for (int i = 0; i <= 500; ++i) {
+        const float z = float(i) * 2.0f - 100.0f;
+        t.vertices.push_back({-10.0f, y(z), z});
+        t.vertices.push_back({10.0f, y(z), z});
+        if (i == 0) continue;
+        const uint32_t a = uint32_t(2 * (i - 1)), b = uint32_t(2 * i);
+        t.triangles.push_back({a, b, b + 1, Surface::Road});
+        t.triangles.push_back({a, b + 1, a + 1, Surface::Road});
+    }
+    for (int i = 0; i < 450; ++i) {
+        const float z = float(i) * 2.0f - 100.0f;
+        CenterSample c;
+        c.pos = {0, y(z), z};
+        c.tangent = glm::normalize(vec3(0, dy(z), 1));
+        c.right = {-1, 0, 0};
+        c.up = glm::normalize(vec3(0, 1, -dy(z)));
+        c.half_width = 10.0f;
+        c.s = c.u = float(i) * 2.0f;
+        t.center.push_back(c);
+    }
+    t.checkpoints = {0};
+    t.length = 900.0f;
+    t.kill_y = -30.0f;
+    t.finalize();
+    return t;
+}
+
+// The oval with its straight banked at 80 degrees on grip road.
+Track bank80() {
+    return build_track(oval(R"({"type":"grip","from":[0,10],"to":[0,140]},
+                              {"type":"bank","from":[0,20],"to":[0,130],"angle":80})"));
+}
+
+// The first sample of the bank at its full angle.
+int bank_start(const Track& t) {
+    int i = t.nearest_sample(vec3(0, 0, 0));
+    while (t.sample(i).up.y > std::cos(glm::radians(78.0f))) ++i;
+    return i;
+}
+
+World world_of(Track t, int karts) {
+    World w(std::move(t), test::tables(), RaceConfig{.laps = 1 << 30, .countdown_frames = 1});
+    for (int i = 0; i < karts; ++i) w.add_kart(test::default_params(w.tables(), test::parts()));
+    w.tick(std::vector<KartInput>(size_t(karts)));
+    return w;
+}
+
+// Puts kart `i` at rest on the road at `sample`.
+void park(World& w, int i, int sample, float lateral) {
+    KartState& k = w.karts_mut()[size_t(i)];
+    const CenterSample& c = w.track().sample(sample);
+    k.pos = c.pos + c.right * lateral + c.up * 0.05f;
+    k.rot = facing(c.tangent, c.up);
+    k.speed = 0.0f;
+    k.slide = k.air_vel = vec3(0.0f);
+    k.grounded = true;
+    k.sample = k.last_safe_sample = sample;
+}
+
+// An item just above the road at `sample`, `lateral` m right of the middle,
+// moving along the road at `speed`.
+ItemEntity item_on(const Track& t, EntityType type, int sample, float lateral, float speed) {
+    const CenterSample& c = t.sample(sample);
+    ItemEntity e;
+    e.type = type;
+    e.owner = 0;
+    e.sample = int16_t(sample);
+    e.pos = c.pos + c.right * lateral + c.up * 0.3f;
+    e.vel = c.tangent * speed;
+    e.age = 100; // long out of its thrower's hands
+    e.life = int16_t(type == EntityType::Fireball ? 150 : type == EntityType::GreenShell ? 600 : 0);
+    return e;
+}
+
+// Where `p` is against the road beside it: height along the road's up, and across it.
+struct Against {
+    float height, across, half_width;
+    vec3 tangent;
+};
+Against against(const Track& t, vec3 p) {
+    const CenterSample& c = t.sample(t.nearest_sample(p));
+    return {glm::dot(p - c.pos, c.up), glm::dot(p - c.pos, c.right), c.half_width, c.tangent};
+}
+
+// Runs one item alone for `frames` and checks it stays on the road the
+// whole way. Returns it as it ends up.
+ItemEntity ride(World& w, const ItemEntity& start, int frames) {
+    w.entities_mut() = {start};
+    for (int f = 0; f < frames; ++f) {
+        w.tick(std::vector<KartInput>(w.karts().size()));
+        REQUIRE(w.entities().size() == 1);
+        const ItemEntity& e = w.entities()[0];
+        const Against a = against(w.track(), e.pos);
+        CAPTURE(f);
+        CHECK(a.height > -0.3f);
+        CHECK(a.height < 1.5f);
+        CHECK(std::abs(a.across) < a.half_width);
+    }
+    return w.entities()[0];
+}
+
+} // namespace
+
+TEST_CASE("shells, fireballs, bananas and bombs ride and rest on an 80-degree grip bank") {
+    const Track probe = bank80();
+    const int start = bank_start(probe);
+    REQUIRE(probe.grip_at(start));
+    REQUIRE(probe.grip_at(start + 40));
+    for (const EntityType type : {EntityType::GreenShell, EntityType::Fireball, EntityType::Banana, EntityType::Bomb}) {
+        CAPTURE(int(type));
+        World w = world_of(bank80(), 1);
+        park(w, 0, start + 120, 0.0f); // well out of the way
+        const bool rolls = type == EntityType::GreenShell || type == EntityType::Fireball;
+        // Shells and fireballs come onto the bank from the level road before it.
+        const ItemEntity e0 = item_on(w.track(), type, rolls ? start - 20 : start, -3.0f, rolls ? 24.0f : 0.0f);
+        const ItemEntity e = ride(w, e0, rolls ? 140 : 60); // a fireball burns out at 150
+        if (rolls) CHECK(w.track().sample(w.track().nearest_sample(e.pos)).up.y < 0.25f); // out on the bank
+        CHECK(e.grounded);
+        const Against a = against(w.track(), e.pos);
+        if (rolls) {
+            CHECK(glm::dot(e.vel, a.tangent) > 20.0f); // still going along the bank, not slowed by it
+        } else {
+            CHECK(glm::length(e.pos - e0.pos) < 1.0f); // stays where it was dropped
+            CHECK(std::abs(a.height) < 0.6f);           // lying on the bank
+        }
+    }
+}
+
+TEST_CASE("a red shell catches its target on an 80-degree grip bank and up a steep slope") {
+    {
+        World w = world_of(bank80(), 2);
+        const int start = bank_start(w.track());
+        park(w, 0, start + 120, 0.0f);
+        park(w, 1, start + 30, 3.0f); // 60 m on, low on the bank
+        ItemEntity e = item_on(w.track(), EntityType::RedShell, start - 20, -3.0f, 25.0f); // from the level road before it
+        e.target = 1;
+        w.entities_mut() = {e};
+        bool hit = false;
+        for (int f = 0; f < 180 && !hit; ++f) {
+            w.tick(std::vector<KartInput>(2));
+            for (const auto& ev : w.events()) hit |= ev.type == KartEventType::Hit && ev.kart == 1;
+            if (!hit && !w.entities().empty()) {
+                const Against a = against(w.track(), w.entities()[0].pos);
+                CHECK(a.height > -0.3f);
+                CHECK(a.height < 1.5f);
+            }
+        }
+        CHECK(hit);
+    }
+    {
+        World w = world_of(slope_track(40.0f), 2);
+        const int start = w.track().nearest_sample(vec3(0, 0, 90));
+        park(w, 0, start + 200, 0.0f);
+        park(w, 1, start + 30, -4.0f); // up the slope, off to the side
+        float way = 0.0f; // along the road to it
+        for (int i = start; i < start + 30; ++i) way += glm::length(w.track().sample(i + 1).pos - w.track().sample(i).pos);
+        ItemEntity e = item_on(w.track(), EntityType::RedShell, start, 4.0f, 25.0f);
+        e.target = 1;
+        w.entities_mut() = {e};
+        int hit_at = -1;
+        for (int f = 0; f < 240 && hit_at < 0; ++f) {
+            w.tick(std::vector<KartInput>(2));
+            for (const auto& ev : w.events())
+                if (ev.type == KartEventType::Hit && ev.kart == 1) hit_at = f;
+        }
+        CHECK(hit_at >= 0);
+        CHECK(float(hit_at) < way / w.item_tuning().red_speed * 60.0f * 1.15f); // at shell speed, not slowed by the climb
+    }
+}
+
+TEST_CASE("a green shell climbs a steep slope at its speed, a banana rests on it") {
+    World w = world_of(slope_track(40.0f), 1);
+    const int start = w.track().nearest_sample(vec3(0, 0, 150));
+    REQUIRE(w.track().sample(start).up.y < 0.8f);
+    park(w, 0, start + 200, 0.0f);
+    const ItemEntity shell = ride(w, item_on(w.track(), EntityType::GreenShell, start, 0.0f, 30.0f), 40);
+    CHECK(shell.grounded);
+    CHECK(glm::dot(shell.vel, against(w.track(), shell.pos).tangent) > 27.0f);
+    const ItemEntity banana0 = item_on(w.track(), EntityType::Banana, start, 2.0f, 0.0f);
+    const ItemEntity banana = ride(w, banana0, 60);
+    CHECK(banana.grounded);
+    CHECK(glm::length(banana.pos - banana0.pos) < 1.0f);
+}
+
+TEST_CASE("a spiked shell flies along the road's up over an 80-degree grip bank") {
+    World w = world_of(bank80(), 2);
+    const int start = bank_start(w.track());
+    park(w, 0, start - 5, 0.0f);
+    park(w, 1, start + 120, 0.0f); // the leader, far ahead
+    w.karts_mut()[1].lap = 2;
+    ItemEntity e = item_on(w.track(), EntityType::SpikedShell, start, 0.0f, 0.0f);
+    e.pos = w.track().sample(start).pos + w.track().sample(start).up * 3.0f;
+    w.entities_mut() = {e};
+    int checked = 0;
+    for (int f = 0; f < 50; ++f) {
+        w.tick(std::vector<KartInput>(2));
+        REQUIRE(w.entities().size() == 1);
+        const ItemEntity& s = w.entities()[0];
+        const CenterSample& c = w.track().sample(w.track().nearest_sample(s.pos));
+        if (!w.track().grip_at(w.track().nearest_sample(s.pos)) || c.up.y > 0.3f) continue; // on the full bank only
+        ++checked;
+        CAPTURE(f);
+        const Against a = against(w.track(), s.pos);
+        CHECK(a.height > 1.5f);
+        CHECK(std::abs(a.across) < a.half_width);
+    }
+    CHECK(checked > 5);
+}

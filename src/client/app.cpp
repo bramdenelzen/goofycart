@@ -2351,15 +2351,23 @@ void App::draw_items(const sim::World& w) {
         draw_item_mesh(box_mesh_, "item_box", glm::scale(m, vec3(scale)));
         renderer_.set_fx(0);
     }
+    const sim::Track& track = w.track();
     for (const sim::ItemEntity& e : w.entities()) {
-        mat4 m = glm::translate(mat4(1.0f), e.pos - vec3(0, 0.3f, 0));
-        const float yaw = std::atan2(e.vel.x, e.vel.z);
+        // Stood on the road under it, heading where it goes: up a slope, round
+        // a grip bank. An explosion has no road of its own and stays upright.
+        const bool on_road = e.type != sim::EntityType::Explosion && e.sample >= 0 && size_t(e.sample) < track.road.size();
+        const sim::CenterSample* c = on_road ? &track.sample(e.sample) : nullptr;
+        const vec3 up = c ? c->up : vec3(0, 1, 0);
+        vec3 fwd = e.vel - up * glm::dot(e.vel, up);
+        if (glm::length(fwd) < 0.1f) fwd = c ? c->tangent : vec3(0, 0, 1);
+        fwd = glm::normalize(fwd - up * glm::dot(fwd, up));
+        mat4 m = glm::translate(mat4(1.0f), e.pos - up * 0.3f) * mat4(glm::mat3(glm::cross(up, fwd), up, fwd));
         switch (e.type) {
         case sim::EntityType::Banana: draw_item_mesh(banana_mesh_, "banana", m); break;
         case sim::EntityType::OilSlick: { // a puddle on the road, spreading out as it lands
             const float spread = std::min(1.0f, float(e.age) / 20.0f);
             renderer_.set_fx(6);
-            renderer_.draw(oil_disc_mesh_, glm::scale(glm::rotate(glm::translate(mat4(1.0f), e.pos - vec3(0, 0.32f, 0)), float(e.owner) * 1.3f, vec3(0, 1, 0)),
+            renderer_.draw(oil_disc_mesh_, glm::scale(glm::rotate(glm::translate(m, vec3(0, -0.02f, 0)), float(e.owner) * 1.3f, vec3(0, 1, 0)),
                                                       vec3(2.2f * spread, 1.0f, 1.9f * spread)));
             renderer_.set_fx(0);
             break;
@@ -2372,7 +2380,7 @@ void App::draw_items(const sim::World& w) {
         case sim::EntityType::Bomb: {
             // Flashes faster as the fuse runs down.
             const bool lit = e.life > 0 && (e.life < 40 ? (e.age / 3) % 2 : (e.age / 10) % 2);
-            draw_item_mesh(bomb_mesh_, "bomb", glm::rotate(m, yaw, vec3(0, 1, 0)), lit ? vec4(2.5f, 1.2f, 1.0f, 1.0f) : vec4(1.0f));
+            draw_item_mesh(bomb_mesh_, "bomb", m, lit ? vec4(2.5f, 1.2f, 1.0f, 1.0f) : vec4(1.0f));
             break;
         }
         case sim::EntityType::Fireball:
