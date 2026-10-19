@@ -26,7 +26,13 @@ and commit them.
 - `track_mesh.cpp` (~1900 lines): `theme_style` (palette per theme),
   `make_track_mesh` (road, walls, underside), `make_scenery_mesh` (ground,
   hills, tunnels, grandstands, market town, islands), zone, barrier,
-  switch, vent, current and lava meshes. `lava.h` mirrors the lava shader's
+  switch, vent, current (and conveyor chevron) and lava meshes;
+  `make_wave_mesh` builds a wave stretch as its own mesh (the main road
+  mesh leaves that range out) with the ease in the vertex alpha, drawn
+  with fx 7 in `mesh.vert`, which lifts vertices by the same sine the sim
+  uses (`App::draw_gates` passes amplitude, wavenumber and phase in the
+  tint). Mover meshes (`App::make_mover_mesh`) cover platforms, blocks,
+  presses and swings; `draw_movers` places them with `Track::mover_frame`. `lava.h` mirrors the lava shader's
   bubbles on the CPU and must match `lava_color()` in `mesh.frag`.
 - `trackside.cpp`: painted walls, rails, kerbs, flags.
 - `kart_mesh.cpp`: low-poly karts and gliders from each part's `look`.

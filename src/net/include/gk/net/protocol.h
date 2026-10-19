@@ -19,7 +19,7 @@
 //   kChannelChat     reliable, low priority: chat and emotes
 namespace gk::net {
 
-inline constexpr uint16_t kProtocolVersion = 17; // bump when the race changes too: both sides build the track from data
+inline constexpr uint16_t kProtocolVersion = 18; // bump when the race changes too: both sides build the track from data
 inline constexpr uint16_t kDefaultPort = 7777;
 inline constexpr uint8_t kChannelState = 0;
 inline constexpr uint8_t kChannelEvents = 1;

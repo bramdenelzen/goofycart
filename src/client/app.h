@@ -131,12 +131,13 @@ private:
     std::map<std::string, std::vector<render::MeshId>> mover_meshes_; // per track, one per mover
     // What comes and goes during a race: roads that vanish, barriers that
     // rise and sink, switches, zones. Drawn from the world's gate state.
-    void draw_gates(const sim::World& w);
+    void draw_gates(const sim::World& w, float alpha);
     struct GateMeshes {
         std::vector<std::pair<int, std::pair<render::MeshId, render::MeshId>>> roads; // branch, (road, painted walls)
         std::vector<render::MeshId> barriers, zones;
         std::vector<std::pair<render::MeshId, render::MeshId>> switches; // up, pressed
         std::vector<render::MeshId> vents, currents;
+        std::vector<render::MeshId> waves; // one per wavy stretch, moved by the shader (fx 7)
     };
     std::map<std::string, GateMeshes> gate_meshes_;
     std::vector<float> barrier_rise_; // 0 sunk .. 1 standing, eased
@@ -320,6 +321,7 @@ private:
     bool cam_init_ = false;
     bool cam_back_ = false;
     vec3 cam_dir_{0.0f, 0.0f, 1.0f};
+    vec3 cam_up_{0.0f, 1.0f, 0.0f}; // leans with grip road
     float cam_height_ = 2.2f, cam_dist_ = 5.5f, cam_y_ = 0.0f;
     HudMessage message_;
     bool show_help_ = true;

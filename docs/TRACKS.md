@@ -78,13 +78,16 @@ they are metres from where the branch leaves.
 | `no_walls` | open edges | `from`, `to`, `side` |
 | `item_boxes` | a row of four boxes | `at` |
 | `obstacle` | a block or pillar (`prop`: crate, barrel, crystal, tires, solid) | `at`, `offset`, `shape`, `width`, `length`, `height` |
-| `mover` | a moving platform or block | `at`, `kind`, `travel`, `period`, `phase` |
+| `mover` | a moving platform, block, press or swing | `at`, `kind`, `travel`, `period`, `phase`, `drop`, `arm`, `angle` |
 | `stairs` | main loop only: the road drawn as steps | `from`, `to` |
 | `barrier` | a wall that stands while its gate holds | `at`, `when`, `width` (0 = whole road), `offset`, `thickness`, `height` |
 | `switch` | a pad; driving over it presses it | `at`, `name`, `offset`, `width`, `hold` (seconds) |
 | `zone` | the road's surface changes while its gate holds | `from`, `to`, `surface`, `when`, `side` or `offset` + `width` |
 | `tunnel` | a roofed stretch: an arched vault over the road | `from`, `to`, `height` (m, default 7), `style` |
-| `bank` | the road tilted across, easing in and out over 15 m | `from`, `to`, `angle` (degrees, + the right side lower, at most 35) |
+| `bank` | the road tilted across, easing in and out over 15 m | `from`, `to`, `angle` (degrees, + the right side lower; at most 35, or 80 on grip road) |
+| `grip` | grip road: karts stick to it however steep it banks, and gain speed downhill | `from`, `to` |
+| `conveyor` | dry road that moves, carrying karts along or across | `from`, `to`, `push` (m/s along), `drift` (m/s across, + right), `when` |
+| `wave` | the road rolls in travelling waves | `from`, `to`, `amplitude` (m), `wavelength` (m), `period` (s), `phase`, `when` |
 | `current` | deep water only: the water moves, carrying karts with it | `from`, `to`, `push` (m/s along), `drift` (m/s across, + right), `when` |
 | `vent` | deep water only: a bubble vent that throws karts up | `at`, `offset`, `width`, `lift` (m/s up), `period`, `open`, `phase`, `when` |
 
@@ -143,6 +146,114 @@ terrain, the ground keeps below the road's low edge.
 ```json
 {"type": "bank", "from": [7, 45], "to": [9, 20], "angle": -22}
 ```
+
+### Grip road
+
+A `grip` stretch is road the karts cannot fall off: a steep bank, a spiral
+down a tower, a corkscrew. It is not anti-gravity. On the ground nothing
+changes (the kart already follows the road's normal); in the air over it
+gravity, steering and the kart's up all follow the road's up at the nearest
+sample, so a hop or a bump off an 80° wall lands back on the wall instead of
+dropping to the floor below. Banks steeper than 35° are allowed only where a
+`grip` covers the whole bank (the parser refuses them otherwise), up to 80°;
+their ease-in grows with the angle (15 m per 35°). Three things make it
+worth racing:
+
+* Going downhill on grip road raises the kart's top speed by half the slope
+  (`grip_descent_gain`: a 1-in-2 descent is 25% faster), and the speed
+  built there bleeds off gently for a second and a half after the grip ends
+  instead of snapping back, so a spiral's exit is a slingshot.
+* Drifts charge mini-turbos a quarter faster on it.
+* The camera rolls with the road (up to 55°), so a wall ride reads as a wall
+  ride; thrown items and dropped bananas follow the road's up too.
+
+```json
+{"type": "grip", "from": [11, 0], "to": [14, 10]},
+{"type": "bank", "from": [11, 10], "to": [14, 0], "angle": -70}
+```
+
+Shape the spiral with the control points (a helix is just a loop of points
+losing height; a banked tube works the same) and keep the `grip` a little
+longer than the bank at both ends, so the ease-in and ease-out are covered.
+Grip road wants no walls on its low side (`no_walls`) when the bank itself
+holds the kart; a wall there reads as a ledge. CPUs drive it as ordinary
+road.
+
+### Conveyors
+
+A `conveyor` is a `current` for dry road: a belt, a drifting ice floe, a
+moving walkway. Every grounded kart on it is carried `push` m/s along the
+road (negative against the traffic) and `drift` m/s across it (positive to
+the right) on top of its own driving; airborne karts are not. It is drawn as
+yellow chevrons on the road. With `when` a belt can run only while a gate
+holds, so a switch can reverse it: two conveyors over the same stretch, one
+with `push` and one with `-push`, gated on the switch and its opposite.
+
+```json
+{"type": "conveyor", "from": [4, 0], "to": [5, 20], "push": 6},
+{"type": "conveyor", "from": [9, 0], "to": [10, 0], "push": -8, "when": "reverse"}
+```
+
+A conveyor against the traffic should be beatable at top speed (keep `push`
+under about 10) and a crosswise one gentle enough to steer against; the CPUs
+know nothing of either.
+
+### Waves
+
+A `wave` makes the road itself rise and fall: a boardwalk on a swell, a
+rubber floor, a haunted corridor whose boards heave. The road's height is
+raised by `amplitude` × sin over `wavelength` metres, the crests travelling
+with the traffic one `wavelength` every `period` seconds, easing in and out
+at the stretch's ends. The collision is analytic (the wave is a function of
+the tick, so the server, the clients and the ghosts agree to the frame) and
+the drawn road is displaced the same way in the vertex shader. Karts ride
+the swell; a crest taken at speed is a take-off, so a wave is a trick
+surface in its own right (tricks pay out only after 12 frames of air, so
+rolling over a gentle swell gives nothing). `when` gates it.
+
+```json
+{"type": "wave", "from": [15, 0], "to": [17, 0], "amplitude": 0.8, "wavelength": 14, "period": 2.5}
+```
+
+Keep `amplitude` under about a metre (1.5 is the most the parser takes), the
+`wavelength` at least four times the amplitude, and waves off bridges, banks
+and junctions.
+
+### Presses and swings
+
+A `mover` is a `platform` (karts ride it: `travel`, `period`, `phase`,
+`ramp`, `boost`), a `block` (it shoves them), a `press` or a `swing`.
+
+A `press` is a block that slams down onto the road: it rests `drop` metres
+up for half its period, drops in a tenth of it, holds flat on the road for
+a fifth and rises in the last fifth. A kart under it when it comes down is
+squashed (a tumble, a `Squash` event: a crunch and a thump) and a kart on
+the road beside it is untouched. The default press is 6 m across, 4 m along
+the road and 2.4 m tall; `width`, `length` and `height` size it, `offset`
+places it and `drop` (at least 1.5) sets how high it lifts. A kart can
+drive under a raised press.
+
+```json
+{"type": "mover", "at": [6, 12], "kind": "press", "period": 3, "phase": 0.5, "drop": 3.5},
+{"type": "mover", "at": [6, 24], "kind": "press", "period": 3, "phase": 0.0, "offset": -3, "width": 5}
+```
+
+A `swing` is a platform hanging from a pivot `arm` metres above its deck
+that sways `angle` degrees either way about the road's direction, one full
+swing per `period`: a gondola, a pendulum bridge. Karts on it are carried
+with the deck, so a kart that sits still rides out to the end of each sweep
+and a kart leaving at the far end has the deck's lean to deal with.
+`height_above` lifts the deck above the road.
+
+```json
+{"type": "mover", "at": [10, 30], "kind": "swing", "arm": 8, "angle": 30, "period": 4, "width": 8, "length": 12}
+```
+
+Presses, swings, conveyors and waves are all functions of the race tick, so
+they stay in step across the network and in ghosts; none of them needs a
+gate to move. The CPU drivers know nothing of presses or waves: give a line
+of presses a phase pattern a kart at top speed slips through, and keep
+waves on straights.
 
 A `tunnel` roofs the road from `from` to `to`, on the main loop or a branch:
 

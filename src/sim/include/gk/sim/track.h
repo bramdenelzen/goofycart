@@ -31,6 +31,7 @@ struct CenterSample {
     bool has_floor = true; // false over gaps the glider crosses
     int branch = -1;       // -1 the main loop, else the index in Track::branches
     float u = 0.0f;        // distance along its own road (m): texture runs, not progress
+    bool grip = false;     // grip road: karts in the air fall towards it, not down
 };
 
 struct RayHit {
@@ -119,22 +120,32 @@ public:
     std::vector<Obstacle> obstacles;
 
     // Things that move on a loop: platforms karts drive and land on (with
-    // sloped ends), and solid blocks to dodge. Where they are depends only on
-    // the world tick, so prediction and rollback need no extra state.
+    // sloped ends), solid blocks to dodge, presses that slam down onto the
+    // road (a kart under one is squashed: a tumble), and platforms swinging
+    // under a pivot. Where they are depends only on the world tick, so
+    // prediction and rollback need no extra state.
     struct Mover {
-        enum class Kind : uint8_t { Platform, Block };
+        enum class Kind : uint8_t { Platform, Block, Press, Swing };
         Kind kind = Kind::Platform;
-        vec3 base{0.0f};               // centre of the base at the middle of the swing
+        vec3 base{0.0f};               // centre of the base at the middle of the swing (presses: at rest, up)
         vec3 forward{0, 0, 1}, right{1, 0, 0}, up{0, 1, 0};
         vec3 half{2.0f, 0.4f, 3.0f};   // across, height / 2, along (m)
-        vec3 travel{0.0f};             // swing amplitude, world metres: base +- travel
+        vec3 travel{0.0f};             // swing amplitude, world metres: base +- travel (presses: base + travel when down)
         int period = 240;              // ticks per swing there and back
         float phase = 0.0f;            // 0..1 offset into the swing
         float ramp = 0.0f;             // platforms: length of each sloped end (m)
         Surface deck = Surface::Road;  // platforms: BoostPad makes a moving dash panel
+        float arm = 0.0f;              // swings: from the pivot down to the deck (m)
+        float angle = 0.0f;            // swings: the sway either way (radians), about `forward`
         int sample = 0;
     };
     std::vector<Mover> movers;
+    // A mover's axes this tick: fixed, except a swing's, which tilt with it.
+    struct Frame { vec3 right, up, forward; };
+    Frame mover_frame(size_t i, double tick) const;
+    // Presses: 0 resting up .. 1 slammed down, and whether it is on the way down.
+    float press_phase(const Mover& m, double tick) const;
+    bool press_falling(const Mover& m, double tick) const;
 
     // ---- alternate roads and things that change during the race
 
@@ -211,17 +222,44 @@ public:
     // The surface a zone puts at `p` (on road sample `sample`), if one is active there.
     std::optional<Surface> zone_surface(vec3 p, int sample) const;
 
-    // Deep water only: a stream over a stretch of road that carries karts
-    // along it (+ with the traffic) or across it (+ to the right), in m/s.
+    // A stream over a stretch of road that carries karts along it (+ with
+    // the traffic) or across it (+ to the right), in m/s: deep water that
+    // moves, or (`dry`) a conveyor belt in the road.
     struct Current {
         int first = 0, count = 0;      // samples in `road`, consecutive on one road
         float lo = -1e9f, hi = 1e9f;   // across the road (m from its centre, + right)
         float push = 0.0f, drift = 0.0f;
         int gate = -1;
+        bool dry = false;              // a conveyor: carries karts on the ground, not under water
     };
     std::vector<Current> currents;
-    // The carry a kart at `p` (on road sample `sample`) gets from the currents, m/s.
-    vec3 current_at(vec3 p, int sample) const;
+    // The carry a kart at `p` (on road sample `sample`) gets from the
+    // currents, m/s: the water's when it is under water, the conveyors' when
+    // it is on the ground.
+    vec3 current_at(vec3 p, int sample, bool underwater, bool grounded = true) const;
+
+    // A stretch of road that rolls: its floor rises and falls `amplitude`
+    // metres in waves `wavelength` metres long travelling with the traffic,
+    // one wave every `period` ticks, easing in and out at the ends. The
+    // triangles stay put; `raycast` lifts its floor hits to the wave, and the
+    // client moves the vertices the same way.
+    struct Wave {
+        int first = 0, count = 0;      // samples in `road`, consecutive on one road
+        float u0 = 0.0f, length = 0.0f;// metres along its road
+        float amplitude = 0.6f, wavelength = 12.0f;
+        int period = 120;
+        float phase = 0.0f;
+        int gate = -1;
+    };
+    std::vector<Wave> waves;
+    float wave_ease(const Wave& w, float d) const;  // 0..1 by distance `d` into the wave's stretch
+    // The wave's lift at `p` this tick (0 off any wave) and its slope along the road.
+    float wave_height(vec3 p, double tick, float* slope = nullptr, vec3* tangent = nullptr) const;
+    const Wave* wave_at(int sample) const;
+
+    // Grip road: the up the karts fall towards at this sample (the road's, or the world's).
+    bool grip_at(int sample) const { return size_t(sample) < road.size() && road[size_t(sample)].grip; }
+    vec3 grip_up(int sample) const { return grip_at(sample) ? road[size_t(sample)].up : vec3(0, 1, 0); }
 
     // A vent on the floor of deep water: a column of bubbles that lifts a kart
     // driving over it, blowing all the time or for `open` of every `period` ticks.

@@ -37,6 +37,14 @@ queries against the track.
 - Tricks: launch surfaces (trick/glide ramps, pads, vents) and any natural
   take-off at speed (a lip, crest or ledge) open a trick window; the boost
   pays out on landing only after `trick_min_air_frames` of air.
+- Grip road (`CenterSample::grip`, `Track::grip_up`): airborne gravity,
+  yaw and the landing test use the road's up instead of world up, so hops
+  off an 80° bank come back to it; `align_up` keeps the heading when the
+  road's up changes. A descent raises `top` by `grip_descent_gain` per
+  unit of downward slope; `grip_carry` frames of `grip_carry_decel` ease
+  the extra speed off afterwards; drifts charge `grip_charge_mult` faster.
+  Conveyors and currents move the kart through `current_at` after the
+  step. Tests in `tests/test_mechanics.cpp`.
 - Rocket start timing is in `kart_on_go`.
 
 ## Data

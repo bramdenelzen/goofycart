@@ -107,17 +107,33 @@ void World::tick(std::span<const KartInput> inputs) {
     step_inputs_.assign(karts_.size(), KartInput{});
     for (size_t i = 0; i < karts_.size() && i < inputs.size(); ++i) step_inputs_[i] = inputs[i];
     if (config_.items && !frozen) items_before_step(step_inputs_);
-    // Movers step to this tick; karts riding a platform go along with it.
+    // Movers step to this tick; karts riding a platform go along with it
+    // (and turn with a swing); a kart under a press as it comes down is
+    // squashed: a tumble, and the press shoves it out of the way.
     for (size_t m = 0; m < track_.movers.size(); ++m) {
         const Track::Mover& mv = track_.movers[m];
         const vec3 before = track_.mover_pos(m, double(tick_ - 1)), after = track_.mover_pos(m, double(tick_));
-        if (mv.kind != Track::Mover::Kind::Platform) continue;
+        const Track::Frame f0 = track_.mover_frame(m, double(tick_ - 1)), f1 = track_.mover_frame(m, double(tick_));
+        if (mv.kind == Track::Mover::Kind::Press) {
+            if (frozen || !track_.press_falling(mv, double(tick_))) continue;
+            for (size_t ki = 0; ki < karts_.size(); ++ki) {
+                KartState& k = karts_[ki];
+                if (k.respawn_frames > 0 || k.tumble_frames > 0) continue;
+                const vec3 rel = k.pos - after;
+                const float x = glm::dot(rel, f1.right), y = glm::dot(rel, f1.up), z = glm::dot(rel, f1.forward);
+                if (std::abs(x) > mv.half.x || std::abs(z) > mv.half.z || y > 0.2f || y < -1.6f) continue;
+                apply_hit(int(ki), HitKind::Tumble, -1);
+                events_.push_back({KartEventType::Squash, int(ki), int(m)});
+            }
+            continue;
+        }
+        if (mv.kind == Track::Mover::Kind::Block) continue;
         for (KartState& k : karts_) {
             if (!k.grounded || k.respawn_frames > 0) continue;
             const vec3 rel = k.pos - before;
-            const float x = glm::dot(rel, mv.right), y = glm::dot(rel, mv.up), z = glm::dot(rel, mv.forward);
+            const float x = glm::dot(rel, f0.right), y = glm::dot(rel, f0.up), z = glm::dot(rel, f0.forward);
             const float top = track_.mover_top(mv, x, z);
-            if (top > 0.05f && std::abs(y - top) < 0.35f) k.pos += after - before;
+            if (top > 0.05f && std::abs(y - top) < 0.35f) k.pos = after + f1.right * x + f1.up * y + f1.forward * z;
         }
     }
     track_.mover_time = double(tick_);

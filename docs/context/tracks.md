@@ -14,14 +14,20 @@ need.
 2. `build_track(def)` (top of `track_builder.cpp`, ~670 lines): Catmull-Rom
    spline resampled every ~2 m, four-lane road, verges, walls, ramps, boost
    pads, glide gaps, item box rows, obstacles, stairs, zones, tunnels,
-   movers, switches, barriers; side roads (branches) along their own open
+   banks and grip road, movers (platforms, blocks, presses, swings),
+   conveyors, waves, switches, barriers; side roads (branches) along their own open
    splines, joined by a shared stretch and a walled nose.
 3. `Track::finalize()` (`src/sim/track.cpp`) builds Jolt `MeshShape`
    collision (one per triangle group: 0 fixed track, k branch k-1) and the
    racing line. `Track` (`track.h`) holds samples, checkpoints, gates,
-   zones, deep water, currents, vents, tunnels, and query helpers
-   (`raycast`, `collide_sphere`, `nearest_sample`, `grid_slot`,
-   `respawn_sample_before`, `section_at`).
+   zones, deep water, currents (a `dry` one is a conveyor), vents,
+   tunnels, waves, grip flags per sample, and query helpers (`raycast`,
+   `collide_sphere`, `nearest_sample`, `grid_slot`,
+   `respawn_sample_before`, `section_at`, `grip_up`, `current_at`,
+   `wave_height`, `mover_pos`/`mover_frame`/`press_falling`). Movers and
+   waves are analytic functions of the tick, tested directly by `raycast`
+   and `collide_sphere` rather than through Jolt; `mover_time` is the tick
+   they are evaluated at.
 4. `data/tracks/tracks.json` groups tracks into cups (four per cup, a track
    in one cup only). `TrackCatalog::load`, `make_track(catalog, id)`.
 
@@ -38,7 +44,10 @@ alternate paths that can open and close.
   Quickest way to try a layout change.
 - Bridges need 8 m headroom where the spline crosses itself (tested in
   `tests/test_tracks.cpp`). Other track tests: `test_point_to_point`,
-  `test_paths` (branches), `test_props`, `test_tunnels`, `test_water`.
+  `test_paths` (branches), `test_props`, `test_tunnels`, `test_water`,
+  `test_mechanics` (grip road, conveyors, waves, presses, swings).
+- Banks over 35° need a covering `grip` feature (`check_steep_banks`);
+  `kGripBank` (80°) is the limit.
 - Visual seams: `gk_client --track <id> --seam-tour <dir>` photographs the
   track; `src/client/render/seam_check.cpp` finds cracks, z-fighting,
   terrain through the road and floating props. Findings and fixes are in

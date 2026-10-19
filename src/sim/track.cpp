@@ -188,9 +188,10 @@ bool Track::in_deep_water(vec3 p, int sample) const {
     return false;
 }
 
-vec3 Track::current_at(vec3 p, int sample) const {
+vec3 Track::current_at(vec3 p, int sample, bool underwater, bool grounded) const {
     vec3 carry(0.0f);
     for (const Current& cu : currents) {
+        if (cu.dry ? (underwater || !grounded) : !underwater) continue;
         if (sample < cu.first || sample >= cu.first + cu.count || !gate_holds(cu.gate)) continue;
         const CenterSample& c = road[size_t(sample)];
         const float lat = glm::dot(p - c.pos, c.right);
@@ -248,10 +249,84 @@ vec3 Track::line_point(int sample) const {
     return line.size() <= size_t(sample) ? c.pos : c.pos + c.right * line[size_t(sample)].offset;
 }
 
+// A press rests up for the first half of its period, slams down in a tenth
+// of it, sits for a fifth, and rises over the last fifth.
+float Track::press_phase(const Mover& m, double tick) const {
+    const double t = std::fmod(tick / double(std::max(m.period, 1)) + double(m.phase), 1.0);
+    const double f = t < 0.0 ? t + 1.0 : t;
+    if (f < 0.5) return 0.0f;
+    if (f < 0.6) { const float x = float((f - 0.5) / 0.1); return x * x; } // picking up speed
+    if (f < 0.8) return 1.0f;
+    return 1.0f - float((f - 0.8) / 0.2);
+}
+bool Track::press_falling(const Mover& m, double tick) const {
+    const double t = std::fmod(tick / double(std::max(m.period, 1)) + double(m.phase), 1.0);
+    const double f = t < 0.0 ? t + 1.0 : t;
+    return f >= 0.5 && f < 0.8;
+}
+
+Track::Frame Track::mover_frame(size_t i, double tick) const {
+    const Mover& m = movers[i];
+    if (m.kind != Mover::Kind::Swing) return {m.right, m.up, m.forward};
+    const double t = tick / double(std::max(m.period, 1)) + double(m.phase);
+    const float a = m.angle * float(std::sin(t * 2.0 * 3.14159265358979));
+    const float c = std::cos(a), sn = std::sin(a);
+    return {glm::normalize(m.right * c - m.up * sn), glm::normalize(m.up * c + m.right * sn), m.forward};
+}
+
 vec3 Track::mover_pos(size_t i, double tick) const {
     const Mover& m = movers[i];
+    if (m.kind == Mover::Kind::Press) return m.base + m.travel * press_phase(m, tick);
+    if (m.kind == Mover::Kind::Swing) { // hangs `arm` under its pivot, swaying about the road's direction
+        const vec3 pivot = m.base + m.up * m.arm;
+        return pivot - mover_frame(i, tick).up * m.arm;
+    }
     const double t = tick / double(std::max(m.period, 1)) + double(m.phase);
     return m.base + m.travel * float(std::sin(t * 2.0 * 3.14159265358979));
+}
+
+float Track::wave_ease(const Wave& w, float d) const {
+    const float ease = std::min(10.0f, w.length / 3.0f);
+    const float x = std::clamp(std::min(d, w.length - d) / std::max(ease, 1e-3f), 0.0f, 1.0f);
+    return x * x * (3.0f - 2.0f * x);
+}
+
+const Track::Wave* Track::wave_at(int sample) const {
+    for (const Wave& w : waves)
+        if (sample >= w.first && sample < w.first + w.count) return &w;
+    return nullptr;
+}
+
+float Track::wave_height(vec3 p, double tick, float* slope, vec3* tangent) const {
+    if (slope) *slope = 0.0f;
+    for (const Wave& w : waves) {
+        if (!gate_holds(w.gate)) continue;
+        // The wave's nearest sample, and where `p` sits along its road.
+        int best = -1;
+        float best_d = 1e18f;
+        for (int i = w.first; i < w.first + w.count; ++i) {
+            const vec3 d = road[size_t(i)].pos - p;
+            const float dd = glm::dot(d, d);
+            if (dd < best_d) best_d = dd, best = i;
+        }
+        if (best < 0) continue;
+        const CenterSample& c = road[size_t(best)];
+        const vec3 rel = p - c.pos;
+        if (std::abs(glm::dot(rel, c.right)) > c.half_width + 8.0f || std::abs(glm::dot(rel, c.up)) > 6.0f) continue;
+        float d = c.u + glm::dot(rel, c.tangent) - w.u0;
+        if (closed && c.branch < 0) { // the stretch may run over the start line
+            if (d < -0.5f * length) d += length;
+            if (d > 0.5f * length) d -= length;
+        }
+        if (d < -0.5f || d > w.length + 0.5f) continue;
+        const float ease = wave_ease(w, std::clamp(d, 0.0f, w.length));
+        const float k = 2.0f * kPi / std::max(w.wavelength, 1.0f);
+        const float ph = k * d - 2.0f * kPi * float(tick / double(std::max(w.period, 1)) - double(w.phase));
+        if (slope) *slope = ease * w.amplitude * k * std::cos(ph);
+        if (tangent) *tangent = c.tangent;
+        return ease * w.amplitude * std::sin(ph);
+    }
+    return 0.0f;
 }
 
 float Track::mover_top(const Mover& m, float x, float z) const {
@@ -309,10 +384,11 @@ std::optional<RayHit> Track::raycast(vec3 origin, vec3 dir, float max_dist) cons
     }
     for (size_t i = 0; i < movers.size(); ++i) {
         const Mover& m = movers[i];
-        const float down = -glm::dot(dir, m.up);
+        const Frame fr = mover_frame(i, mover_time);
+        const float down = -glm::dot(dir, fr.up);
         if (down < 0.5f) continue; // only the wheel probes look for floors here
         const vec3 rel = origin - mover_pos(i, mover_time);
-        const float x = glm::dot(rel, m.right), y = glm::dot(rel, m.up), z = glm::dot(rel, m.forward);
+        const float x = glm::dot(rel, fr.right), y = glm::dot(rel, fr.up), z = glm::dot(rel, fr.forward);
         const float top = mover_top(m, x, z);
         if (top < 0.0f || y < top - 0.3f) continue; // off it, or starting inside it
         const float d = (y - top) / down;
@@ -320,11 +396,24 @@ std::optional<RayHit> Track::raycast(vec3 origin, vec3 dir, float max_dist) cons
         RayHit hit;
         hit.distance = d;
         hit.point = origin + dir * d;
-        hit.surface = m.kind == Mover::Kind::Platform ? m.deck : Surface::Road;
-        hit.normal = m.up;
-        if (m.kind == Mover::Kind::Platform && m.ramp > 0.0f && m.half.z - std::abs(z) < m.ramp)
-            hit.normal = glm::normalize(m.up + m.forward * ((z > 0.0f ? 1.0f : -1.0f) * 2.0f * m.half.y / m.ramp));
+        hit.surface = m.kind == Mover::Kind::Platform || m.kind == Mover::Kind::Swing ? m.deck : Surface::Road;
+        hit.normal = fr.up;
+        if (m.kind != Mover::Kind::Block && m.kind != Mover::Kind::Press && m.ramp > 0.0f && m.half.z - std::abs(z) < m.ramp)
+            hit.normal = glm::normalize(fr.up + fr.forward * ((z > 0.0f ? 1.0f : -1.0f) * 2.0f * m.half.y / m.ramp));
         best = hit;
+    }
+    // A wavy stretch: its floor is where the wave has lifted it this tick.
+    if (best && !waves.empty() && best->surface != Surface::Wall && best->normal.y > 0.5f && dir.y < -0.3f) {
+        float slope = 0.0f;
+        vec3 tangent(0.0f);
+        const float h = wave_height(best->point, mover_time, &slope, &tangent);
+        if (h != 0.0f || slope != 0.0f) {
+            const float d = best->distance - h / -dir.y;
+            if (d > max_dist) return std::nullopt;
+            best->distance = std::max(d, -1.0f); // negative: the ray started under the risen floor
+            best->point = origin + dir * best->distance;
+            best->normal = glm::normalize(best->normal - tangent * slope);
+        }
     }
     return best;
 }
@@ -352,8 +441,9 @@ void Track::collide_sphere(vec3 c, float radius, std::vector<WallContact>& out) 
     }
     for (size_t i = 0; i < movers.size(); ++i) {
         const Mover& m = movers[i];
+        const Frame fr = mover_frame(i, mover_time);
         const vec3 rel = c - mover_pos(i, mover_time);
-        const vec3 l(glm::dot(rel, m.right), glm::dot(rel, m.up), glm::dot(rel, m.forward));
+        const vec3 l(glm::dot(rel, fr.right), glm::dot(rel, fr.up), glm::dot(rel, fr.forward));
         // The solid under the sphere: a box, its height following the ramps.
         const float zc = std::clamp(l.z, -m.half.z, m.half.z);
         const float top = mover_top(m, std::clamp(l.x, -m.half.x, m.half.x), zc);
@@ -373,7 +463,7 @@ void Track::collide_sphere(vec3 c, float radius, std::vector<WallContact>& out) 
             else if (px < pz) n_local = {l.x > 0.0f ? 1.0f : -1.0f, 0, 0}, depth = px + radius;
             else n_local = {0, 0, l.z > 0.0f ? 1.0f : -1.0f}, depth = pz + radius;
         }
-        const vec3 n = glm::normalize(m.right * n_local.x + m.up * n_local.y + m.forward * n_local.z);
+        const vec3 n = glm::normalize(fr.right * n_local.x + fr.up * n_local.y + fr.forward * n_local.z);
         out.push_back({n, depth, Surface::Wall});
     }
 }

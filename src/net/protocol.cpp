@@ -150,6 +150,7 @@ void write_kart(Writer& w, const sim::KartState& s) {
     w.u8(uint8_t(std::clamp(s.respawn_frames, 0, 255)));
     w.u8(uint8_t(std::clamp(s.invincible_frames, 0, 255)));
     w.u8(uint8_t(std::clamp(s.stun_frames, 0, 255)));
+    w.u8(s.grip_carry);
     w.u16(uint16_t(s.last_safe_sample));
     w.u16(uint16_t(s.sample));
     w.u8(uint8_t(s.checkpoint));
@@ -232,6 +233,7 @@ sim::KartState read_kart(Reader& r) {
     s.respawn_frames = r.u8();
     s.invincible_frames = r.u8();
     s.stun_frames = r.u8();
+    s.grip_carry = r.u8();
     s.last_safe_sample = r.u16();
     s.sample = r.u16();
     s.checkpoint = r.u8();
@@ -683,11 +685,11 @@ uint32_t hash_constants(const sim::PhysicsTables& t) {
                     k.offroad_heavy, k.boost_pad_mult, k.mushroom_mult, k.trick_mult, k.rocket_mult, k.boost_accel,
                     k.glide_launch_velocity, k.glide_gravity, k.glide_ratio, k.glide_dive_range, k.glide_climb_range,
                     k.glide_path_rate, k.glide_floor, k.glide_floor_gain, k.glide_cap_mult, k.glide_bank_drag,
-                    k.glide_pitch_speed, k.fall_respawn_drop})
+                    k.glide_pitch_speed, k.fall_respawn_drop, k.grip_descent_gain, k.grip_carry_decel, k.grip_charge_mult})
         w.f32(f);
     for (int i : {k.max_coins, k.mt_frames[0], k.mt_frames[1], k.mt_frames[2], k.boost_pad_frames, k.mushroom_frames,
                   k.trick_frames, k.rocket_frames, k.rocket_window_early, k.rocket_window_late, k.burnout_frames,
-                  k.trick_window_frames, k.trick_min_air_frames, k.respawn_frames, k.drift_entry_frames, k.stuck_respawn_frames})
+                  k.trick_window_frames, k.trick_min_air_frames, k.grip_carry_frames, k.respawn_frames, k.drift_entry_frames, k.stuck_respawn_frames})
         w.i32(i);
     return crc32(w.data());
 }

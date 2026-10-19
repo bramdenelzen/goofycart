@@ -31,6 +31,7 @@ struct UiVertex {
 struct Camera {
     vec3 position{0, 3, -6};
     vec3 target{0, 0.5f, 0};
+    vec3 up{0, 1, 0};  // leans with the road on grip road
     float fov_y_deg = 70.0f;
     float near_z = 0.1f;
     float far_z = 1000.0f;

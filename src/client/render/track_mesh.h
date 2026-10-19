@@ -82,6 +82,10 @@ MeshData make_switch_mesh(float radius, bool on);
 MeshData make_vent_mesh(float radius);
 // A current: chevrons along the floor of its stretch, pointing the way it carries.
 MeshData make_current_mesh(const sim::Track& track, const sim::Track::Current& current);
+// A wavy stretch of road, left out of the track mesh: its grid, with the
+// vertex alpha carrying how much of the wave reaches each sample (0 at the
+// ends) and v the distance along the road, for the shader's lift (fx 7).
+MeshData make_wave_mesh(const sim::Track& track, const sim::Track::Wave& wave);
 // A puddle: an irregular flat disc about a unit across, for a dropped oil slick.
 MeshData make_oil_disc_mesh();
 
