@@ -3,7 +3,7 @@
   "name": "Harbor Hop",
   "theme": "harbor",
   "half_width": 7,
-  "_comment": "Docks with crates and crane loads swinging over the quay, a hump over the old pier, off-camber dock turns, a banked climb onto the high pier bridge over the start straight, a banked hairpin round the lighthouse, a banked sweep down to the water and the dive: the road drops under the west quay and you drive along the harbour floor before climbing out. The drawbridge along the south quay lowers on a timer, the warehouse doors open for a while when someone hits the switch on the quay, and the tide floods the west docks from lap 2.",
+  "_comment": "A pontoon start straight that heaves with the swell, docks with crates and crane loads swinging over the quay, a hump over the old pier, off-camber dock turns, a banked climb onto the high pier bridge over the start straight, a banked hairpin round the lighthouse, a banked sweep down to the water and the dive: the road drops under the west quay and you drive along the harbour floor before climbing out. The drawbridge along the south quay lowers on a timer, the warehouse doors open for a while when someone hits the switch on the quay, and the tide floods the west docks from lap 2.",
   "points": [
     [0.0, 0, 0.0, 9.0],
     [0.0, 0, 82.5, 9.0],
@@ -198,6 +198,14 @@
       "to": [20, 0],
       "surface": "water",
       "depth": "deep"
+    },
+    {
+      "type": "wave",
+      "from": [0, 12],
+      "to": [0, 70],
+      "amplitude": 0.7,
+      "wavelength": 14,
+      "period": 2.6
     },
     {
       "type": "bank",

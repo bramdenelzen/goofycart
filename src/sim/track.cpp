@@ -340,6 +340,18 @@ float Track::mover_top(const Mover& m, float x, float z) const {
 }
 
 std::optional<RayHit> Track::raycast(vec3 origin, vec3 dir, float max_dist) const {
+    // A kart in a wave's trough sits under the built road, so a downward
+    // probe from it would start inside the mesh and miss: start such probes
+    // a wave's height higher and take that back off the result.
+    float pre = 0.0f;
+    if (!waves.empty() && dir.y < -0.3f) {
+        for (const Wave& w : waves)
+            if (gate_holds(w.gate)) pre = std::max(pre, w.amplitude);
+        pre /= -dir.y;
+        origin -= dir * pre;
+        max_dist += pre;
+    }
+    const float max_wanted = max_dist - pre;
     std::optional<RayHit> best;
     for (size_t g = 0; g < collision_.size(); ++g) {
         if (!collision_[g] || !group_present(g)) continue;
@@ -408,12 +420,16 @@ std::optional<RayHit> Track::raycast(vec3 origin, vec3 dir, float max_dist) cons
         vec3 tangent(0.0f);
         const float h = wave_height(best->point, mover_time, &slope, &tangent);
         if (h != 0.0f || slope != 0.0f) {
-            const float d = best->distance - h / -dir.y;
-            if (d > max_dist) return std::nullopt;
-            best->distance = std::max(d, -1.0f); // negative: the ray started under the risen floor
+            best->distance -= h / -dir.y;
             best->point = origin + dir * best->distance;
             best->normal = glm::normalize(best->normal - tangent * slope);
         }
+    }
+    if (best && pre > 0.0f) {
+        best->distance -= pre;
+        if (best->distance > max_wanted) return std::nullopt;
+        best->distance = std::max(best->distance, -1.0f); // negative: the probe started under the risen floor
+        best->point = origin + dir * (best->distance + pre);
     }
     return best;
 }

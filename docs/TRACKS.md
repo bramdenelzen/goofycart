@@ -177,7 +177,9 @@ losing height; a banked tube works the same) and keep the `grip` a little
 longer than the bank at both ends, so the ease-in and ease-out are covered.
 Grip road wants no walls on its low side (`no_walls`) when the bank itself
 holds the kart; a wall there reads as a ledge. CPUs drive it as ordinary
-road.
+road. Vortex Quarry's corkscrew (a turn and a half of 60° road screwing
+down into the pit) and the first turn of Cloud Spire's helix are the
+examples.
 
 ### Conveyors
 
@@ -196,7 +198,9 @@ with `push` and one with `-push`, gated on the switch and its opposite.
 
 A conveyor against the traffic should be beatable at top speed (keep `push`
 under about 10) and a crosswise one gentle enough to steer against; the CPUs
-know nothing of either.
+know nothing of either. Lava Works' conveyor shortcut and Scrapyard Shift's
+intake and return belts (the shift lever reverses the return) are the
+examples.
 
 ### Waves
 
@@ -217,7 +221,8 @@ rolling over a gentle swell gives nothing). `when` gates it.
 
 Keep `amplitude` under about a metre (1.5 is the most the parser takes), the
 `wavelength` at least four times the amplitude, and waves off bridges, banks
-and junctions.
+and junctions. Harbor Hop's pontoon start straight and Scrapyard Shift's
+shaker floor are the examples.
 
 ### Presses and swings
 
@@ -253,7 +258,8 @@ Presses, swings, conveyors and waves are all functions of the race tick, so
 they stay in step across the network and in ghosts; none of them needs a
 gate to move. The CPU drivers know nothing of presses or waves: give a line
 of presses a phase pattern a kart at top speed slips through, and keep
-waves on straights.
+waves on straights. Lava Works' run home has two presses, Scrapyard Shift's
+press hall three rows of them and its crane bay a swing.
 
 A `tunnel` roofs the road from `from` to `to`, on the main loop or a branch:
 
