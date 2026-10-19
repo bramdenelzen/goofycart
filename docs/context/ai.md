@@ -14,6 +14,12 @@
   spark; Hard drives the full line. `cpu_rubber_band(level)` sets
   `KartParams::rubber_band` (speed up behind the leading player, ease off
   ahead). `cpu_build(parts, seat)` picks each CPU's parts.
+- Side roads: `cpu_route` picks which open ones a CPU takes each lap. Short
+  of a fork it keeps its path on the main road up to the mouth (cutting
+  the verge hits the fence beside it), and it keeps aiming down the side
+  road for 10 m past the fork until the kart is properly on it. On a shut
+  side road it heads back to the main road only while the barrier is still
+  ahead; past it, or on a vanishing road, it drives on.
 - `src/sim/racing_line.cpp`: the line itself, built per track in
   `Track::finalize()` by relaxing points towards least bending, clamped to
   the drivable road and steering round obstacles.

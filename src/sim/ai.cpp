@@ -130,9 +130,15 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     const Track& t = world.track();
     if (t.center.empty() || t.line.size() != t.road.size()) return autopilot(k, t, skill.lookahead);
     const uint32_t route = cpu_route(world, kart);
-    // On the mouth of a side road that's shut: drive as if on the main road beside it.
+    // On a side road that's shut short of its barrier: drive as if on the
+    // main road beside it. Past the barrier, or on a road that vanishes (it
+    // stays while the kart is on it), the way on is clear: drive on.
     int cur = k.sample;
-    if (const int b = t.sample(cur).branch; b >= 0 && !t.branch_open(b)) cur = t.main_sample(cur);
+    if (const int b = t.sample(cur).branch; b >= 0 && !t.branch_open(b) && !t.branches[size_t(b)].vanish) {
+        bool shut_ahead = false;
+        for (const Track::Barrier& bar : t.barriers) shut_ahead |= bar.branch == b && bar.sample >= cur;
+        if (shut_ahead) cur = t.main_sample(cur);
+    }
 
     KartInput in;
     in.accelerate = true;
@@ -160,6 +166,20 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         if (lat < t.line[size_t(i)].lo - 0.3f || lat > t.line[size_t(i)].hi + 0.3f) target_sample = t.advance(i, 2, route);
         break;
     }
+    // A side road this CPU wants, entered at its mouth: the kart is only on it
+    // once it's further onto it than onto the main road, so for the first few
+    // metres past the fork keep aiming down the side road, not back onto the main one.
+    int side_road = -1;
+    for (size_t b = 0; b < t.branches.size() && b < 32 && cur < n; ++b) {
+        const Track::Branch& br = t.branches[b];
+        if (!(route >> b & 1u) || !t.branch_open(int(b))) continue;
+        const int past = ((cur - br.fork) % n + n) % n;
+        if (past > 0 && float(past) * spacing <= 10.0f && float(br.side) * glm::dot(k.pos - t.sample(cur).pos, t.sample(cur).right) > 0.0f)
+            target_sample = t.advance(br.first + std::min(past, br.count - 1), std::max(1, int(std::ceil(look / spacing))), route);
+    }
+    if (target_sample >= n)
+        for (size_t b = 0; b < t.branches.size() && b < 32; ++b)
+            if (target_sample >= t.branches[b].first && target_sample < t.branches[b].first + t.branches[b].count) side_road = int(b);
     const CenterSample& tc = t.sample(target_sample);
     const Track::LinePoint& lp = t.line[size_t(target_sample)];
     float offset = lp.offset * skill.line_follow + skill.lane;
@@ -270,6 +290,24 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         if (left_ok && (!right_ok || path - left < right - path)) want = left;
         else if (right_ok) want = right;
         offset = std::clamp(here + (want - here) / f, lo - 1.0f, hi + 1.0f);
+    }
+    // Heading for a side road whose fork is still ahead: the straight path
+    // there must stay on the main road up to the fork, or it cuts across the
+    // verge into the fence beside the mouth.
+    if (side_road >= 0 && cur < n) {
+        const Track::Branch& br = t.branches[size_t(side_road)];
+        const int ahead = ((br.fork - cur) % n + n) % n;
+        const CenterSample& fs = t.sample(br.fork);
+        const vec3 aim = tc.pos + tc.right * offset;
+        const float to_fork = glm::dot(fs.pos - k.pos, fs.tangent), to_aim = glm::dot(aim - k.pos, fs.tangent);
+        const float facing = glm::dot(tc.right, fs.right);
+        if (ahead > 0 && ahead < n / 2 && to_fork > 0.0f && to_aim > to_fork && facing > 0.3f) {
+            const float here = glm::dot(k.pos - fs.pos, fs.right), there = glm::dot(aim - fs.pos, fs.right);
+            const float f = to_fork / to_aim;
+            const float edge = float(br.side) * std::max(fs.half_width - 1.0f, 0.0f);
+            const float path = here + (there - here) * f;
+            if (float(br.side) * (path - edge) > 0.0f) offset += (here + (edge - here) / f - there) / facing;
+        }
     }
     const vec3 target = tc.pos + tc.right * offset;
 
