@@ -42,6 +42,7 @@ void World::restore(const WorldState& s) {
     rng_ = s.rng;
     spiked_cooldown_ = s.spiked_cooldown;
     lightning_cooldown_ = s.lightning_cooldown;
+    ink_cooldown_ = s.ink_cooldown;
     update_gates();
 }
 
@@ -349,6 +350,7 @@ bool World::adopt_motion(int kart, const KartState& c, std::span<const KartInput
     k.drift_turn = c.drift_turn;
     k.trick_window = c.trick_window;
     k.trick_done = c.trick_done;
+    k.trick_gap = c.trick_gap;
     k.trick_anim = c.trick_anim;
     k.glide_armed = c.glide_armed;
     k.gliding = c.gliding;

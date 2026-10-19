@@ -200,6 +200,27 @@ TEST_CASE("a star protects and knocks others over") {
     CHECK_FALSE(ItemBench::has(ev, KartEventType::Hit, 0));
 }
 
+TEST_CASE("a hit kart keeps some of its speed and slides on along its heading") {
+    struct Case { HitKind kind; int frames; float keep; };
+    const ItemTuning tuning;
+    for (const Case c : {Case{HitKind::Spin, tuning.spin_frames, 0.35f}, Case{HitKind::Tumble, tuning.tumble_frames, 0.2f}}) {
+        CAPTURE(int(c.kind));
+        ItemBench b(1);
+        b.kart(0).speed = 20.0f;
+        const vec3 start = b.kart(0).pos, heading = b.kart(0).forward();
+        b.world.apply_hit(0, c.kind, -1);
+        b.run(c.frames / 2);
+        REQUIRE(b.kart(0).knocked());
+        CHECK(b.kart(0).speed == doctest::Approx(20.0f * c.keep).epsilon(0.15));
+        b.run(c.frames / 2 - 1);
+        REQUIRE(b.kart(0).knocked());
+        CHECK(b.kart(0).speed == doctest::Approx(20.0f * c.keep).epsilon(0.15)); // still sliding, not rolling to a stop
+        const vec3 moved = b.kart(0).pos - start;
+        CHECK(glm::dot(moved, heading) > 20.0f * c.keep * float(c.frames) / 60.0f * 0.7f);
+        CHECK(std::abs(glm::dot(moved, b.kart(0).right())) < 0.5f);
+    }
+}
+
 TEST_CASE("lightning shrinks everyone else and takes their items") {
     ItemBench b(4);
     b.world.give_item(0, Item::Mushroom);
@@ -479,4 +500,33 @@ TEST_CASE("two worlds on the same inputs draw the same items, through a snapshot
     run_race(d, 500, 2600, more_d);
     CHECK(more_a == more_d);
     CHECK(std::count(more_a.begin(), more_a.end(), Item::SpikedShell) > 0);
+}
+
+TEST_CASE("ink: none before frame 900, one held at a time, none within 1800 frames of a squirt") {
+    LimitBench b;
+    b.set_race_ticks(0);
+    REQUIRE(b.world.item_tuning().ink_start_gate == 900);
+    REQUIRE(b.world.item_tuning().ink_cooldown == 1800);
+    while (b.world.race_ticks() < 900) CHECK_FALSE(LimitBench::any(b.draw(), Item::Ink));
+    bool seen = false;
+    for (int n = 0; n < 2000 && !seen; ++n) seen = LimitBench::any(b.draw(), Item::Ink);
+    CHECK(seen);
+
+    b.set_race_ticks(4000);
+    // Held by one kart: nobody else draws one.
+    b.kart(0).item = Item::Ink;
+    CHECK((b.world.blocked_items(2) & item_bit(Item::Ink)) != 0);
+    b.kart(0).item = Item::None;
+    CHECK((b.world.blocked_items(2) & item_bit(Item::Ink)) == 0);
+    // Squirted: 1800 frames with none.
+    b.kart(3).item = Item::Ink;
+    b.kart(3).item_uses = 1;
+    b.tap(3);
+    REQUIRE(b.kart(3).item != Item::Ink);
+    CHECK(b.world.ink_cooldown() > 1790);
+    const int used = b.world.race_ticks() - 2;
+    while (b.world.race_ticks() < used + 1800 - 1) CHECK_FALSE(LimitBench::any(b.draw(), Item::Ink));
+    seen = false;
+    for (int n = 0; n < 3000 && !seen; ++n) seen = LimitBench::any(b.draw(), Item::Ink);
+    CHECK(seen);
 }

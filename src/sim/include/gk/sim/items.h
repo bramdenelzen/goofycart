@@ -69,6 +69,11 @@ struct ItemTuning {
     int box_respawn_frames = 150;
     int spin_frames = 70;
     int tumble_frames = 95;
+    // A hit sheds speed (x0.93 a tick spun; tumbling, x0.3 at once then x0.85
+    // a tick) for this many frames only, then the kart slides on: about 35% /
+    // 20% of its speed kept.
+    int spin_shed_frames = 15;
+    int tumble_shed_frames = 2;
     int star_frames = 450;
     int bullet_frames = 330;
     int golden_frames = 450;
@@ -100,6 +105,11 @@ struct ItemTuning {
     int lightning_limit = 2;       // held, across all karts
     int lightning_start_gate = 1800;
     int lightning_cooldown = 1800; // after one strikes
+    // The ink (Blooper) came up too often: one held at a time, none in the
+    // first 15 s, none for 30 s after one is squirted. Provisional.
+    int ink_limit = 1;             // held, across all karts
+    int ink_start_gate = 900;
+    int ink_cooldown = 1800;
 };
 
 // Pseudo-random numbers stored in the world state so that prediction and

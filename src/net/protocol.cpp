@@ -128,7 +128,7 @@ void write_kart(Writer& w, const sim::KartState& s) {
                            uint16_t(s.glide_armed) << 4 | uint16_t(s.gliding) << 5 | uint16_t(s.finished) << 6 |
                            uint16_t(s.item_button_prev) << 7 | uint16_t(s.trailing) << 8 |
                            uint16_t(s.item != sim::Item::None || s.item_next != sim::Item::None || s.roulette > 0) << 9 |
-                           uint16_t(s.underwater) << 10;
+                           uint16_t(s.underwater) << 10 | uint16_t(std::min<int>(s.trick_gap, 15)) << 11;
     w.u16(flags);
     if (!s.grounded) {
         w.q16(s.air_vel.x, 120.0f);
@@ -208,6 +208,7 @@ sim::KartState read_kart(Reader& r) {
     s.gliding = flags & 32;
     s.finished = flags & 64;
     s.underwater = flags & (1u << 10);
+    s.trick_gap = uint8_t((flags >> 11) & 15);
     if (!s.grounded) {
         s.air_vel.x = r.q16(120.0f);
         s.air_vel.y = r.q16(120.0f);
@@ -491,6 +492,7 @@ std::vector<uint8_t> encode(const SnapshotMsg& m) {
     for (size_t i = 0; i < m.switches.size() && i < 255; ++i) w.u16(m.switches[i]);
     w.u16(m.spiked_cooldown);
     w.u16(m.lightning_cooldown);
+    w.u16(m.ink_cooldown);
     return w.take();
 }
 
@@ -528,6 +530,7 @@ bool decode(std::span<const uint8_t> d, SnapshotMsg& m) {
     for (auto& sw : m.switches) sw = r.u16();
     m.spiked_cooldown = r.u16();
     m.lightning_cooldown = r.u16();
+    m.ink_cooldown = r.u16();
     return r.ok();
 }
 
@@ -685,11 +688,13 @@ uint32_t hash_constants(const sim::PhysicsTables& t) {
                     k.offroad_heavy, k.boost_pad_mult, k.mushroom_mult, k.trick_mult, k.rocket_mult, k.boost_accel,
                     k.glide_launch_velocity, k.glide_gravity, k.glide_ratio, k.glide_dive_range, k.glide_climb_range,
                     k.glide_path_rate, k.glide_floor, k.glide_floor_gain, k.glide_cap_mult, k.glide_bank_drag,
-                    k.glide_pitch_speed, k.fall_respawn_drop, k.grip_descent_gain, k.grip_carry_decel, k.grip_charge_mult})
+                    k.glide_pitch_speed, k.fall_respawn_drop, k.grip_descent_gain, k.grip_carry_decel, k.grip_charge_mult,
+                    k.trick_max_height, k.crest_stick, k.crest_carry})
         w.f32(f);
     for (int i : {k.max_coins, k.mt_frames[0], k.mt_frames[1], k.mt_frames[2], k.boost_pad_frames, k.mushroom_frames,
                   k.trick_frames, k.rocket_frames, k.rocket_window_early, k.rocket_window_late, k.burnout_frames,
-                  k.trick_window_frames, k.trick_min_air_frames, k.grip_carry_frames, k.respawn_frames, k.drift_entry_frames, k.stuck_respawn_frames})
+                  k.trick_window_frames, k.trick_min_air_frames, k.grip_carry_frames, k.respawn_frames, k.drift_entry_frames, k.stuck_respawn_frames,
+                  k.trick_chain_frames})
         w.i32(i);
     return crc32(w.data());
 }

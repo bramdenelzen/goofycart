@@ -121,10 +121,11 @@ Item roll_item(Rng& rng, int place, int karts, uint32_t blocked) {
 
 uint32_t World::blocked_items(int kart) const {
     const auto& t = item_tuning_;
-    int spiked = 0, lightning = 0;
+    int spiked = 0, lightning = 0, ink = 0;
     for (const KartState& k : karts_) {
         spiked += int(k.item == Item::SpikedShell) + int(k.item_next == Item::SpikedShell);
         lightning += int(k.item == Item::Lightning) + int(k.item_next == Item::Lightning);
+        ink += int(k.item == Item::Ink) + int(k.item_next == Item::Ink);
     }
     for (const ItemEntity& e : entities_) spiked += int(e.type == EntityType::SpikedShell);
     uint32_t blocked = 0;
@@ -133,6 +134,7 @@ uint32_t World::blocked_items(int kart) const {
     const bool holds_lightning = me.item == Item::Lightning || me.item_next == Item::Lightning;
     if (lightning >= t.lightning_limit || holds_lightning || race_ticks_ < t.lightning_start_gate || lightning_cooldown_ > 0)
         blocked |= item_bit(Item::Lightning);
+    if (ink >= t.ink_limit || race_ticks_ < t.ink_start_gate || ink_cooldown_ > 0) blocked |= item_bit(Item::Ink);
     return blocked;
 }
 
@@ -235,6 +237,7 @@ void World::use_item(int i, const KartInput& in, bool pressed, bool released) {
         k.mt_charge = 0.0f;
         break;
     case Item::Ink: {
+        ink_cooldown_ = t.ink_cooldown;
         const int me = place_of(i);
         for (size_t j = 0; j < karts_.size(); ++j)
             if (int(j) != i && place_of(int(j)) < me && !karts_[j].untouchable()) karts_[j].ink_frames = t.ink_frames;
@@ -285,6 +288,7 @@ void World::use_item(int i, const KartInput& in, bool pressed, bool released) {
             emit(events_, KartEventType::Boost, i, int(BoostKind::Mushroom));
             break;
         case Item::Ink: {
+            ink_cooldown_ = t.ink_cooldown;
             const int me = place_of(i);
             for (size_t j = 0; j < karts_.size(); ++j)
                 if (int(j) != i && place_of(int(j)) < me && !karts_[j].untouchable()) karts_[j].ink_frames = t.ink_frames;
@@ -498,24 +502,26 @@ void World::items_after_step() {
     const int n = int(karts_.size());
     if (spiked_cooldown_ > 0) --spiked_cooldown_;
     if (lightning_cooldown_ > 0) --lightning_cooldown_;
+    if (ink_cooldown_ > 0) --ink_cooldown_;
     for (int i = 0; i < n; ++i) {
         KartState& k = karts_[size_t(i)];
         const KartParams& p = params_[size_t(i)];
         for (int* f : {&k.star_frames, &k.bullet_frames, &k.ghost_frames, &k.ink_frames, &k.golden_frames,
                        &k.chomper_frames, &k.chomper_cooldown, &k.shrink_frames})
             if (*f > 0) --*f;
-        // Spinning or tumbling sheds speed, in the air too: a kart knocked
+        // Spinning or tumbling sheds speed for a moment, then the kart slides
+        // on with what's left. In the air it keeps shedding: a kart knocked
         // out of a glide drops near where it was hit instead of flying on.
         if (k.spin_frames > 0) {
+            const bool shed = t.spin_frames - k.spin_frames < t.spin_shed_frames;
             --k.spin_frames;
-            k.speed *= 0.93f;
-            k.slide *= 0.9f;
+            if (shed) k.speed *= 0.93f, k.slide *= 0.9f;
             if (!k.grounded) k.air_vel.x *= 0.93f, k.air_vel.z *= 0.93f;
         }
         if (k.tumble_frames > 0) {
+            const bool shed = t.tumble_frames - k.tumble_frames < t.tumble_shed_frames;
             --k.tumble_frames;
-            k.speed *= 0.85f;
-            k.slide *= 0.8f;
+            if (shed) k.speed *= 0.85f, k.slide *= 0.8f;
             if (!k.grounded) k.air_vel.x *= 0.85f, k.air_vel.z *= 0.85f;
         }
         if (k.shrink_frames > 0 && k.boost_frames == 0) k.speed = std::min(k.speed, p.top_speed * t.shrink_speed);

@@ -14,7 +14,12 @@ Star, Fireball, Boomerang, Chomper, Horn, Lucky Eight, Coin, Ghost).
   in the file), and the `World` members `items_before_step`, `use_item`,
   `throw_item`, `shield_blocks`, `apply_hit`, `items_after_step`,
   `update_entities`. Part of the deterministic step.
-- `World::blocked_items` limits Spiked Shell and Lightning via cooldowns.
+- `World::blocked_items` limits Spiked Shell, Lightning and Ink (Blooper) via
+  held limits, start gates and cooldowns (`ItemTuning`).
+- Hits: `apply_hit` folds a glider; spin and tumble shed speed for
+  `spin_shed_frames` / `tumble_shed_frames`, then the kart slides on.
+- Star and bullet: immune to items, bumps, presses and lava zones on the road
+  (`kart_step`); the lava floor below and the kill height still take them.
 
 ## Rules worth knowing
 

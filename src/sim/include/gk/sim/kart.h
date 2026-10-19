@@ -68,7 +68,8 @@ struct KartState {
     bool boost_ignores_offroad = false;
 
     int trick_window = 0;          // frames left to trick after leaving a ramp
-    bool trick_done = false;
+    bool trick_done = false;       // tricked this time in the air: a boost on landing
+    uint8_t trick_gap = 0;         // frames before the next trick of a chain
     float trick_anim = 0.0f;       // 0..1 visual spin
     bool glide_armed = false;
     bool gliding = false;

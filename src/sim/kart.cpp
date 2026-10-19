@@ -139,6 +139,7 @@ void start_respawn(KartState& s, const KartStepContext& ctx) {
     s.glide_armed = false;
     s.trick_done = false;
     s.trick_window = 0;
+    s.trick_gap = 0;
     s.underwater = false;
     s.water_frames = 0;
     emit(ctx, KartEventType::Respawn);
@@ -188,6 +189,7 @@ void land(KartState& s, const Probe& pr, const KartInput& in, const KartStepCont
     s.glide_bank = 0.0f;
     s.glide_pitch = 0.0f;
     s.trick_window = 0;
+    s.trick_gap = 0;
     if (s.trick_done) {
         s.trick_done = false;
         if (s.air_frames >= ctx.k.trick_min_air_frames) {
@@ -198,31 +200,73 @@ void land(KartState& s, const Probe& pr, const KartInput& in, const KartStepCont
     if (s.drift == DriftState::Hop) {
         const float steer = std::abs(in.steer) > 0.3f ? in.steer : s.hop_steer;
         if (in.drift && std::abs(steer) > 0.3f && s.speed > ctx.k.min_drift_speed) {
+            const int8_t dir = steer > 0 ? 1 : -1;
+            if (s.drift_dir != dir) s.mt_charge = 0.0f; // charged the other way in the air: start over
             s.drift = DriftState::Drifting;
-            s.drift_dir = steer > 0 ? 1 : -1;
+            s.drift_dir = dir;
             s.drift_frames = 0;
             s.drift_turn = ctx.k.drift_turn_start; // starts almost straight: the kart keeps its momentum
-            s.mt_charge = 0.0f;
             s.slide = lateral; // landing into a drift keeps all the sideways momentum
         } else {
             s.drift = DriftState::None;
+            s.drift_dir = 0;
+            s.mt_charge = 0.0f;
         }
     }
     s.air_frames = 0;
+}
+
+// In the air close enough above the road for a trick of its own (not off a
+// launch): not gliding, not under water, and the road within reach below.
+bool can_air_trick(const KartState& s, const KartStepContext& ctx) {
+    if (s.gliding || s.underwater) return false;
+    const vec3 gup = ctx.track.grip_up(s.sample);
+    const auto hit = ctx.track.raycast(s.pos, -gup, ctx.k.trick_max_height);
+    return hit && hit->surface != Surface::Wall && glm::dot(hit->normal, gup) > kMinFloorDot;
+}
+
+// Over a crest the road bends away under the kart. Following it takes a pull
+// of speed^2 x the bend towards the road; past crest_stick x gravity the kart
+// flies on instead, keeping the climb it had a few metres back (`lift`, m/s
+// off the road), so the faster it goes the more air it gets and slow karts
+// stay planted. The bend comes from the smooth centre line, not the mesh,
+// whose facets would throw karts at every seam.
+bool crest_throws(const KartState& s, const KartStepContext& ctx, float& lift) {
+    const Track& t = ctx.track;
+    if (t.road.size() < 5 || s.underwater || s.drift == DriftState::Hop) return false;
+    const int i = std::clamp(s.sample, 0, int(t.road.size()) - 1);
+    const CenterSample& c = t.sample(i);
+    if (c.grip || !c.has_floor) return false;
+    const int a = t.prev(t.prev(i)), b = t.next(t.next(i));
+    const CenterSample &ca = t.sample(a), &cb = t.sample(b);
+    const float ds = glm::distance(ca.pos, cb.pos);
+    if (ds < 0.5f) return false;
+    const float bend = (glm::dot(ca.tangent, c.up) - glm::dot(cb.tangent, c.up)) / ds; // 1/m, + over a crest
+    const float v = glm::dot(s.forward() * s.speed + s.slide, c.tangent);
+    const float hold = ctx.k.gravity * std::max(0.0f, c.up.y) * ctx.k.crest_stick;
+    if (bend <= 0.0f || v < ctx.k.min_drift_speed || v * v * bend <= hold) return false;
+    int back = a;
+    for (float behind = glm::distance(ca.pos, c.pos); behind < ctx.k.crest_carry && back != t.prev(back); back = t.prev(back))
+        behind += glm::distance(t.sample(t.prev(back)).pos, t.sample(back).pos);
+    lift = v * std::max(0.0f, glm::dot(t.sample(back).tangent, c.up));
+    return true;
 }
 
 void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartStepContext& ctx) {
     const auto& k = ctx.k;
     const auto& p = ctx.p;
     ++s.air_frames;
-    if (s.trick_window > 0) {
-        if (drift_pressed && !s.trick_done && s.drift != DriftState::Hop) {
-            s.trick_done = true;
-            s.trick_anim = 1.0f;
-            emit(ctx, KartEventType::Trick);
-        }
-        --s.trick_window;
+    // Tricks: off a launch (the window after take-off), or anywhere in the
+    // air close above the road, but not while gliding, under water or on a
+    // drift hop. They chain a moment apart; the boost comes once, on landing.
+    if (s.trick_gap > 0) --s.trick_gap;
+    if (drift_pressed && s.drift != DriftState::Hop && s.trick_gap == 0 && (s.trick_window > 0 || can_air_trick(s, ctx))) {
+        s.trick_done = true;
+        s.trick_anim = 1.0f;
+        s.trick_gap = uint8_t(std::clamp(k.trick_chain_frames, 0, 15)); // 4 bits on the wire
+        emit(ctx, KartEventType::Trick);
     }
+    if (s.trick_window > 0) --s.trick_window;
 
     if (s.gliding) {
         // A glider, not a cursor: the stick rolls it into a bank and the bank
@@ -296,6 +340,14 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
         if (s.drift == DriftState::Drifting && p.is_bike && in.drift) s.mt_charge += k.charge_slow * p.mt_charge;
     }
     const vec3 fall_up = s.gliding || s.underwater ? kUp : ctx.track.grip_up(s.sample);
+    // Past the top of a drift hop with the stick held over, the drift is
+    // decided: the mini-turbo starts charging before the wheels touch down.
+    if (s.drift == DriftState::Hop && in.drift && std::abs(in.steer) > 0.3f && s.speed > k.min_drift_speed &&
+        glm::dot(s.air_vel, fall_up) <= 0.0f) {
+        const int8_t dir = in.steer > 0 ? 1 : -1;
+        if (s.drift_dir != dir) s.mt_charge = 0.0f, s.drift_dir = dir;
+        s.mt_charge += (std::abs(in.steer) >= 0.5f ? k.charge_fast : k.charge_slow) * p.mt_charge;
+    }
     s.rot = align_up(s.rot, fall_up, fall_up == kUp ? 0.06f : 0.15f);
     s.pos += s.air_vel * kDt;
 
@@ -303,7 +355,9 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
         // Underwater a hop floats for a long time, long enough for a rising
         // road to come up past the kart's wheels: look for it from higher up.
         const Probe pr = probe(s, ctx.track, kLandTolerance + std::max(0.0f, -s.air_vel.y) * kDt, s.underwater ? 1.6f : kProbeHeight);
-        if (pr.hits >= 2) land(s, pr, in, ctx);
+        // Only onto road the kart is coming down on: off a crest it flies on
+        // while the road falls away beneath it faster than it drops.
+        if (pr.hits >= 2 && (glm::dot(s.air_vel, pr.normal) <= 0.0f || pr.avg_dist < 0.0f)) land(s, pr, in, ctx);
     }
 }
 
@@ -314,8 +368,9 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     // Leave the ground when it falls away faster than the kart can follow,
     // e.g. at a ramp lip or a sharp crest; gentle hills keep it planted.
     const bool falls_away = pr.hits >= 2 && pr.avg_dist > kLaunchDrop && std::abs(s.speed) > 3.0f;
-    if (pr.hits < 2 || falls_away) {
-        take_off(s, ctx, 0.0f);
+    float lift = 0.0f;
+    if (pr.hits < 2 || falls_away || crest_throws(s, ctx, lift)) {
+        take_off(s, ctx, lift);
         // Any lip, crest or ledge taken at speed can be tricked off, not only
         // the marked ramps; a trick only pays out after real air (`land`).
         if (std::abs(s.speed) > k.min_drift_speed) s.trick_window = k.trick_window_frames;
@@ -389,7 +444,9 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
         if (s.speed > 0.5f) s.speed = std::max(0.0f, s.speed - k.brake_decel * kDt);
         else s.speed = std::max(-k.reverse_top, s.speed - k.reverse_accel * kDt);
     } else {
-        s.speed = approach(s.speed, 0.0f, k.coast_decel * kDt);
+        // Spun out or tumbling: the hit itself sheds the speed (items.cpp),
+        // then the kart slides on along its heading instead of rolling to a stop.
+        if (!s.knocked()) s.speed = approach(s.speed, 0.0f, k.coast_decel * kDt);
         if (s.speed > top) s.speed = approach(s.speed, top, overspeed_decel * kDt);
     }
     s.speed -= fwd.y * k.gravity * k.slope_factor * kDt;
@@ -397,10 +454,12 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     // Hop: the drift button lifts the kart; landing with the stick held starts a drift.
     if (drift_pressed && s.drift == DriftState::None && s.speed > 1.0f) {
         s.drift = DriftState::Hop;
+        s.drift_dir = 0;
         s.hop_steer = in.steer;
         if (on_launch) {
             s.trick_done = true;
             s.trick_anim = 1.0f;
+            s.trick_gap = uint8_t(std::clamp(k.trick_chain_frames, 0, 15)); // 4 bits on the wire
             emit(ctx, KartEventType::Trick);
         }
         take_off(s, ctx, k.hop_velocity);
@@ -732,7 +791,11 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     // (a glider or a dive under water is meant to be down there).
     const bool fallen = !s.grounded && !s.gliding && !s.underwater && s.air_vel.y < 0.0f &&
                         s.pos.y < ctx.track.sample(s.sample).pos.y - ctx.k.fall_respawn_drop;
-    if (s.pos.y < ctx.track.kill_y || (s.grounded && s.surface == Surface::OutOfBounds) || fallen) {
+    // A star or bullet drives over lava on the road (a zone that's on); the
+    // lava below the track still takes it.
+    const bool lava_proof = (s.star_frames > 0 || s.bullet_frames > 0) &&
+                            ctx.track.zone_surface(s.pos, s.sample) == Surface::OutOfBounds;
+    if (s.pos.y < ctx.track.kill_y || (s.grounded && s.surface == Surface::OutOfBounds && !lava_proof) || fallen) {
         start_respawn(s, ctx);
         return;
     }
