@@ -73,7 +73,7 @@ inline gk::sim::Track flat_track(gk::sim::Surface stripe = gk::sim::Surface::Roa
         c.tangent = {0, 0, 1};
         c.right = {-1, 0, 0};
         c.up = {0, 1, 0};
-        c.s = float(i) * 2.0f;
+        c.s = c.u = float(i) * 2.0f;
         t.center.push_back(c);
     }
     t.checkpoints = {0};

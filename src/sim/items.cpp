@@ -338,18 +338,21 @@ void World::throw_item(int i, Item item, bool backwards, bool forwards) {
     ItemEntity e;
     e.owner = int8_t(i);
     e.sample = int16_t(k.sample);
+    // Along the road's floor: level on ordinary road, up a steep bank on grip road.
+    const vec3 up = track_.grip_up(k.sample);
     vec3 fwd = k.forward();
-    fwd = glm::length(vec3(fwd.x, 0, fwd.z)) > 0.1f ? glm::normalize(vec3(fwd.x, 0, fwd.z)) : vec3(0, 0, 1);
+    fwd -= up * glm::dot(fwd, up);
+    fwd = glm::length(fwd) > 0.1f ? glm::normalize(fwd) : vec3(0, 0, 1);
     const float kart_speed = std::max(0.0f, glm::dot(k.velocity(), fwd));
-    const vec3 ahead = k.pos + fwd * 1.8f + kUp * 0.4f;
-    const vec3 behind = k.pos - fwd * 1.8f + kUp * 0.4f;
+    const vec3 ahead = k.pos + fwd * 1.8f + up * 0.4f;
+    const vec3 behind = k.pos - fwd * 1.8f + up * 0.4f;
 
     switch (item) {
     case Item::Banana:
         e.type = EntityType::Banana;
         if (forwards) {
             e.pos = ahead;
-            e.vel = fwd * (kart_speed + 12.0f) + kUp * 8.0f;
+            e.vel = fwd * (kart_speed + 12.0f) + up * 8.0f;
         } else {
             e.pos = behind;
             e.vel = -fwd * 2.0f;
@@ -381,7 +384,7 @@ void World::throw_item(int i, Item item, bool backwards, bool forwards) {
         break;
     case Item::SpikedShell:
         e.type = EntityType::SpikedShell;
-        e.pos = k.pos + kUp * 3.0f;
+        e.pos = k.pos + up * 3.0f;
         e.vel = fwd * t.spiked_speed;
         e.target = int8_t(kart_in_place(1));
         e.life = int16_t(t.spiked_life);
@@ -393,12 +396,12 @@ void World::throw_item(int i, Item item, bool backwards, bool forwards) {
             e.vel = -fwd * 2.0f;
         } else {
             e.pos = ahead;
-            e.vel = fwd * (kart_speed + 10.0f) + kUp * 8.0f;
+            e.vel = fwd * (kart_speed + 10.0f) + up * 8.0f;
         }
         break;
     case Item::Boomerang:
         e.type = EntityType::Boomerang;
-        e.pos = (backwards ? behind : ahead) + kUp * 0.4f;
+        e.pos = (backwards ? behind : ahead) + up * 0.4f;
         e.vel = (backwards ? -fwd : fwd) * t.boomerang_speed;
         e.life = 240;
         break;
@@ -693,18 +696,20 @@ void World::update_entities() {
         }
 
         if (e.type != EntityType::Boomerang) {
-            // Ground: shells and fireballs skim along it, bananas and bombs land and stay.
-            const auto hit = track_.raycast(e.pos + kUp * 1.0f, -kUp, 3.0f);
-            const bool on_ground = hit && hit->normal.y > 0.5f && e.pos.y - hit->point.y < 0.5f && e.vel.y <= 0.5f;
+            // Ground: shells and fireballs skim along it, bananas and bombs
+            // land and stay. On grip road "down" is into the road.
+            const vec3 up = track_.grip_up(e.sample);
+            const auto hit = track_.raycast(e.pos + up * 1.0f, -up, 3.0f);
+            const bool on_ground = hit && glm::dot(hit->normal, up) > 0.5f && glm::dot(e.pos - hit->point, up) < 0.5f && glm::dot(e.vel, up) <= 0.5f;
             if (on_ground) {
-                e.pos.y = hit->point.y + kEntityRadius;
-                e.vel.y = 0.0f;
+                e.pos = hit->point + up * kEntityRadius;
+                e.vel -= up * glm::dot(e.vel, up);
                 if (!e.grounded && e.type == EntityType::Bomb && e.life == 0) e.life = int16_t(t.bomb_fuse);
                 e.grounded = true;
                 if (e.type == EntityType::Banana || e.type == EntityType::Bomb || e.type == EntityType::OilSlick) e.vel = vec3(0.0f);
             } else {
                 e.grounded = false;
-                e.vel.y -= g * kDt;
+                e.vel -= up * (g * kDt);
             }
             e.pos += e.vel * kDt;
             if (e.pos.y < track_.kill_y || (hit && hit->surface == Surface::OutOfBounds && on_ground)) {
@@ -715,7 +720,7 @@ void World::update_entities() {
             contacts.clear();
             track_.collide_sphere(e.pos, kEntityRadius, contacts);
             for (const WallContact& w : contacts) {
-                if (std::abs(w.normal.y) > 0.5f) continue;
+                if (std::abs(glm::dot(w.normal, up)) > 0.5f) continue;
                 e.pos += w.normal * w.depth;
                 const float into = glm::dot(e.vel, w.normal);
                 if (into < 0.0f) {

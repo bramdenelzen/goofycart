@@ -459,6 +459,7 @@ void App::show_track(const std::string& id) {
                                       renderer_.upload_mesh(render::make_switch_mesh(sw.radius, true), 0, false, true)});
             for (const auto& v : t.vents) g.vents.push_back(renderer_.upload_mesh(render::make_vent_mesh(v.radius)));
             for (const auto& cu : t.currents) g.currents.push_back(renderer_.upload_mesh(render::make_current_mesh(t, cu), 0, false, true, true));
+            for (const auto& wv : t.waves) g.waves.push_back(renderer_.upload_mesh(render::make_wave_mesh(t, wv)));
         }
         log_info("Track {}: {} props in {} meshes; {} ms (road {}, scenery {}, props and trackside {})", shown_track_->id, placements.size(), ids.size(),
                  ms(), ms_road, ms_scenery - ms_road, ms() - ms_scenery);
@@ -697,6 +698,7 @@ void App::handle_events(const std::vector<sim::KartEvent>& events) {
         case sim::KartEventType::Trick: input_.rumble(0.2f, 0.2f, 80); break;
         case sim::KartEventType::WaterExit: wet_lens_ = 1.0f; break;
         case sim::KartEventType::VentLift: input_.rumble(0.3f, 0.5f, 140); break;
+        case sim::KartEventType::Squash: input_.rumble(1.0f, 1.0f, 350); break;
         case sim::KartEventType::Land: input_.rumble(0.5f, 0.2f, 120); break;
         case sim::KartEventType::WallHit: input_.rumble(0.8f, 0.4f, 120); break;
         case sim::KartEventType::Bump: input_.rumble(0.6f, 0.6f, 100); break;
@@ -1010,6 +1012,7 @@ void App::event_sound(const sim::KartEvent& e) {
     case sim::KartEventType::TireKnock: s = Sfx::Bump, pitch = 0.75f; break;
     case sim::KartEventType::TireBounce: s = Sfx::Boing; break;
     case sim::KartEventType::VentLift: s = Sfx::Boing, pitch = 1.25f; break;
+    case sim::KartEventType::Squash: s = Sfx::Crunch, pitch = 0.7f; break;
     case sim::KartEventType::Lap:
         if (mine && world()) s = e.value == world()->config().laps ? Sfx::FinalLap : Sfx::Lap;
         break;
@@ -1105,9 +1108,21 @@ void App::update_camera(float alpha, float dt) {
         cam_height_ += (height - cam_height_) * k2;
         cam_dist_ += (dist - cam_dist_) * k2;
     }
+    // Grip road: the camera leans with the road, up to a point, so a steep
+    // bank reads as the floor it is and not as a wall beside you.
+    {
+        const sim::Track& t = world()->track();
+        vec3 want = kUp;
+        if (t.grip_at(now.sample)) {
+            const vec3 ru = t.sample(now.sample).up;
+            const float ang = std::acos(std::clamp(ru.y, -1.0f, 1.0f));
+            if (ang > 1e-3f) want = glm::normalize(glm::mix(kUp, ru, std::min(ang, glm::radians(55.0f)) / ang));
+        }
+        cam_up_ = cam_init_ ? glm::normalize(glm::mix(cam_up_, want, 1.0f - std::exp(-3.0f * dt))) : want;
+    }
     // Looking back is a clean cut both ways, then follows just as smoothly.
     const vec3 dir = back ? -cam_dir_ : cam_dir_;
-    const vec3 cam_target = pos - dir * cam_dist_ + kUp * cam_height_;
+    const vec3 cam_target = pos - dir * cam_dist_ + cam_up_ * cam_height_;
     if (!cam_init_ || back != cam_back_) cam_y_ = cam_target.y;
     else cam_y_ += (cam_target.y - cam_y_) * (1.0f - std::exp(-10.0f * dt)); // soften hops and bumps
     {   // Under a tunnel's roof (the kart's or the camera's): stay below it.
@@ -1119,7 +1134,7 @@ void App::update_camera(float alpha, float dt) {
         cam_y_ = std::min(cam_y_, limit);
     }
     cam_pos_ = vec3(cam_target.x, cam_y_, cam_target.z);
-    cam_look_ = pos + dir * 3.0f + kUp * 0.9f;
+    cam_look_ = pos + dir * 3.0f + cam_up_ * 0.9f;
     cam_back_ = back;
     cam_init_ = true;
     const float target_fov = now.boost_frames > 0 ? 82.0f : 72.0f;
@@ -1939,6 +1954,22 @@ render::MeshData make_mover_mesh(const sim::Track::Mover& m) {
         else b.quad(p[0], p[1], p[2], p[3], c);
     };
     const float hx = m.half.x, h = 2.0f * m.half.y, hz = m.half.z;
+    if (m.kind == sim::Track::Mover::Kind::Press) {
+        // A steel press: a dark block with a riveted face, a hazard-striped
+        // rim, and its ram rising from the top (it rests up, so the ram is long).
+        b.box({0, 0.5f * h, 0}, {hx, 0.5f * h, hz}, render::rgba(92, 98, 110));
+        b.box({0, 0.08f, 0}, {hx + 0.05f, 0.08f, hz + 0.05f}, render::rgba(245, 200, 40));
+        for (float sx : {-1.0f, 1.0f})
+            for (float sz : {-1.0f, 1.0f}) b.box({sx * (hx - 0.3f), 0.16f, sz * (hz - 0.3f)}, {0.1f, 0.02f, 0.1f}, render::rgba(30, 30, 34));
+        b.box({0, h + 1.6f, 0}, {std::min(hx, hz) * 0.25f, 1.6f, std::min(hx, hz) * 0.25f}, render::rgba(60, 64, 72));
+        return b.take();
+    }
+    if (m.kind == sim::Track::Mover::Kind::Swing) {
+        // Two chains up to the pivot (the mesh hangs in the swing's frame, so
+        // they turn with it) over the platform built below.
+        for (float sx : {-0.8f, 0.8f}) b.box({sx * hx, 0.5f * m.arm + h, 0}, {0.07f, 0.5f * m.arm, 0.07f}, render::rgba(70, 70, 76));
+        b.box({0, m.arm + h, 0}, {hx + 0.3f, 0.12f, 0.3f}, render::rgba(90, 90, 98));
+    }
     if (m.kind == sim::Track::Mover::Kind::Block) {
         // A bumper block: red, a white band, a yellow cap.
         b.box({0, 0.5f * h, 0}, {hx, 0.5f * h, hz}, render::rgba(215, 55, 45));
@@ -1993,11 +2024,17 @@ void App::draw_movers(const sim::World& w, float alpha) {
     const double tick = double(w.tick_count()) - 1.0 + double(alpha);
     for (size_t i = 0; i < t.movers.size(); ++i) {
         const auto& m = t.movers[i];
+        const sim::Track::Frame f = t.mover_frame(i, tick);
         // -right: keep the frame right-handed so faces stay outward.
-        const mat4 model(vec4(-m.right, 0.0f), vec4(m.up, 0.0f), vec4(m.forward, 0.0f), vec4(t.mover_pos(i, tick), 1.0f));
+        const mat4 model(vec4(-f.right, 0.0f), vec4(f.up, 0.0f), vec4(f.forward, 0.0f), vec4(t.mover_pos(i, tick), 1.0f));
         renderer_.draw(meshes[i], model);
-        if (m.kind == sim::Track::Mover::Kind::Platform)
+        if (m.kind == sim::Track::Mover::Kind::Platform || m.kind == sim::Track::Mover::Kind::Swing)
             renderer_.draw(shadow_mesh_, glm::scale(glm::translate(model, vec3(0, 0.02f, 0)), vec3(m.half.x * 0.9f, 1.0f, m.half.z * 0.7f)));
+        if (m.kind == sim::Track::Mover::Kind::Press) { // its shadow on the road grows as it comes down
+            const float down = t.press_phase(m, tick);
+            const mat4 road(vec4(-m.right, 0.0f), vec4(m.up, 0.0f), vec4(m.forward, 0.0f), vec4(m.base + m.travel + m.up * 0.03f, 1.0f));
+            renderer_.draw(shadow_mesh_, glm::scale(road, vec3(m.half.x * (0.5f + 0.5f * down), 1.0f, m.half.z * (0.5f + 0.5f * down))));
+        }
     }
 }
 
@@ -2099,11 +2136,22 @@ void App::draw_water_overlay(const sim::World& w, vec3 camera) {
     }
 }
 
-void App::draw_gates(const sim::World& w) {
+void App::draw_gates(const sim::World& w, float alpha) {
     const sim::Track& t = w.track();
     const auto it = gate_meshes_.find(t.id);
     if (it == gate_meshes_.end()) return;
     const GateMeshes& g = it->second;
+    // Wavy road: the shader lifts the vertices to the wave (mesh.vert, fx 7),
+    // phased by the tick exactly as the sim's Track::wave_height is.
+    const double tick = double(w.tick_count()) - 1.0 + double(alpha);
+    for (size_t i = 0; i < t.waves.size() && i < g.waves.size(); ++i) {
+        const auto& wv = t.waves[i];
+        const float k = 2.0f * kPi / std::max(wv.wavelength, 1.0f);
+        const float ph = -k * wv.u0 - 2.0f * kPi * float(tick / double(std::max(wv.period, 1)) - double(wv.phase));
+        renderer_.set_fx(7);
+        renderer_.draw(g.waves[i], mat4(1.0f), vec4(t.gate_holds(wv.gate) ? wv.amplitude : 0.0f, k * 2.0f, ph, 1.0f)); // uv.y = s / 2
+        renderer_.set_fx(0);
+    }
     for (const auto& [branch, meshes] : g.roads)
         if (t.branch_present(branch)) renderer_.draw(meshes.first, mat4(1.0f)), renderer_.draw(meshes.second, mat4(1.0f));
     // Zones on a timer flicker for the second before they come on: a warning.
@@ -2392,6 +2440,7 @@ void App::render(float alpha, float dt) {
     render::Camera cam;
     cam.position = cam_init_ ? cam_pos_ : vec3(0, 12, -25);
     cam.target = cam_init_ ? cam_look_ : vec3(0, 0, 20);
+    cam.up = cam_init_ ? cam_up_ : kUp;
     cam.fov_y_deg = cam_fov_;
     if (w) show_track(w->track().id);
     update_lava(w, cam.position);
@@ -2435,7 +2484,7 @@ void App::render(float alpha, float dt) {
         draw_items(*w);
         draw_breakables(*w);
         draw_movers(*w, alpha);
-        draw_gates(*w);
+        draw_gates(*w, alpha);
         for (size_t i = 0; i < karts.size(); ++i) draw_kart(int(i), karts[i], alpha);
         if (!paused_) {
             particles_.update(frame_dt_);

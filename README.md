@@ -167,7 +167,9 @@ line and counted in sections, plus features placed by
 `[control point, metres]`: trick ramps, glide ramps over a gap, boost pads
 (by lane), road surfaces (offroad, sand, ice, water), verges, item box rows,
 stretches without walls and obstacles (`block` or `pillar`, placed by
-`offset` from the centre line). Where the spline passes over itself the road
+`offset` from the centre line), banks and grip road (steep banks and
+spirals karts stick to), conveyors, waves, and movers (platforms, blocks,
+presses and swings). Where the spline passes over itself the road
 becomes a bridge; it needs 8 m of headroom, which a test checks.
 `data/tracks/tracks.json` groups tracks into cups. The game builds the
 collision mesh, respawn points, CPU racing line (which steers round

@@ -1481,7 +1481,7 @@ bool Renderer::begin_frame(const Camera& camera, const SceneLighting& lighting) 
     const float aspect = float(offscreen_extent_.width) / float(offscreen_extent_.height);
     mat4 proj = glm::perspective(glm::radians(camera.fov_y_deg), aspect, camera.near_z, camera.far_z);
     proj[1][1] *= -1.0f; // Vulkan clip space has +Y down
-    const mat4 view = glm::lookAt(camera.position, camera.target, kUp);
+    const mat4 view = glm::lookAt(camera.position, camera.target, camera.up);
     cam_right_ = vec3(view[0][0], view[1][0], view[2][0]);
     cam_up_ = vec3(view[0][1], view[1][1], view[2][1]);
     cam_pos_ = camera.position;

@@ -31,6 +31,7 @@ enum class KartEventType : uint8_t {
     WaterEnter, // went under in deep water
     WaterExit,  // came up out of it
     VentLift,   // a vent's bubbles threw the kart upwards
+    Squash,     // value = mover index: a press came down on the kart
 };
 struct KartEvent {
     KartEventType type;
@@ -75,6 +76,7 @@ struct KartState {
     float glide_pitch = 0.0f;      // radians, + nose up
     bool underwater = false;       // in deep water: the water stats, slow falls, pitch control
     uint8_t water_frames = 0;      // frames the water test has disagreed with `underwater` (hysteresis)
+    uint8_t grip_carry = 0;        // frames left of gentle overspeed decay after grip road
 
     int respawn_frames = 0;        // > 0 while the kart is carried back to the track
     int stuck_frames = 0;

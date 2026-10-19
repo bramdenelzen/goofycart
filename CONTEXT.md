@@ -25,5 +25,21 @@ _Avoid_: one-lap track, sprint
 **Section**:
 One of the three stretches a point-to-point track is divided into; the HUD shows it as Section 1/3 where a lap track shows LAP 1/3.
 
+**Grip road**:
+A stretch of road karts stick to however steeply it banks (up to 80°): in the air over it gravity follows the road's up, and going downhill on it is faster. Not anti-gravity: the road still has a down.
+_Avoid_: anti-gravity, wall ride
+
+**Conveyor**:
+Dry road that carries karts along or across it, like a current does under deep water.
+
+**Wave**:
+A stretch whose road rises and falls in travelling swells, computed from the race tick in the sim and the shader alike.
+
+**Press**:
+A mover that slams down onto the road on a cycle and squashes any kart under it.
+
+**Swing**:
+A mover that hangs from a pivot and sways across the road; karts ride its deck.
+
 **Cup**:
 A set of four tracks raced as one Grand Prix; a track appears in at most one cup.

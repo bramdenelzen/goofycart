@@ -33,8 +33,17 @@ void main() {
     v_world = world.xyz;
     v_normal = mat3(draw.model) * in_normal;
     // Glow (fx 3) carries its colour in the tint; the surface keeps its own.
-    v_color = draw.flags.w == 3 ? in_color : in_color * draw.tint;
+    v_color = draw.flags.w == 3 || draw.flags.w == 7 ? in_color : in_color * draw.tint;
     v_uv = in_uv;
+    if (draw.flags.w == 7) {
+        // Wavy road: lifted by amplitude (tint.x) * sin(k' * v + phase) with
+        // k' (tint.y) and the phase (tint.z) set by the game from the tick,
+        // the same wave the simulation drives on; the vertex alpha eases the
+        // wave in and out at the ends of the stretch.
+        world.y += in_color.a * draw.tint.x * sin(in_uv.y * draw.tint.y + draw.tint.z);
+        v_world = world.xyz;
+        v_color.a = 1.0;
+    }
     if (draw.flags.w == 4) { // flames lick about, more towards the tip
         float t = frame.shadow.w * 22.0 + draw.tint.a * 40.0;
         world.xyz += mat3(draw.model) * vec3(sin(t + in_pos.z * 6.0) * 0.07, cos(t * 0.7 + in_pos.z * 5.0) * 0.05, 0.0) * in_uv.y;

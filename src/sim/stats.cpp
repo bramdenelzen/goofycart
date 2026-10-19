@@ -259,6 +259,10 @@ bool PhysicsTables::load(const std::string& path, std::string* error) {
             read_const(c, "water_hysteresis", k.water_hysteresis);
             read_const(c, "trick_window_frames", k.trick_window_frames);
             read_const(c, "trick_min_air_frames", k.trick_min_air_frames);
+            read_const(c, "grip_descent_gain", k.grip_descent_gain);
+            read_const(c, "grip_carry_decel", k.grip_carry_decel);
+            read_const(c, "grip_carry_frames", k.grip_carry_frames);
+            read_const(c, "grip_charge_mult", k.grip_charge_mult);
             read_const(c, "respawn_frames", k.respawn_frames);
             read_const(c, "susp_freq_light", k.susp_freq_light);
             read_const(c, "susp_freq_heavy", k.susp_freq_heavy);

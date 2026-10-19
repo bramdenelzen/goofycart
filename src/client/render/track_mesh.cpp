@@ -187,6 +187,11 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles, int group) {
             if (vi >= strips[k].first_vertex && vi < strips[k].first_vertex + uint32_t(strips[k].count * kStride)) return int(k);
         return -1;
     };
+    // Wavy stretches are drawn apart (make_wave_mesh), so the shader can move them.
+    auto on_wave = [&](uint32_t vi) {
+        const int k = strip_of(vi);
+        return k >= 0 && t.wave_at(strips[size_t(k)].first + int((vi - strips[size_t(k)].first_vertex) / kStride)) != nullptr;
+    };
 
     // Texture coordinates that follow the road: along it by distance and
     // across it by metres from the centre (or up a wall).
@@ -267,6 +272,7 @@ MeshData make_track_mesh(const sim::Track& t, bool skip_obstacles, int group) {
             const int sa = int(tri.a / kStride), sb = int(tri.b / kStride), sc = int(tri.c / kStride);
             if (t.on_stairs(t.center[size_t(sa)].s) && t.on_stairs(t.center[size_t(sb)].s) && t.on_stairs(t.center[size_t(sc)].s)) continue;
         }
+        if (!t.waves.empty() && on_wave(tri.a) && on_wave(tri.b) && on_wave(tri.c)) continue;
         uint32_t color = surface_color(th, tri.surface);
         if (tri.surface == sim::Surface::Wall) color = checker(centroid, 2.0f) ? th.wall_a : th.wall_b;
         const float along = glm::dot(centroid - start.pos, start.tangent);
@@ -1824,15 +1830,81 @@ MeshData make_vent_mesh(float radius) {
     return b.take();
 }
 
+MeshData make_wave_mesh(const sim::Track& t, const sim::Track::Wave& wv) {
+    const ThemeStyle& th = theme_style(t.theme);
+    MeshBuilder b;
+    constexpr int kStride = 9;
+    const std::vector<sim::Track::Strip> strips = t.strips();
+    // The road sample a grid vertex belongs to, or -1 off the grid.
+    auto sample_of = [&](uint32_t vi) {
+        for (const auto& st : strips)
+            if (vi >= st.first_vertex && vi < st.first_vertex + uint32_t(st.count * kStride)) return st.first + int((vi - st.first_vertex) / kStride);
+        return -1;
+    };
+    auto in_wave = [&](int sample) { return sample >= wv.first && sample < wv.first + wv.count; };
+    // How much of the wave reaches a sample (eased in and out), and its uv:
+    // across the road and along it, both in 2 m tiles; the shader reads v.
+    auto ease = [&](const sim::CenterSample& c) {
+        float d = c.u - wv.u0;
+        if (t.closed && c.branch < 0) {
+            if (d < -0.5f * t.length) d += t.length;
+            if (d > 0.5f * t.length) d -= t.length;
+        }
+        return t.wave_ease(wv, std::clamp(d, 0.0f, wv.length));
+    };
+    auto uv_of = [&](uint32_t vi, const sim::CenterSample& c) {
+        const vec3 d = t.vertices[vi] - c.pos;
+        return vec2(glm::dot(d, c.right) / 2.0f, c.u / 2.0f);
+    };
+    for (const auto& tri : t.triangles) {
+        const uint32_t ids[3] = {tri.a, tri.b, tri.c};
+        int smp[3];
+        bool all = true;
+        for (int k = 0; k < 3; ++k) all &= in_wave(smp[k] = sample_of(ids[k]));
+        if (!all) continue;
+        const vec3 p[3] = {t.vertices[tri.a], t.vertices[tri.b], t.vertices[tri.c]};
+        const vec3 centroid = (p[0] + p[1] + p[2]) / 3.0f;
+        const bool wall = tri.surface == sim::Surface::Wall;
+        uint32_t color = wall ? (checker(centroid, 2.0f) ? th.wall_a : th.wall_b) : surface_color(th, tri.surface);
+        vec2 uv[3];
+        uint32_t cols[3];
+        for (int k = 0; k < 3; ++k) {
+            const sim::CenterSample& c = t.road[size_t(smp[k])];
+            uv[k] = uv_of(ids[k], c);
+            cols[k] = (color & 0x00ffffffu) | (uint32_t(std::clamp(int(ease(c) * 255.0f + 0.5f), 0, 255)) << 24);
+        }
+        b.texture(surface_texture(t.theme, tri.surface), 2.0f);
+        auto emit = [&](vec3 a, vec3 bb, vec3 cc, vec2 ua, vec2 ub, vec2 uc, uint32_t shade_by) {
+            b.tri_uv(a, bb, cc, ua, ub, uc, color);
+            auto& vs = b.data().vertices;
+            for (int k = 0; k < 3; ++k) {
+                Vertex& vx = vs[vs.size() - 3 + size_t(k)];
+                const uint32_t base = shade_by == 1 ? shade(cols[k] & 0x00ffffffu, 0.7f) : shade_by == 2 ? th.underside : (cols[k] & 0x00ffffffu);
+                vx.color = (base & 0x00ffffffu) | (cols[k] & 0xff000000u);
+            }
+        };
+        emit(p[0], p[1], p[2], uv[0], uv[1], uv[2], 0);
+        if (wall) {
+            emit(p[0], p[2], p[1], uv[0], uv[2], uv[1], 1); // outside face
+        } else {
+            const vec3 down(0.0f, -1.2f, 0.0f);
+            b.texture(TexRock, 3.0f);
+            emit(p[0] + down, p[2] + down, p[1] + down, uv[0], uv[2], uv[1], 2);
+        }
+    }
+    return b.take();
+}
+
 MeshData make_current_mesh(const sim::Track& t, const sim::Track::Current& cu) {
     // Pale chevrons laid on the floor every few metres, pointing the way the
-    // water carries: along the road, or across it for a cross-current.
+    // water carries: along the road, or across it for a cross-current. A
+    // conveyor's are black and yellow, closer together.
     MeshBuilder b;
     b.texture(TexWhite);
-    const uint32_t color = rgba(200, 245, 255, 150);
+    const uint32_t color = cu.dry ? rgba(255, 205, 40, 235) : rgba(200, 245, 255, 150);
     const vec3 along = glm::normalize(vec3(cu.push, 0.0f, 0.0f) + vec3(1e-6f)); // in (across, up, along) terms below
     (void)along;
-    for (int i = cu.first; i < cu.first + cu.count; i += 3) {
+    for (int i = cu.first; i < cu.first + cu.count; i += cu.dry ? 2 : 3) {
         const sim::CenterSample& c = t.road[size_t(i)];
         if (!c.has_floor) continue;
         const float w = c.half_width + 0.6f;

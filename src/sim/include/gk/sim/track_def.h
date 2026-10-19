@@ -16,7 +16,7 @@ struct TrackPos {
 // One piece of a track layout. Which fields matter depends on the kind.
 struct TrackFeature {
     enum class Kind { TrickRamp, GlideRamp, BoostPad, Road, Verge, ItemBoxes, NoWalls, Obstacle, Stairs, Mover,
-                      Barrier, Switch, Zone, Tunnel, Bank, Current, Vent };
+                      Barrier, Switch, Zone, Tunnel, Bank, Current, Vent, Grip, Conveyor, Wave };
     Kind kind = Kind::Road;
     TrackPos at, to;        // ramps, pads and boxes use `at`; ranges use at..to
     float length = 8.0f;    // ramps, pads and obstacles (m, along the road)
@@ -26,13 +26,23 @@ struct TrackFeature {
     float offset = 0.0f;    // obstacles: from the centre line, + to the right (m)
     int sides = 4;          // obstacles: 4 a block, 8 a round pillar
     std::string prop;       // obstacles: "solid", "crate", "barrel", "crystal", "tires" or "" (by theme)
-    // Movers: "platform" or "block"; swing in the road's frame (across, up,
-    // along, metres), seconds per swing, phase 0..1, ramp length (m).
-    bool block = false;
+    // Movers: "platform", "block", "press" or "swing"; swing in the road's
+    // frame (across, up, along, metres), seconds per swing, phase 0..1, ramp
+    // length (m). A press drops `drop` metres onto the road; a swing hangs
+    // `arm` metres under its pivot and sways `angle` degrees either way.
+    // Waves: `period` seconds per wave, `phase` 0..1.
+    enum class MoverKind : uint8_t { Platform, Block, Press, Swing };
+    MoverKind mover = MoverKind::Platform;
     vec3 travel{0.0f};
     float period = 4.0f;
     float phase = 0.0f;
     float ramp = 2.0f;
+    float drop = 3.0f;
+    float arm = 6.0f;
+    // Waves: the road rises and falls `amplitude` metres in rolling waves
+    // `wavelength` metres long that travel with the traffic.
+    float amplitude = 0.6f;
+    float wavelength = 12.0f;
     bool boost = false;     // movers: the platform's deck is a dash panel
     int lanes = 0b1111;     // boost pads: which of the 4 lanes (bit 0 = leftmost)
     bool left = true, right = true; // verges and walls: which side; zones: which half of the road
@@ -42,9 +52,9 @@ struct TrackFeature {
     float level = 1e9f;     // deep water: the surface's height (m); unset = the road's height at the zone's lower end
     std::string name;       // switches: what gates call it; tunnels: the style (rock, masonry, ice, concrete, lava; "" by theme)
     float hold = 10.0f;     // switches: seconds a press lasts
-    float angle = 0.0f;     // banks: degrees, + the right side lower (banked into a right turn)
-    // Currents (deep water only): m/s along the road (+ with the traffic) and
-    // across it (+ to the right). Vents: the lift (m/s up) and, if timed,
+    float angle = 0.0f;     // banks: degrees, + the right side lower (banked into a right turn); swings: the sway
+    // Currents (deep water) and conveyors (dry road): m/s along the road (+
+    // with the traffic) and across it (+ to the right). Vents: the lift (m/s up) and, if timed,
     // seconds blowing out of each `period` (0: always).
     float push = 0.0f, drift = 0.0f;
     float lift = 12.0f;

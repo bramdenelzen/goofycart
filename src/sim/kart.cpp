@@ -67,17 +67,23 @@ Probe probe(const KartState& s, const Track& t, float max_below, float from = kP
     return pr;
 }
 
-quat align_up(const quat& rot, vec3 target, float t) {
-    const vec3 up = rot * vec3(0, 1, 0);
-    const vec3 new_up = glm::normalize(glm::mix(up, target, t));
-    if (glm::dot(up, new_up) > 0.99999f) return rot;
-    return glm::normalize(glm::rotation(up, new_up) * rot);
-}
-
 quat basis(vec3 forward, vec3 up) {
     forward = glm::normalize(forward - up * glm::dot(forward, up));
     const vec3 left = glm::normalize(glm::cross(up, forward));
     return glm::normalize(glm::quat_cast(glm::mat3(left, glm::cross(forward, left), forward)));
+}
+
+// Tips the kart part of the way to a new up, keeping its heading: the
+// forward is dropped onto the new ground plane, so a road that twists under
+// the kart (a bank easing in or out) pitches and rolls it without yawing it.
+quat align_up(const quat& rot, vec3 target, float t) {
+    const vec3 up = rot * vec3(0, 1, 0);
+    const vec3 new_up = glm::normalize(glm::mix(up, target, t));
+    if (glm::dot(up, new_up) > 0.99999f) return rot;
+    const vec3 forward = rot * vec3(0, 0, 1);
+    const vec3 flat = forward - new_up * glm::dot(forward, new_up);
+    if (glm::dot(flat, flat) < 1e-6f) return glm::normalize(glm::rotation(up, new_up) * rot);
+    return basis(flat, new_up);
 }
 
 void emit(const KartStepContext& ctx, KartEventType type, int value = 0) {
@@ -276,20 +282,24 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
         s.air_vel = vec3(h.x, s.air_vel.y, h.z);
         if (s.drift == DriftState::Drifting && p.is_bike && in.drift) s.mt_charge += k.charge_slow * p.mt_charge;
     } else {
-        s.air_vel.y -= k.gravity * kDt;
+        // Over grip road "down" is into the road, so a hop or a bump off a
+        // steep bank comes back to it instead of peeling away.
+        const vec3 gup = ctx.track.grip_up(s.sample);
+        s.air_vel -= gup * (k.gravity * kDt);
         float rate = in.steer * p.turn_rate * 0.35f;
         if (s.drift == DriftState::Drifting) rate = float(s.drift_dir) * p.turn_rate * s.drift_turn * 0.8f;
-        const quat q = glm::angleAxis(-rate * kDt, kUp);
+        const quat q = glm::angleAxis(-rate * kDt, gup);
         s.rot = glm::normalize(q * s.rot);
-        const vec3 h = q * vec3(s.air_vel.x, 0.0f, s.air_vel.z);
-        s.air_vel = vec3(h.x, s.air_vel.y, h.z);
+        const float vy = glm::dot(s.air_vel, gup);
+        s.air_vel = q * (s.air_vel - gup * vy) + gup * vy;
         // Bikes keep charging mini-turbos in the air while drift is held.
         if (s.drift == DriftState::Drifting && p.is_bike && in.drift) s.mt_charge += k.charge_slow * p.mt_charge;
     }
-    s.rot = align_up(s.rot, kUp, 0.06f);
+    const vec3 fall_up = s.gliding || s.underwater ? kUp : ctx.track.grip_up(s.sample);
+    s.rot = align_up(s.rot, fall_up, fall_up == kUp ? 0.06f : 0.15f);
     s.pos += s.air_vel * kDt;
 
-    if (s.air_frames > 2 && s.air_vel.y <= 1.0f) {
+    if (s.air_frames > 2 && glm::dot(s.air_vel, fall_up) <= 1.0f) {
         // Underwater a hop floats for a long time, long enough for a rising
         // road to come up past the kart's wheels: look for it from higher up.
         const Probe pr = probe(s, ctx.track, kLandTolerance + std::max(0.0f, -s.air_vel.y) * kDt, s.underwater ? 1.6f : kProbeHeight);
@@ -352,7 +362,17 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     float terrain = terrain_multiplier(s, p, k);
     if (s.boost_frames > 0 && s.boost_ignores_offroad) terrain = std::max(terrain, 1.0f);
     const float cap = s.underwater ? p.top_speed_water : p.top_speed; // the water stats underwater
-    const float top = cap * ctx.top_speed_scale * terrain * (1.0f + k.coin_speed_bonus * float(std::min(s.coins, k.max_coins)));
+    float top = cap * ctx.top_speed_scale * terrain * (1.0f + k.coin_speed_bonus * float(std::min(s.coins, k.max_coins)));
+    // Grip road: a descent raises the cap, and the speed built there bleeds
+    // away gently for a while after it (momentum out of a spiral).
+    const bool grip = ctx.track.grip_at(s.sample);
+    if (grip) {
+        top *= 1.0f + k.grip_descent_gain * std::max(0.0f, -fwd.y);
+        s.grip_carry = uint8_t(std::min(k.grip_carry_frames, 255));
+    } else if (s.grip_carry > 0) {
+        --s.grip_carry;
+    }
+    const float overspeed_decel = s.grip_carry > 0 ? k.grip_carry_decel : k.overspeed_decel;
     if (s.boost_frames > 0) {
         const float boosted = top * s.boost_mult;
         if (s.speed < boosted) s.speed = std::min(boosted, s.speed + k.boost_accel * kDt);
@@ -363,14 +383,14 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
             const float a = p.accel * (1.0f - 0.75f * x * x);
             s.speed = std::min(top, s.speed + a * kDt);
         } else {
-            s.speed = approach(s.speed, top, k.overspeed_decel * kDt);
+            s.speed = approach(s.speed, top, overspeed_decel * kDt);
         }
     } else if (in.brake) {
         if (s.speed > 0.5f) s.speed = std::max(0.0f, s.speed - k.brake_decel * kDt);
         else s.speed = std::max(-k.reverse_top, s.speed - k.reverse_accel * kDt);
     } else {
         s.speed = approach(s.speed, 0.0f, k.coast_decel * kDt);
-        if (s.speed > top) s.speed = approach(s.speed, top, k.overspeed_decel * kDt);
+        if (s.speed > top) s.speed = approach(s.speed, top, overspeed_decel * kDt);
     }
     s.speed -= fwd.y * k.gravity * k.slope_factor * kDt;
 
@@ -392,7 +412,7 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
         else if (s.speed < k.min_drift_speed * 0.7f) release_drift(s, ctx, false);
         else {
             const float rel = in.steer * float(s.drift_dir);
-            s.mt_charge += (rel >= 0.5f ? k.charge_fast : k.charge_slow) * p.mt_charge;
+            s.mt_charge += (rel >= 0.5f ? k.charge_fast : k.charge_slow) * p.mt_charge * (grip ? k.grip_charge_mult : 1.0f);
         }
     }
     // Drift entry ramp, 0 at the start of the drift and 1 once it has settled.
@@ -452,7 +472,7 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
 void collide_walls(KartState& s, const KartStepContext& ctx) {
     static thread_local std::vector<WallContact> contacts;
     contacts.clear();
-    const vec3 up_ref = s.grounded ? s.up() : kUp;
+    const vec3 up_ref = s.grounded ? s.up() : ctx.track.grip_up(s.sample);
     ctx.track.collide_sphere(s.pos + s.up() * kSphereHeight, kSphereRadius, contacts);
     vec3 push(0.0f);
     vec3 wall_n(0.0f);
@@ -703,7 +723,7 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     const SuspensionInput before{s.grounded, s.speed, s.velocity(), s.forward(), s.up()};
     if (s.grounded) step_ground(s, in, drift_pressed, ctx);
     else step_air(s, in, drift_pressed, ctx);
-    if (s.underwater) s.pos += ctx.track.current_at(s.pos, s.sample) * kDt; // carried by the water
+    s.pos += ctx.track.current_at(s.pos, s.sample, s.underwater, s.grounded) * kDt; // carried by the water, or a conveyor
     collide_walls(s, ctx);
     update_roof(s, ctx);
     step_suspension(s, before, ctx);

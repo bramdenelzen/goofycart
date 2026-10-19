@@ -53,6 +53,7 @@ bool in_any(const std::vector<Range>& rs, float s) {
 constexpr int kCols = 7; // lateral vertices per sample: wall, verge, 4 lanes, verge, wall
 constexpr int kStride = kCols + 2;
 constexpr float kWallHeight = 1.5f;
+constexpr float kGripBank = 80.0f; // the steepest bank, on grip road
 constexpr float kOpenRoad = 1e7f; // the "loop length" of an open road: nothing wraps
 
 // One road being built: the main loop or a branch, its samples and its
@@ -78,8 +79,9 @@ struct Strip {
     std::vector<VergeSpan> verges;
     std::vector<float> box_rows;
     std::vector<std::pair<float, const TrackFeature*>> obstacles, movers, barriers, switches, vents;
-    std::vector<std::pair<Range, const TrackFeature*>> zones, tunnels, currents;
+    std::vector<std::pair<Range, const TrackFeature*>> zones, tunnels, currents, waves;
     std::vector<std::pair<Range, float>> banks; // radians, + right side down
+    std::vector<Range> grips;
 
     int n() const { return int(c.size()); }
     Range range(float a, float b) const { return Range{a, b, closed ? total : kOpenRoad}; }
@@ -131,8 +133,14 @@ struct Strip {
         case TrackFeature::Kind::Switch: switches.push_back({a, &f}); break;
         case TrackFeature::Kind::Zone: zones.push_back({range(a, b), &f}); break;
         case TrackFeature::Kind::Bank: banks.push_back({range(a, b), glm::radians(f.angle)}); break;
-        case TrackFeature::Kind::Current: currents.push_back({range(a, b), &f}); break;
+        case TrackFeature::Kind::Current:
+        case TrackFeature::Kind::Conveyor: currents.push_back({range(a, b), &f}); break;
         case TrackFeature::Kind::Vent: vents.push_back({a, &f}); break;
+        case TrackFeature::Kind::Grip: grips.push_back(range(a, b)); break;
+        case TrackFeature::Kind::Wave:
+            waves.push_back({range(a, b), &f});
+            no_respawn.push_back(range(a - 2.0f, b + 2.0f)); // a kart dropped onto a wave lands inside it
+            break;
         case TrackFeature::Kind::Tunnel:
             tunnels.push_back({range(a, b), &f});
             no_respawn.push_back(range(a - 2.0f, b + 2.0f)); // the roof is no place to drop a kart onto
@@ -141,13 +149,15 @@ struct Strip {
     }
 
     // The road's tilt across at s: each bank eases in and out over its first
-    // and last 15 m (or a third of it, if shorter).
+    // and last 15 m (or a third of it, if shorter); a steep grip-road bank
+    // over proportionally more, so the road never twists faster than a
+    // 35-degree bank's.
     float bank_at(float s) const {
         float a = 0.0f;
         for (const auto& [r, angle] : banks) {
             if (!r.contains(s)) continue;
             const float len = std::max(r.b - r.a, 1e-3f), d = r.progress(s) * len;
-            const float ease = std::min(15.0f, len / 3.0f);
+            const float ease = std::min(15.0f * std::max(1.0f, glm::degrees(std::abs(angle)) / 35.0f), len / 3.0f);
             a += angle * smooth(std::clamp(std::min(d, len - d) / ease, 0.0f, 1.0f));
         }
         return a;
@@ -210,6 +220,7 @@ struct Strip {
             cs.half_width = base[size_t(i)].w;
             cs.has_floor = !in_any(gaps, cs.u);
             cs.respawn_ok = !in_any(no_respawn, cs.u);
+            cs.grip = in_any(grips, cs.u);
         }
     }
     uint32_t V(int sample, int col) const { return first_vertex + uint32_t(wrap(sample) * kStride + col); }
@@ -763,15 +774,28 @@ Track build_track(const TrackDef& def) {
             const int si = st.sample_at(s_at);
             m.sample = st.first + si;
             const CenterSample& c = st.c[size_t(si)];
-            m.kind = f->block ? Track::Mover::Kind::Block : Track::Mover::Kind::Platform;
+            using MK = TrackFeature::MoverKind;
+            m.kind = f->mover == MK::Block ? Track::Mover::Kind::Block : f->mover == MK::Press ? Track::Mover::Kind::Press
+                   : f->mover == MK::Swing ? Track::Mover::Kind::Swing : Track::Mover::Kind::Platform;
             m.forward = c.tangent, m.right = c.right, m.up = c.up;
             m.half = vec3(0.5f * f->width, 0.5f * f->height, 0.5f * f->length);
             m.base = c.pos + c.right * f->offset;
             m.travel = c.right * f->travel.x + c.up * f->travel.y + c.tangent * f->travel.z;
             m.period = std::max(30, int(std::round(f->period * 60.0f)));
             m.phase = f->phase;
-            m.ramp = f->block ? 0.0f : std::min(f->ramp, m.half.z);
+            const bool solid = m.kind == Track::Mover::Kind::Block || m.kind == Track::Mover::Kind::Press;
+            m.ramp = solid ? 0.0f : std::min(f->ramp, m.half.z);
             m.deck = f->boost ? Surface::BoostPad : Surface::Road;
+            if (m.kind == Track::Mover::Kind::Press) { // rests `drop` m over the road and slams down onto it
+                m.base += c.up * f->drop;
+                m.travel = -c.up * f->drop;
+            }
+            if (m.kind == Track::Mover::Kind::Swing) {
+                m.base += c.up * f->travel.y; // the deck's height at rest
+                m.travel = vec3(0.0f);
+                m.arm = std::max(f->arm, 0.5f);
+                m.angle = glm::radians(f->angle);
+            }
             t.movers.push_back(m);
         }
         // Barriers written in the track: up while their gate holds.
@@ -831,6 +855,7 @@ Track build_track(const TrackDef& def) {
             if (!st.closed) count = std::min(count, st.n() - a);
             cu.push = f->push, cu.drift = f->drift;
             cu.gate = f->gate;
+            cu.dry = f->kind == TrackFeature::Kind::Conveyor;
             if (f->width > 0.0f) cu.lo = f->offset - 0.5f * f->width, cu.hi = f->offset + 0.5f * f->width;
             else if (!f->left) cu.lo = 0.4f;
             else if (!f->right) cu.hi = -0.4f;
@@ -842,6 +867,25 @@ Track build_track(const TrackDef& def) {
             }
             cu.first = st.first + a, cu.count = std::max(1, count);
             t.currents.push_back(cu);
+        }
+        for (const auto& [r, f] : st.waves) {
+            Track::Wave wv;
+            const int a = st.sample_at(r.a);
+            int count = int(std::round((r.b - r.a) / st.step)) + 1;
+            if (!st.closed) count = std::min(count, st.n() - a);
+            wv.amplitude = f->amplitude, wv.wavelength = f->wavelength;
+            wv.period = std::max(30, int(std::round(f->period * 60.0f)));
+            wv.phase = f->phase;
+            wv.gate = f->gate;
+            wv.u0 = st.c[size_t(a)].u, wv.length = r.b - r.a;
+            if (st.closed && a + count > st.n()) { // split at the start line, as zones are (one wave, two sample runs)
+                Track::Wave w2 = wv;
+                w2.first = st.first, w2.count = a + count - st.n();
+                t.waves.push_back(w2);
+                count = st.n() - a;
+            }
+            wv.first = st.first + a, wv.count = std::max(1, count);
+            t.waves.push_back(wv);
         }
         for (const auto& [s_at, f] : st.vents) {
             const int si = st.sample_at(s_at);
@@ -1085,6 +1129,9 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     else if (type == "bank") tf.kind = K::Bank;
     else if (type == "current") tf.kind = K::Current;
     else if (type == "vent") tf.kind = K::Vent;
+    else if (type == "grip") tf.kind = K::Grip;
+    else if (type == "conveyor") tf.kind = K::Conveyor;
+    else if (type == "wave") tf.kind = K::Wave;
     else throw std::runtime_error("unknown feature type " + type);
     if (on_branch && tf.kind == K::Stairs) throw std::runtime_error("stairs only on the main loop");
     auto pos = [&](const nlohmann::json& j) { return on_branch ? TrackPos{0.0f, j.get<float>()} : parse_pos(j); };
@@ -1126,7 +1173,8 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     }
     if (tf.kind == K::Bank) {
         tf.angle = f.at("angle").get<float>();
-        if (std::abs(tf.angle) > 35.0f) throw std::runtime_error("a bank steeper than 35 degrees");
+        if (std::abs(tf.angle) > kGripBank) throw std::runtime_error("a bank steeper than 80 degrees");
+        // Steeper than 35 only on grip road: checked once every feature is in (parse_track_def).
     }
     if (tf.kind == K::Tunnel) {
         tf.height = f.value("height", 7.0f);
@@ -1141,11 +1189,20 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
         else if (depth != "shallow") throw std::runtime_error("unknown zone depth " + depth);
         tf.level = f.value("level", tf.level);
     }
-    if (tf.kind == K::Current) {
+    if (tf.kind == K::Current || tf.kind == K::Conveyor) {
         tf.width = f.value("width", 0.0f); // 0: the whole road (or one side of it)
         tf.push = f.value("push", 0.0f);
         tf.drift = f.value("drift", 0.0f);
-        if (tf.push == 0.0f && tf.drift == 0.0f) throw std::runtime_error("a current needs a push or a drift");
+        if (tf.push == 0.0f && tf.drift == 0.0f) throw std::runtime_error("a " + type + " needs a push or a drift");
+    }
+    if (tf.kind == K::Wave) {
+        tf.amplitude = f.value("amplitude", 0.6f);
+        tf.wavelength = f.value("wavelength", 12.0f);
+        tf.period = f.value("period", 2.0f);
+        tf.phase = f.value("phase", 0.0f);
+        if (tf.amplitude <= 0.0f || tf.amplitude > 1.5f) throw std::runtime_error("a wave's amplitude is 0..1.5 m");
+        if (tf.wavelength < 4.0f) throw std::runtime_error("a wave shorter than 4 m");
+        if (tf.period < 0.5f) throw std::runtime_error("a wave's period is at least 0.5 s");
     }
     if (tf.kind == K::Vent) {
         tf.width = f.value("width", 6.0f);
@@ -1155,15 +1212,28 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
         tf.phase = f.value("phase", 0.0f);
     }
     if (tf.kind == K::Mover) {
-        tf.block = f.value("kind", std::string("platform")) == "block";
-        tf.width = f.value("width", tf.block ? 3.0f : 6.0f);
-        tf.length = f.value("length", tf.block ? 3.0f : 12.0f);
-        tf.height = f.value("height", tf.block ? 2.4f : 0.8f);
+        using MK = TrackFeature::MoverKind;
+        const std::string kind = f.value("kind", std::string("platform"));
+        if (kind == "platform") tf.mover = MK::Platform;
+        else if (kind == "block") tf.mover = MK::Block;
+        else if (kind == "press") tf.mover = MK::Press;
+        else if (kind == "swing") tf.mover = MK::Swing;
+        else throw std::runtime_error("unknown mover kind " + kind);
+        const bool solid = tf.mover == MK::Block || tf.mover == MK::Press;
+        tf.width = f.value("width", tf.mover == MK::Press ? 6.0f : solid ? 3.0f : 6.0f);
+        tf.length = f.value("length", tf.mover == MK::Press ? 4.0f : solid ? 3.0f : 12.0f);
+        tf.height = f.value("height", solid ? 2.4f : 0.8f);
         if (f.contains("travel")) tf.travel = {f["travel"][0].get<float>(), f["travel"][1].get<float>(), f["travel"][2].get<float>()};
+        if (f.contains("height_above")) tf.travel.y = f["height_above"].get<float>(); // swings: the deck's rest height
         tf.period = f.value("period", 4.0f);
         tf.phase = f.value("phase", 0.0f);
         tf.ramp = f.value("ramp", 2.5f);
         tf.boost = f.value("boost", false);
+        tf.drop = f.value("drop", 3.0f);
+        tf.arm = f.value("arm", 6.0f);
+        tf.angle = f.value("angle", 25.0f);
+        if (tf.mover == MK::Press && tf.drop < 1.5f) throw std::runtime_error("a press needs at least 1.5 m to drop");
+        if (tf.mover == MK::Swing && std::abs(tf.angle) > 60.0f) throw std::runtime_error("a swing sways at most 60 degrees");
     }
     if (f.contains("lanes")) {
         tf.lanes = 0;
@@ -1179,6 +1249,21 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     if (tf.kind == K::Verge && !f.contains("surface")) tf.surface = verge_surface;
     if (tf.deep && tf.surface != Surface::Water) throw std::runtime_error("only water zones can be deep");
     return tf;
+}
+
+// A bank steeper than kPlainBank only on grip road: a grip stretch must
+// cover it (by position, so a bank from [7, 10] to [8, 0] needs a grip from
+// no later than [7, 10] to no earlier than [8, 0]).
+constexpr float kPlainBank = 35.0f;
+void check_steep_banks(const std::vector<TrackFeature>& features) {
+    auto before = [](TrackPos a, TrackPos b) { return a.ctrl < b.ctrl || (a.ctrl == b.ctrl && a.metres <= b.metres); };
+    for (const TrackFeature& b : features) {
+        if (b.kind != TrackFeature::Kind::Bank || std::abs(b.angle) <= kPlainBank) continue;
+        bool covered = false;
+        for (const TrackFeature& g : features)
+            covered |= g.kind == TrackFeature::Kind::Grip && before(g.at, b.at) && before(b.to, g.to);
+        if (!covered) throw std::runtime_error("a bank steeper than 35 degrees needs a grip stretch over it");
+    }
 }
 
 vec4 parse_point(const nlohmann::json& p) {
@@ -1226,6 +1311,7 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
         }
         for (const auto& f : j.value("features", nlohmann::json::array()))
             d.features.push_back(parse_feature(f, d, gates, false, d.verge_surface));
+        check_steep_banks(d.features);
         for (const auto& b : j.value("branches", nlohmann::json::array())) {
             BranchDef bd;
             bd.name = b.value("name", std::string());
@@ -1247,6 +1333,7 @@ bool parse_track_def(const std::string& text, TrackDef& d, std::string* error) {
             bd.ai_share = b.value("cpu_share", bd.ai_share);
             const Surface vs = bd.verge_surface != Surface::Count ? bd.verge_surface : d.verge_surface;
             for (const auto& f : b.value("features", nlohmann::json::array())) bd.features.push_back(parse_feature(f, d, gates, true, vs));
+            check_steep_banks(bd.features);
             d.branches.push_back(std::move(bd));
         }
         if (d.branches.size() > 32) throw std::runtime_error("at most 32 branches");
