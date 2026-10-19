@@ -6,6 +6,7 @@ add_executable(gk_tests
   test_net.cpp
   test_items.cpp
   test_water.cpp
+  test_glider.cpp
   test_tunnels.cpp
   test_ai.cpp
   test_tracks.cpp

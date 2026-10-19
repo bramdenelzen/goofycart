@@ -151,8 +151,20 @@ struct PhysicsConstants {
     float boost_accel = 40.0f;
 
     float glide_launch_velocity = 7.0f;
-    float glide_sink = 4.0f;
-    float glide_pitch_speed = 0.18f;
+    // Gliding: height and speed are one budget. The nose commands the path
+    // angle; gravity along the path and a drag that grows with speed squared
+    // set the airspeed, tuned so a hands-off glider holds its air speed stat
+    // and sinks at 1/glide_ratio of it. Provisional, tuned by feel.
+    float glide_gravity = 12.0f;     // m/s^2 pulling along the path (the wing carries the rest)
+    float glide_ratio = 6.0f;        // metres forward per metre of height at trim
+    float glide_dive_range = 0.37f;  // how far below trim a full dive points (sine of the angle)
+    float glide_climb_range = 0.37f; // how far above trim a full climb points at trim speed
+    float glide_path_rate = 0.8f;    // how fast the path follows the nose (sine units per second)
+    float glide_floor = 0.6f;        // the slowest glide, as a fraction of the air speed stat
+    float glide_floor_gain = 0.05f;  // per m/s under trim near the floor: the nose drops by itself
+    float glide_cap_mult = 1.32f;    // fastest glide, as a multiple of top speed (the boost-pad speed)
+    float glide_bank_drag = 0.25f;   // extra drag at full bank
+    float glide_pitch_speed = 0.18f; // underwater: the stick's trade of height for speed
     // Underwater (deep water zones): a mode, not a surface. Provisional.
     float water_gravity_scale = 0.5f;   // gravity while airborne underwater
     float water_terminal_fall = 6.0f;   // m/s: falls no faster than this underwater

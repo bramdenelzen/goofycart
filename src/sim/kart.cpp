@@ -218,27 +218,45 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
 
     if (s.gliding) {
         // A glider, not a cursor: the stick rolls it into a bank and the bank
-        // turns it; the stick fore and aft tips the nose, trading height for
-        // speed. Both ease in, and the flight path lags the nose a little.
+        // turns it; the stick fore and aft tips the nose. Height and speed
+        // are one budget: the nose sets the path angle, and gravity along
+        // the path against a drag that grows with speed squared sets the
+        // airspeed, so a dive buys speed and a climb spends it. Hands off,
+        // the glider settles at its air speed stat, sinking at 1/glide_ratio
+        // of it, and a boosted launch carries on for seconds before the drag
+        // bleeds it back.
         constexpr float kMaxBank = 0.65f, kMaxPitch = 0.38f;
         s.glide_bank = approach(s.glide_bank, in.steer * kMaxBank, 3.2f * kDt);
         s.glide_pitch = approach(s.glide_pitch, in.pitch * kMaxPitch, 1.6f * kDt);
         const float bank = s.glide_bank / kMaxBank, pitch = s.glide_pitch / kMaxPitch; // -1..1
-        vec3 h(s.air_vel.x, 0.0f, s.air_vel.z);
-        float hs = glm::length(h);
+        const float v_trim = p.glide_speed, v_floor = v_trim * k.glide_floor, v_cap = p.top_speed * k.glide_cap_mult;
+        float v = glm::length(s.air_vel);
+        const vec3 h(s.air_vel.x, 0.0f, s.air_vel.z);
+        const float hs = glm::length(h);
         vec3 dir = hs > 0.1f ? h / hs : glm::normalize(vec3(s.forward().x, 0.0f, s.forward().z));
-        // Diving speeds up and climbing bleeds speed; a steep bank sinks faster.
-        const float target_hs = p.glide_speed * (1.0f - k.glide_pitch_speed * pitch);
-        hs = approach(hs, target_hs, (pitch < 0.0f ? 9.0f : 4.0f) * kDt);
-        const float target_vy = -k.glide_sink * (1.0f - 0.6f * pitch) * (1.0f + 0.15f * std::abs(bank));
-        const float vy = approach(s.air_vel.y, target_vy, 7.0f * kDt);
+        float path = v > 0.1f ? std::clamp(s.air_vel.y / v, -1.0f, 1.0f) : 0.0f; // sine of the path angle, + up
+        // What the nose asks for. Nose-up authority is the wing's lift, which
+        // grows with speed squared: it fades to the trim glide as the speed
+        // bleeds, and under trim near the floor the nose drops by itself. A
+        // mush, never a stall.
+        const float lift = std::clamp((v * v - v_floor * v_floor) / std::max(v_trim * v_trim - v_floor * v_floor, 1.0f), 0.0f, 1.0f);
+        const float trim = -1.0f / std::sqrt(1.0f + k.glide_ratio * k.glide_ratio);
+        const float up_limit = trim + k.glide_climb_range * lift, down_limit = trim - k.glide_dive_range;
+        float target = pitch >= 0.0f ? glm::mix(trim, up_limit, pitch) : glm::mix(trim, down_limit, -pitch);
+        target = std::min(target, trim + (v - v_floor) * k.glide_floor_gain);
+        path = approach(path, target, k.glide_path_rate * kDt);
+        // Energy: gravity along the path against a drag that balances it at
+        // trim; a banked turn needs more lift, which costs more drag.
+        const float rel = v / std::max(v_trim, 1.0f);
+        const float drag = (k.glide_gravity / k.glide_ratio) * rel * rel * (1.0f + k.glide_bank_drag * bank * bank);
+        v = std::clamp(v + (-k.glide_gravity * path - drag) * kDt, v_floor, v_cap);
         const float yaw = -bank * p.turn_rate_air * kDt;
         const quat q = glm::angleAxis(yaw, kUp);
         s.rot = glm::normalize(q * s.rot);
         // The path swings round to the nose: momentum carries it wide first.
         vec3 nose(s.forward().x, 0.0f, s.forward().z);
         if (glm::length(nose) > 1e-3f) dir = glm::normalize(glm::mix(dir, glm::normalize(nose), std::min(1.0f, 4.5f * kDt)));
-        s.air_vel = dir * hs + kUp * vy;
+        s.air_vel = dir * (v * std::sqrt(std::max(0.0f, 1.0f - path * path))) + kUp * (v * path);
     } else if (s.underwater) {
         // Underwater: half the gravity and a capped fall, so hops rise as high
         // but come down slowly; the stick tips the nose like the glider's,

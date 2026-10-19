@@ -9,7 +9,7 @@ namespace gk::sim {
 namespace {
 
 constexpr char kMagic[4] = {'G', 'K', 'G', 'H'};
-constexpr uint8_t kVersion = 1;
+constexpr uint8_t kVersion = 2; // 2: the energy-trade glider; older runs no longer replay
 
 int8_t to_i8(float v) { return int8_t(std::lround(std::clamp(v, -1.0f, 1.0f) * 127.0f)); }
 
