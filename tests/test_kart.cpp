@@ -165,12 +165,15 @@ TEST_CASE("mini-turbo charge: 5 units per frame with the stick into the turn, ti
     CHECK(b.kart.drift_dir == 1);
     const auto& k = b.tables.constants;
     const float rate = k.charge_fast * b.params.mt_charge;
-    const int to_blue = int(std::ceil(k.mt_thresholds[0] / rate));
+    // The charge started in the air, past the top of the hop.
+    const float pre = b.kart.mt_charge;
+    CHECK(pre > 0.0f);
+    const int to_blue = int(std::ceil((k.mt_thresholds[0] - pre) / rate));
     b.step(gas(1.0f, true), to_blue - 1);
     CHECK(b.kart.mt_tier(k) == 0);
     b.step(gas(1.0f, true), 1);
     CHECK(b.kart.mt_tier(k) == 1);
-    const int to_orange = int(std::ceil(k.mt_thresholds[1] / rate));
+    const int to_orange = int(std::ceil((k.mt_thresholds[1] - pre) / rate));
     b.step(gas(1.0f, true), to_orange - to_blue);
     CHECK(b.kart.mt_tier(k) == 2);
     b.step(gas(1.0f), 1); // release
@@ -350,4 +353,104 @@ TEST_CASE("a trick works off any ledge, but only pays out after real air") {
     Bench low(ledge_track(0.12f), {0, 0.12f, -80.0f});
     trick_off_ledge(low);
     for (const auto& e : low.events) CHECK_FALSE((e.type == KartEventType::Boost && e.value == int(BoostKind::Trick)));
+}
+
+TEST_CASE("the mini-turbo starts charging past the top of the drift hop, not on landing") {
+    Bench b(test::flat_track());
+    b.step(gas(), 60 * 3);
+    b.step(gas(1.0f, true), 1); // hop
+    int hop_frames = 1, first_charge = -1;
+    while (!b.kart.grounded && hop_frames < 60) {
+        b.step(gas(1.0f, true));
+        ++hop_frames;
+        if (first_charge < 0 && b.kart.mt_charge > 0.0f) first_charge = hop_frames;
+    }
+    REQUIRE(first_charge > 0);
+    MESSAGE("hop ", hop_frames, " frames, charging from frame ", first_charge);
+    CHECK(first_charge <= hop_frames / 2 + 2); // about half way: ~0.13 s after the press
+    CHECK(first_charge < hop_frames);           // before the wheels are down
+
+    // A hop without the stick held over charges nothing.
+    Bench c(test::flat_track());
+    c.step(gas(), 60 * 3);
+    c.step(gas(0.0f, true), 1);
+    while (!c.kart.grounded) c.step(gas(0.0f, true));
+    CHECK(c.kart.mt_charge == 0.0f);
+
+    // Charged one way in the air, landed into a drift the other way: it starts over.
+    Bench d(test::flat_track());
+    d.step(gas(), 60 * 3);
+    d.step(gas(1.0f, true), 1);
+    while (!d.kart.grounded && d.kart.mt_charge == 0.0f) d.step(gas(1.0f, true));
+    REQUIRE(!d.kart.grounded);
+    while (!d.kart.grounded) d.step(gas(-1.0f, true));
+    REQUIRE(d.kart.drift == DriftState::Drifting);
+    CHECK(d.kart.drift_dir == -1);
+    CHECK(d.kart.mt_charge < 10.0f * d.tables.constants.charge_fast * d.params.mt_charge);
+}
+
+namespace {
+
+// Puts the kart in the air `height` above the flat road, flying on at 20 m/s.
+void fly(Bench& b, float height, float rise) {
+    b.kart.pos = {0.0f, height, 0.0f};
+    b.kart.grounded = false;
+    b.kart.speed = 20.0f;
+    b.kart.air_vel = {0.0f, rise, 20.0f};
+    b.kart.air_frames = 3;
+    b.kart.trick_window = 0;
+}
+
+int tricks(const Bench& b) { return b.count(KartEventType::Trick); }
+int trick_boosts(const Bench& b) {
+    int n = 0;
+    for (const auto& e : b.events) n += e.type == KartEventType::Boost && e.value == int(BoostKind::Trick);
+    return n;
+}
+
+} // namespace
+
+TEST_CASE("a trick works anywhere in the air close above the road, and chains 150 ms apart") {
+    Bench b(test::flat_track());
+    fly(b, 1.0f, 8.0f);
+    const int gap = b.tables.constants.trick_chain_frames;
+    REQUIRE(gap == 9);
+    b.step(gas(0.0f, true));  // trick
+    CHECK(tricks(b) == 1);
+    b.step(gas(), 2);
+    b.step(gas(0.0f, true));  // too soon after the first
+    CHECK(tricks(b) == 1);
+    b.step(gas(), gap - 4);
+    b.step(gas(0.0f, true));  // a moment later: a second one
+    CHECK(tricks(b) == 2);
+    for (int f = 0; f < 120 && !b.kart.grounded; ++f) b.step(gas());
+    REQUIRE(b.kart.grounded);
+    CHECK(trick_boosts(b) == 1); // one boost for the chain
+}
+
+TEST_CASE("no trick of its own high above the road, gliding, under water or on a drift hop") {
+    Bench high(test::flat_track());
+    fly(high, 10.0f, 0.0f);
+    high.step(gas(0.0f, true));
+    CHECK(tricks(high) == 0);
+
+    Bench glide(test::flat_track());
+    fly(glide, 1.5f, 0.0f);
+    glide.kart.gliding = true;
+    glide.step(gas(0.0f, true));
+    CHECK(tricks(glide) == 0);
+
+    Bench water(test::flat_track());
+    fly(water, 1.5f, 0.0f);
+    water.kart.underwater = true;
+    water.step(gas(0.0f, true));
+    CHECK(tricks(water) == 0);
+
+    Bench hop(test::flat_track());
+    hop.step(gas(), 60 * 2);
+    hop.step(gas(0.0f, true)); // the hop
+    hop.step(gas());
+    REQUIRE_FALSE(hop.kart.grounded);
+    hop.step(gas(0.0f, true)); // pressed again mid-hop
+    CHECK(tricks(hop) == 0);
 }

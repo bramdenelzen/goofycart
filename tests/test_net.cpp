@@ -210,6 +210,7 @@ TEST_CASE("kart state survives the wire within quantisation") {
     s.drift = sim::DriftState::Drifting;
     s.drift_dir = -1;
     s.mt_charge = 412.0f;
+    s.trick_gap = 6;
     s.boost = sim::BoostKind::SuperMiniTurbo;
     s.boost_frames = 77;
     s.boost_mult = 1.25f;
@@ -239,6 +240,7 @@ TEST_CASE("kart state survives the wire within quantisation") {
     CHECK(d.drift == s.drift);
     CHECK(d.drift_dir == -1);
     CHECK(d.mt_charge == doctest::Approx(412.0f));
+    CHECK(d.trick_gap == 6);
     CHECK(d.boost == s.boost);
     CHECK(d.boost_frames == 77);
     CHECK(d.lap == 2);
@@ -359,11 +361,14 @@ TEST_CASE("Wi-Fi hiccups don't throw the player's own kart around") {
         h.net.stall(h.now_ms, h.now_ms + 400 + spike * 80);
         h.run_ms(2000);
     }
-    // Hits and bumps the client could not see coming still correct it a little.
+    // Hits and bumps the client could not see coming still correct it a little,
+    // and so does an item used inside a stall (the server never saw the press).
+    // How much depends on the item luck of this one race: over seeds 1-8 the
+    // mean runs from 0.004 to 0.03 m, with or without the latest item odds.
     for (auto& [id, c] : h.clients) {
         const double mean = c.corrections ? c.sum_correction / c.corrections : 0.0;
         MESSAGE("client ", id, ": mean correction ", mean, " m, worst ", c.game->max_correction(), " m");
-        CHECK(mean < 0.02);
+        CHECK(mean < 0.04);
         CHECK(c.game->max_correction() < 5.0);
     }
 }

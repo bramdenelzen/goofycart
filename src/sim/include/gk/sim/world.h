@@ -43,6 +43,7 @@ struct WorldState {
     std::vector<uint16_t> switches; // ticks each track switch stays pressed
     int spiked_cooldown = 0;        // frames until the roulette may hand out a spiked shell again
     int lightning_cooldown = 0;     // the same for lightning
+    int ink_cooldown = 0;           // and for ink
 };
 
 // The authoritative race simulation: track, karts and race clock, stepped at
@@ -53,7 +54,7 @@ public:
 
     int add_kart(const KartParams& params);
     void set_kart_params(int kart, const KartParams& params) { params_[size_t(kart)] = params; }
-    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_, entities_, box_respawn_, rng_, props_, switches_, spiked_cooldown_, lightning_cooldown_};
+    WorldState save() const { return {tick_, countdown_left_, race_ticks_, karts_, entities_, box_respawn_, rng_, props_, switches_, spiked_cooldown_, lightning_cooldown_, ink_cooldown_};
     }
     void restore(const WorldState& s);
     void tick(std::span<const KartInput> inputs);
@@ -85,6 +86,7 @@ public:
     uint32_t blocked_items(int kart) const;
     int spiked_cooldown() const { return spiked_cooldown_; }
     int lightning_cooldown() const { return lightning_cooldown_; }
+    int ink_cooldown() const { return ink_cooldown_; }
     // Test and debug hook: put an item in a kart's hand.
     void give_item(int kart, Item item);
     // Testing: a hit or an explosion on demand.
@@ -138,6 +140,7 @@ private:
     int race_ticks_ = 0;
     int spiked_cooldown_ = 0;
     int lightning_cooldown_ = 0;
+    int ink_cooldown_ = 0;
 };
 
 // Simple line follower: steers towards a point ahead on the centre spline.

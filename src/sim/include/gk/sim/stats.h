@@ -173,6 +173,13 @@ struct PhysicsConstants {
     int water_hysteresis = 6;           // frames in (or out of) the water before the mode flips
     int trick_window_frames = 18;
     int trick_min_air_frames = 12; // a trick off a bump this short gives no boost
+    int trick_chain_frames = 9;    // a trick can follow another this soon (150 ms); one boost for the lot
+    float trick_max_height = 4.0f; // in the air anywhere this close above the road, a trick works
+    // Over a crest the kart leaves the road when following it would take more
+    // than crest_stick x gravity pressing it down (speed^2 x the road's bend),
+    // carrying the climb it had crest_carry metres back.
+    float crest_stick = 0.4f;
+    float crest_carry = 6.0f;
     // Grip road (steep banks, spirals): a descent raises top speed by
     // grip_descent_gain per unit of downward slope, the speed built there
     // bleeds at grip_carry_decel for grip_carry_frames after it, and drifts

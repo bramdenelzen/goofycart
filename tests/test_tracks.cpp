@@ -105,8 +105,10 @@ TEST_CASE("every track is a clean lap for a CPU, and a 12-kart race finishes") {
         CHECK(done());
         CHECK(unforced <= 3); // the road itself: a slip off an edge now and then
         // A hit mid-glide drops the kart now, so one lightning over a chasm can
-        // take several karts at once; how many depends on the platform's rounding.
-        CHECK(respawns <= 8);
+        // take several karts at once; how many depends on the platform's rounding
+        // and on the item luck of this one race (Cloud Spire over seeds 1-6:
+        // 0-5 before the hit-momentum and Blooper-limit changes, 1-11 after).
+        CHECK(respawns <= 12);
     }
 }
 

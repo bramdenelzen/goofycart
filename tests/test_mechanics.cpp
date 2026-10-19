@@ -275,3 +275,132 @@ TEST_CASE("presses, swings, conveyors and waves parse and build from track data"
     CHECK_FALSE(parse_track_def(R"({"id":"x","name":"x","points":[[0,0,0],[0,0,200],[50,0,200],[50,0,0]],
         "features":[{"type":"wave","from":[0,150],"to":[0,190],"amplitude":3}]})", d, &err));
 }
+
+TEST_CASE("a star or bullet drives over lava on the road, but the lava below still takes it") {
+    // A lava zone across the road at samples 100..120, and lava floor (not a
+    // zone) beyond x = 20.
+    Track t = test::flat_track(Surface::OutOfBounds, 20.0f, 2000.0f);
+    Track::Zone z;
+    z.first = 100, z.count = 20;
+    z.surface = Surface::OutOfBounds;
+    t.zones.push_back(z);
+    World w = world_on(std::move(t));
+    auto drive = [&](int frames) {
+        bool lost = false;
+        for (int f = 0; f < frames && !lost; ++f) {
+            w.tick(std::vector<KartInput>{KartInput{.accelerate = true}});
+            lost = w.karts()[0].respawn_frames > 0;
+        }
+        return lost;
+    };
+    put(w, 90, 0.0f, 20.0f);
+    CHECK(drive(90));
+    for (const bool bullet : {false, true}) {
+        CAPTURE(bullet);
+        put(w, 90, 0.0f, 20.0f);
+        KartState& k = w.karts_mut()[0];
+        k.respawn_frames = 0, k.invincible_frames = 0;
+        (bullet ? k.bullet_frames : k.star_frames) = 300;
+        CHECK_FALSE(drive(180));
+        CHECK(w.karts()[0].sample > 120);
+        // Off the road onto the lava floor: lost all the same.
+        put(w, 300, -24.0f, 5.0f);
+        w.karts_mut()[0].star_frames = 300;
+        CHECK(drive(30));
+        w.karts_mut()[0] = KartState{};
+        put(w, 10, 0.0f, 0.0f);
+        for (int f = 0; f < 120; ++f) w.tick(std::vector<KartInput>{{}});
+    }
+}
+
+TEST_CASE("a press doesn't squash a kart with a star") {
+    Track t = test::flat_track();
+    Track::Mover m;
+    m.kind = Track::Mover::Kind::Press;
+    m.base = {0, 3.0f, 20};
+    m.travel = {0, -3.0f, 0};
+    m.forward = {0, 0, 1}, m.right = {-1, 0, 0}, m.up = {0, 1, 0};
+    m.half = {3.0f, 1.2f, 2.0f};
+    m.period = 240;
+    t.movers.push_back(m);
+    World w = world_on(std::move(t));
+    put(w, 60, 0.0f, 0.0f); // z = 20, under it
+    w.karts_mut()[0].star_frames = 400;
+    for (int f = 0; f < 240; ++f) {
+        w.tick(std::vector<KartInput>{{}});
+        CHECK(w.karts()[0].tumble_frames == 0);
+    }
+}
+
+namespace {
+
+// A straight road over one smooth hill `height` m high and about 2 x `width`
+// m long, peaking at z = 200 (sample 150).
+Track hill_track(float height, float width) {
+    Track t;
+    t.name = "hill";
+    auto y = [&](float z) { const float u = (z - 200.0f) / width; return height * std::exp(-u * u); };
+    auto dy = [&](float z) { const float u = (z - 200.0f) / width; return -2.0f * u / width * height * std::exp(-u * u); };
+    for (int i = 0; i <= 1000; ++i) {
+        const float z = float(i) - 100.0f;
+        t.vertices.push_back({-10.0f, y(z), z});
+        t.vertices.push_back({10.0f, y(z), z});
+        if (i == 0) continue;
+        const uint32_t a = uint32_t(2 * (i - 1)), b = uint32_t(2 * i);
+        t.triangles.push_back({a, b, b + 1, Surface::Road});
+        t.triangles.push_back({a, b + 1, a + 1, Surface::Road});
+    }
+    for (int i = 0; i < 450; ++i) {
+        const float z = float(i) * 2.0f - 100.0f;
+        CenterSample c;
+        c.pos = {0, y(z), z};
+        c.tangent = glm::normalize(vec3(0, dy(z), 1));
+        c.right = {-1, 0, 0};
+        c.up = glm::normalize(vec3(0, 1, -dy(z)));
+        c.s = c.u = float(i) * 2.0f;
+        t.center.push_back(c);
+    }
+    t.checkpoints = {0};
+    t.length = 900.0f;
+    t.kill_y = -30.0f;
+    t.finalize();
+    return t;
+}
+
+// Drives kart 0 from sample 100 over the hill; returns the most frames it spent in the air at once.
+int over_the_hill(World& w, float speed, bool gas) {
+    put(w, 100, 0.0f, speed);
+    int run = 0, longest = 0;
+    for (int f = 0; f < 60 * 8 && w.karts()[0].pos.z < 320.0f; ++f) {
+        w.tick(std::vector<KartInput>{KartInput{.accelerate = gas}});
+        run = w.karts()[0].grounded ? 0 : run + 1;
+        longest = std::max(longest, run);
+        REQUIRE(w.karts()[0].respawn_frames == 0);
+    }
+    return longest;
+}
+
+} // namespace
+
+TEST_CASE("over a crest a fast kart flies a moment, a slow one stays planted") {
+    World w = world_on(hill_track(4.0f, 16.0f));
+    const float top = w.params(0).top_speed;
+    const int fast = over_the_hill(w, top, true);
+    MESSAGE("at ", top, " m/s: ", fast, " frames in the air");
+    CHECK(fast >= 4);
+    CHECK(fast <= 40); // a moment, not a jump
+    CHECK(w.karts()[0].grounded);
+    CHECK(over_the_hill(w, 10.0f, false) == 0);
+    // A gentle rise doesn't throw it even flat out.
+    World g = world_on(hill_track(2.0f, 30.0f));
+    CHECK(over_the_hill(g, top, true) == 0);
+}
+
+TEST_CASE("flat out on flat road the kart never leaves it") {
+    World w = world_on(test::flat_track());
+    put(w, 10, 0.0f, 0.0f);
+    for (int f = 0; f < 60 * 6; ++f) {
+        w.tick(std::vector<KartInput>{KartInput{.accelerate = true}});
+        CHECK(w.karts()[0].grounded);
+    }
+}

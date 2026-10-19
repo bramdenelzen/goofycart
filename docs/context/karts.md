@@ -35,8 +35,17 @@ queries against the track.
   Background: `docs/research/glider-flight-models.md`, tests in
   `tests/test_glider.cpp`.
 - Tricks: launch surfaces (trick/glide ramps, pads, vents) and any natural
-  take-off at speed (a lip, crest or ledge) open a trick window; the boost
-  pays out on landing only after `trick_min_air_frames` of air.
+  take-off at speed (a lip, crest or ledge) open a trick window; beyond it a
+  trick works anywhere in the air within `trick_max_height` of the road
+  (`can_air_trick`: not gliding, underwater or on a drift hop). Tricks chain
+  `trick_chain_frames` apart (`trick_gap`); one boost pays out on landing,
+  only after `trick_min_air_frames` of air.
+- Crests: `crest_throws` lifts the kart off when speed^2 x the centre line's
+  bend beats `crest_stick` x g, keeping the climb from `crest_carry` m back.
+  Landing needs the kart to be moving into the road.
+- Drift hop: past the top of the hop with the stick held over, the
+  mini-turbo starts charging in the air (`step_air`); landing the other way
+  starts it over.
 - Grip road (`CenterSample::grip`, `Track::grip_up`): airborne gravity,
   yaw and the landing test use the road's up instead of world up, so hops
   off an 80° bank come back to it; `align_up` keeps the heading when the
