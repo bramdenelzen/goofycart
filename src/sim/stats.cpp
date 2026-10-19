@@ -241,8 +241,17 @@ bool PhysicsTables::load(const std::string& path, std::string* error) {
             read_const(c, "burnout_frames", k.burnout_frames);
             read_const(c, "boost_accel", k.boost_accel);
             read_const(c, "glide_launch_velocity", k.glide_launch_velocity);
-            read_const(c, "glide_sink", k.glide_sink);
+            read_const(c, "glide_gravity", k.glide_gravity);
+            read_const(c, "glide_ratio", k.glide_ratio);
+            read_const(c, "glide_dive_range", k.glide_dive_range);
+            read_const(c, "glide_climb_range", k.glide_climb_range);
+            read_const(c, "glide_path_rate", k.glide_path_rate);
+            read_const(c, "glide_floor", k.glide_floor);
+            read_const(c, "glide_floor_gain", k.glide_floor_gain);
+            read_const(c, "glide_cap_mult", k.glide_cap_mult);
+            read_const(c, "glide_bank_drag", k.glide_bank_drag);
             read_const(c, "glide_pitch_speed", k.glide_pitch_speed);
+            read_const(c, "fall_respawn_drop", k.fall_respawn_drop);
             read_const(c, "water_gravity_scale", k.water_gravity_scale);
             read_const(c, "water_terminal_fall", k.water_terminal_fall);
             read_const(c, "water_pitch_gain", k.water_pitch_gain);

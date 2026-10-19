@@ -55,6 +55,9 @@ Style style_for(const std::string& t) {
     if (t == "harbor")
         return {{0.06f, 0.48f, 0.90f}, {0.76f, 0.90f, 0.98f}, 0.48f, {1.0f, 1.0f, 1.0f}, {0.70f, 0.78f, 0.90f}, B::Sea,
                 {0.50f, 0.66f, 0.70f}, {0.28f, 0.50f, 0.36f}};
+    if (t == "beach") // a hot clear day over a turquoise sea, islands on the horizon
+        return {{0.05f, 0.46f, 0.92f}, {0.72f, 0.92f, 0.98f}, 0.3f, {1.0f, 1.0f, 1.0f}, {0.74f, 0.82f, 0.92f}, B::Sea,
+                {0.36f, 0.72f, 0.74f}, {0.30f, 0.56f, 0.40f}};
     if (t == "snow")
         return {{0.16f, 0.46f, 0.88f}, {0.86f, 0.91f, 0.98f}, 0.38f, {1.0f, 1.0f, 1.0f}, {0.74f, 0.80f, 0.90f}, B::Peaks,
                 {0.66f, 0.74f, 0.88f}, {0.48f, 0.56f, 0.70f}};

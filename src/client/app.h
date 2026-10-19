@@ -136,6 +136,7 @@ private:
         std::vector<std::pair<int, std::pair<render::MeshId, render::MeshId>>> roads; // branch, (road, painted walls)
         std::vector<render::MeshId> barriers, zones;
         std::vector<std::pair<render::MeshId, render::MeshId>> switches; // up, pressed
+        std::vector<render::MeshId> vents, currents;
     };
     std::map<std::string, GateMeshes> gate_meshes_;
     std::vector<float> barrier_rise_; // 0 sunk .. 1 standing, eased

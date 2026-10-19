@@ -82,13 +82,38 @@ CpuSkill cpu_skill(CpuLevel level, int seat) {
         s.tricks = seat % 2 == 0;
         s.reaction = 6;
         s.rocket_start = seat % 3 != 2;
+        s.glide_dive = 0.4f;
         break;
     case CpuLevel::Hard:
         s.lookahead = 7.0f + jitter;
         s.lane = lane * 0.4f;
+        s.glide_dive = 0.85f;
         break;
     }
     return s;
+}
+
+// The nose while gliding: aim at the landing. With height to spare over
+// the far side of the gap the CPU dives for speed (as hard as its skill
+// says); with barely enough it pulls up and glides flat; in between it
+// flies hands off at trim.
+float glide_pitch(const KartState& k, const Track& t, const KartParams& p, const PhysicsConstants& c,
+                  const CpuSkill& skill, uint32_t route) {
+    const int n = int(t.road.size());
+    if (n == 0) return 0.0f;
+    const float spacing = t.length > 0.0f ? t.length / float(std::max<int>(1, int(t.center.size()))) : 2.0f;
+    int i = k.sample, steps = 0;
+    while (!t.sample(i).has_floor && steps < 200) i = t.next(i, route), ++steps;
+    if (steps == 0) return 0.0f; // not over the gap yet (or past it): fly level
+    const CenterSample& land = t.sample(i);
+    const float ahead = float(steps) * spacing + 6.0f; // and a little past the lip
+    const float height = k.pos.y - land.pos.y;
+    if (height < 0.5f) return 0.6f; // under the far lip: pull up and hope
+    const float need = ahead / height;   // metres forward per metre of drop to make it
+    const float ratio = c.glide_ratio;
+    if (need < ratio * 0.55f) return -skill.glide_dive;
+    if (need > ratio * 0.9f) return 0.6f;
+    return 0.0f;
 }
 
 float cpu_rubber_band(CpuLevel level) {
@@ -365,7 +390,10 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     }
     // Gliding turns by banking, which takes a moment: steer harder and
     // ease off as the bank builds, so the glider doesn't overshoot.
-    if (k.gliding) in.steer = std::clamp(in.steer * 1.7f - k.glide_bank * 0.5f, -1.0f, 1.0f);
+    if (k.gliding) {
+        in.steer = std::clamp(in.steer * 1.7f - k.glide_bank * 0.5f, -1.0f, 1.0f);
+        in.pitch = glide_pitch(k, t, p, c, skill, route);
+    }
     // Tricks off ramps and boost pads.
     if (!k.grounded && k.drift != DriftState::Drifting && k.drift != DriftState::Hop) {
         in.drift = skill.tricks && k.trick_window > 0 && !k.trick_done && !k.drift_button_prev;

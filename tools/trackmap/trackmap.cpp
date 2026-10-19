@@ -160,9 +160,13 @@ void draw(const TrackDef& def, const std::string& out_dir) {
                 for (int b = -2; b <= 2; ++b) img.put(int(p.x) + a, int(p.y) + b, 0x60e0ff);
             text(img, int(p.x) + 5, int(p.y) - 5, int(i), 0x60e0ff);
         }
-    for (float o = -t.center[0].half_width; o <= t.center[0].half_width; o += 0.2f) {
-        const vec2 p = to_px(t.center[0].pos + t.center[0].right * o);
-        img.put(int(p.x), int(p.y), 0xffffff);
+    for (const int at : {t.start, t.finish}) { // the start line, and an open road's finish
+        const CenterSample& c = t.center[size_t(std::clamp(at, 0, int(t.center.size()) - 1))];
+        for (float o = -c.half_width; o <= c.half_width; o += 0.2f) {
+            const vec2 p = to_px(c.pos + c.right * o);
+            img.put(int(p.x), int(p.y), 0xffffff);
+        }
+        if (!t.point_to_point) break;
     }
     for (size_t i = 0; i < def.points.size(); ++i) {
         const vec2 p = to_px(vec3(def.points[i]));

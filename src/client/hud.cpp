@@ -88,13 +88,14 @@ void draw_minimap(render::Renderer& r, const sim::World& w, int player, bool sho
             const vec2 fw = glm::normalize(vec2(s.tangent.x, s.tangent.z) + vec2(1e-6f)) * 0.5f;
             r.ui_quad(p - rt - fw, p - rt + fw, p + rt + fw, p + rt - fw, rgba(90, 230, 255, 220));
         }
-    // Start line.
-    {
-        const sim::CenterSample& s = t.center[0];
+    // The start line, and on an open road the finish line too.
+    for (const int at : {t.start, t.finish}) {
+        const sim::CenterSample& s = t.center[size_t(std::clamp(at, 0, n - 1))];
         const vec2 p = to_map(s.pos);
         const vec2 rt = glm::normalize(vec2(s.right.x, s.right.z)) * std::max(2.0f, s.half_width * scale + 1.0f);
         const vec2 fw = glm::normalize(vec2(s.tangent.x, s.tangent.z)) * 0.8f;
         r.ui_quad(p - rt - fw, p - rt + fw, p + rt + fw, p + rt - fw, rgba(255, 255, 255));
+        if (!t.point_to_point) break;
     }
     // Karts: everyone else, then the player on top with an outline, pointing
     // the way they face.
@@ -250,19 +251,21 @@ void draw_hud(render::Renderer& r, const sim::World& w, int player, const std::v
     const auto& kc = w.tables().constants;
     char buf[96];
 
-    // Lap and time, top left
+    // Lap and time, top left (an open road counts its sections instead)
     const int lap = std::min(k.lap, w.config().laps);
     {
         // Arcade style: labels in yellow, figures big and white, no boxes.
         const int ticks = k.finished ? k.finish_tick : w.race_ticks();
-        r.ui_slant_rect(4, 8, 150, 44, ui::kSlant, rgba(0, 0, 0, 110), rgba(0, 0, 0, 0));
+        const char* label = w.track().point_to_point ? "SECTION" : "LAP";
+        const float x = 12.0f + std::max(32.0f, render::Renderer::ui_text_width(label, 1.0f) + 8.0f);
+        r.ui_slant_rect(4, 8, std::max(150.0f, x + 44.0f), 44, ui::kSlant, rgba(0, 0, 0, 110), rgba(0, 0, 0, 0));
         r.ui_text(12, 12, "TIME", ui::kGold, 1.0f);
         r.ui_text(46, 10, format_race_time(ticks).c_str(), ui::kText, 1.6f);
-        r.ui_text(12, 32, "LAP", ui::kGold, 1.0f);
+        r.ui_text(12, 32, label, ui::kGold, 1.0f);
         std::snprintf(buf, sizeof buf, "%d", lap);
-        ui::heading(r, 44, 28, buf, 2.2f, ui::kText, rgba(200, 205, 215));
+        ui::heading(r, x, 28, buf, 2.2f, ui::kText, rgba(200, 205, 215));
         std::snprintf(buf, sizeof buf, "/%d", w.config().laps);
-        r.ui_text(46 + render::Renderer::ui_text_width(std::to_string(lap).c_str(), 2.2f), 35, buf, ui::kSubtle, 1.3f);
+        r.ui_text(x + 2.0f + render::Renderer::ui_text_width(std::to_string(lap).c_str(), 2.2f), 35, buf, ui::kSubtle, 1.3f);
     }
     // Place, top right
     const int place = w.place_of(player);

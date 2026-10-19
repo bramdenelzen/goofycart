@@ -17,12 +17,51 @@ with `--race` runs a 12-CPU race on it.
 }
 ```
 
+`theme` picks the client's palette, scenery, sky and music: `meadow`,
+`desert`, `harbor`, `snow`, `canyon`, `volcano`, `sky`, `night`, `market` or
+`beach` (sand, palms, the sea all round and a sea floor of coral and kelp
+wherever the road dips under; its tunnels are wrecks).
+
 `points` are the closed loop's control points: x, y (up), z and an optional
 road half-width for that point. Widths blend smoothly between points, so a
 road can pinch to a narrow bridge and open into a wide plaza.
 
 Positions along the loop are `[control point, metres]`: `[4, 20]` is 20 m
 past point 4.
+
+## Point to point
+
+A track built around one run instead of laps:
+
+```json
+{
+  "id": "summit_descent", "name": "Summit Descent", "theme": "snow", "ground": true,
+  "point_to_point": true, "start": [1, 0], "finish": [24, 0], "sections": [[11, 0], [19, 0]],
+  "points": [[0, 170, 560, 9.5], ..., [65, 0, -720, 9.5]], ...
+}
+```
+
+With `point_to_point` the spline is an open road from its first point to
+its last, with a wall across each end. The race is one run from the
+`start` line to the `finish` line (default: 60 m in and 80 m before the
+end): the grid forms on the road before the start line, so leave 50 m of
+road before it, and the road runs on past the finish for the karts to roll
+out on. Progress is shown in sections instead of laps: `sections` lists
+where each section after the first begins (two entries for three sections),
+or is a count for equal parts (default 3). The rest of the file is as a
+loop's, with `[point, metres]` positions along the road; a gate's `laps`,
+`lap` and `from_lap` read the leader's section, and `sections`, `section`
+and `from_section` say the same thing in the track's own words.
+
+Every mode races it the same way: VS and Grand Prix place by distance along
+the road, Time Trial ghosts replay it, online rooms run it, the CPUs drive
+it, and the HUD counts "SECTION 2/3" where a loop counts laps. The road is
+one way, so there is no lap length to go round twice: make it long. The
+checkpoints run from the start line to the finish, which begins the last
+checkpoint region; entering it in order is finishing. A glide on a descent
+lands only where the road falls away slower than the glider sinks (about 1
+in 6), so flatten the road after a glide ramp or the glider carries on.
+Summit Descent is the example.
 
 ## Features
 
@@ -46,6 +85,8 @@ they are metres from where the branch leaves.
 | `zone` | the road's surface changes while its gate holds | `from`, `to`, `surface`, `when`, `side` or `offset` + `width` |
 | `tunnel` | a roofed stretch: an arched vault over the road | `from`, `to`, `height` (m, default 7), `style` |
 | `bank` | the road tilted across, easing in and out over 15 m | `from`, `to`, `angle` (degrees, + the right side lower, at most 35) |
+| `current` | deep water only: the water moves, carrying karts with it | `from`, `to`, `push` (m/s along), `drift` (m/s across, + right), `when` |
+| `vent` | deep water only: a bubble vent that throws karts up | `at`, `offset`, `width`, `lift` (m/s up), `period`, `open`, `phase`, `when` |
 
 Zone surfaces: `water`, `ice`, `oil`, `sand`, `offroad_*`, `boost` (a dash
 strip) and `lava` (out of bounds: a respawn).
@@ -67,6 +108,28 @@ road under it with the control points:
 
 CPUs drive through deep water like road. Harbor Hop's dip under the west
 quay is the example.
+
+Deep water can move. A `current` carries every kart under it: `push` metres
+per second along the road (negative against the traffic) and `drift` across
+it (positive to the right), as a steady shove on top of the kart's own
+driving. A `vent` is a bubble column `width` metres across at `offset` from
+the centre line; a kart driving over an active one is thrown straight up at
+`lift` m/s, with a trick window like a ramp's, and comes down wherever the
+water puts it. With `period` (seconds) it blows for `open` seconds of each
+period (half of it by default), starting `phase` (0..1) of the way through;
+without one it blows all the time. Both take `when`, so a rip current can
+come and go with a gate and a vent can wake on the last lap:
+
+```json
+{"type": "current", "from": [6, 20], "to": [8, 20], "push": 5},
+{"type": "current", "from": [14, 10], "to": [15, 20], "drift": -2.5, "when": "rip"},
+{"type": "vent", "at": [8, 30], "offset": 2.5, "width": 6, "lift": 13, "when": "last_lap"}
+```
+
+The CPU drivers know nothing of either; keep a current's drift gentle enough
+to steer against and give a vent somewhere to land. Coral Cove's lagoon
+(two fifths of the lap under the sea, a stream along the floor, a rip across
+the grotto, a vent at each end and a wreck to cut through) is the example.
 
 An `obstacle` with a `when` becomes a barrier, since the fixed road can't change.
 
@@ -91,8 +154,9 @@ The road's walls carry on up into an arch whose crown is `height` metres
 (at least 3.5) over the middle of the road; the walls rise straight to 55%
 of that and the arch spans the road and its verges. A tunnel always has its
 walls, even over a `no_walls` stretch. `style` is `rock`, `masonry`, `ice`,
-`concrete` or `lava`; left out, the theme picks one (snow ice, volcano lava,
-night concrete, market and harbor masonry, else rock).
+`concrete`, `lava` or `wreck` (a ship's hull: timber ribs, portholes along
+the sides); left out, the theme picks one (snow ice, volcano lava, night
+concrete, market and harbor masonry, else rock).
 
 * In the race: the roof stops jumps (a kart bumps off it and comes back
   down) and folds the glider away, so keep glide ramps and big trick ramps
@@ -105,9 +169,9 @@ night concrete, market and harbor masonry, else rock).
 * Keep tunnels off a branch's first and last `junction` metres, and clear of
   other roads passing within the arch.
 
-Dune Drift's quarry tunnel and Frost Pass's ice cave are branches with
-tunnels; Canyon Run, Lava Works (a lava tube) and Neon Raceway (an underpass)
-have one on the main loop.
+Dune Drift's quarry tunnel, Frost Pass's ice cave and Coral Cove's sunken
+wreck are branches with tunnels; Canyon Run, Lava Works (a lava tube) and
+Neon Raceway (an underpass) have one on the main loop.
 
 ## Gates: what changes during a race
 
@@ -122,7 +186,8 @@ clients predict it exactly:
 }
 ```
 
-* `{"laps": [2, 3]}`, `{"lap": 2}`, `{"from_lap": 2}`: the leader's lap.
+* `{"laps": [2, 3]}`, `{"lap": 2}`, `{"from_lap": 2}`: the leader's lap (on a
+  point-to-point track their section; `sections`, `section` and `from_section` are the same).
 * `{"cycle": [period, open, offset]}`: seconds of race time; holds for `open` of every `period`.
 * `{"switch": "name"}`: while that switch is pressed.
 * `"invert": true` flips any of them. A `when` can name a gate (`"when": "lever"`,

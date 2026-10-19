@@ -184,3 +184,59 @@ TEST_CASE("deep water: the mode rides in snapshots") {
     CHECK(back.karts[0].state.underwater);
     CHECK(back.karts[0].state.water_frames == 4);
 }
+
+TEST_CASE("a current carries a kart under the water, along or across the road") {
+    // The same straight with a stream along the water's stretch: a kart
+    // driving with it gets further in the same time.
+    auto with_current = [](float push, float drift) {
+        Track t = wet_track();
+        Track::Current c;
+        c.first = 105, c.count = 40;
+        c.push = push, c.drift = drift;
+        t.currents.push_back(c);
+        return t;
+    };
+    WaterBench still(60.0f), along(60.0f, with_current(6.0f, 0.0f)), across(60.0f, with_current(0.0f, 4.0f));
+    for (int f = 0; f < 60 * 6; ++f) still.step(gas()), along.step(gas()), across.step(gas());
+    REQUIRE(still.kart.underwater);
+    REQUIRE(along.kart.underwater);
+    CHECK(along.kart.pos.z > still.kart.pos.z + 10.0f);
+    // Across: pushed to the right of the road; a straight road's right is -x.
+    CHECK(across.kart.pos.x < still.kart.pos.x - 3.0f);
+    // Out of the water nothing carries anything.
+    WaterBench dry(0.0f, with_current(6.0f, 0.0f)), dry_still(0.0f);
+    for (int f = 0; f < 60; ++f) dry.step(gas()), dry_still.step(gas());
+    CHECK(dry.kart.pos.z == doctest::Approx(dry_still.kart.pos.z));
+}
+
+TEST_CASE("a vent on the floor throws a kart up its bubbles, when it is blowing") {
+    Track t = wet_track();
+    Track::Vent v;
+    v.pos = vec3(0.0f, 0.0f, 150.0f);
+    v.radius = 3.0f;
+    v.lift = 12.0f;
+    t.vents.push_back(v);
+    WaterBench b(120.0f, std::move(t));
+    int lifted = -1;
+    float top = 0.0f;
+    for (int f = 0; f < 60 * 5; ++f) {
+        b.step(gas());
+        top = std::max(top, b.kart.pos.y);
+        if (lifted < 0 && b.count(KartEventType::VentLift) > 0) lifted = f;
+    }
+    REQUIRE(lifted >= 0);
+    CHECK(top > 2.5f); // well up off the floor (the water's surface is at 3 m)
+    CHECK(b.kart.pos.z > 150.0f);
+
+    // Timed: blowing for 1 s of every 4; off, it does nothing.
+    Track timed = wet_track();
+    v.period = 240, v.open = 60, v.phase = 0.5f; // on from tick 120 to 180 of each 240
+    timed.vents.push_back(v);
+    CHECK_FALSE(timed.vent_active(v, 0.0));
+    CHECK(timed.vent_active(v, 130.0));
+    CHECK_FALSE(timed.vent_active(v, 200.0));
+    timed.mover_time = 0.0;
+    WaterBench off(140.0f, std::move(timed));
+    for (int f = 0; f < 60; ++f) off.step(gas());
+    CHECK(off.count(KartEventType::VentLift) == 0);
+}

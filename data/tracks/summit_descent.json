@@ -1,0 +1,605 @@
+{
+  "id": "summit_descent",
+  "name": "Summit Descent",
+  "theme": "snow",
+  "ground": true,
+  "point_to_point": true,
+  "start": [
+    1,
+    0
+  ],
+  "finish": [
+    24,
+    0
+  ],
+  "sections": [
+    [
+      11,
+      0
+    ],
+    [
+      19,
+      0
+    ]
+  ],
+  "half_width": 8,
+  "verge": 5,
+  "verge_surface": "offroad_heavy",
+  "_comment": "One run down the mountain, from the summit to the lodge, in three sections. The summit: off the line onto the glacier, a banked sweep round the shoulder, the cornice bends and a glide over the crevasse to the shelf below. The dam: a narrow road along the crest where the rockfall blocks one side then the other, then into the forest over the moguls, where the ice chute (a tunnel of ice with a dash strip out of it) cuts inside the bend and the avalanches pile snow on the road once the leader is through. The valley: the ski jump, a long glide down to the valley floor, the slalom through the ice gates, a banked last bend and the run to the lodge.",
+  "points": [
+    [
+      0,
+      170,
+      560,
+      9.5
+    ],
+    [
+      0,
+      170,
+      500,
+      9.5
+    ],
+    [
+      0,
+      167,
+      430,
+      9
+    ],
+    [
+      35,
+      161,
+      370,
+      8
+    ],
+    [
+      90,
+      152,
+      335,
+      8
+    ],
+    [
+      135,
+      142,
+      290,
+      7.5
+    ],
+    [
+      125,
+      132,
+      235,
+      7.5
+    ],
+    [
+      80,
+      123,
+      210,
+      7
+    ],
+    [
+      25,
+      116,
+      225,
+      7
+    ],
+    [
+      -35,
+      108,
+      205,
+      7.5
+    ],
+    [
+      -70,
+      100,
+      150,
+      8
+    ],
+    [
+      -75,
+      90,
+      85,
+      8
+    ],
+    [
+      -55,
+      86,
+      30,
+      6
+    ],
+    [
+      -15,
+      82,
+      -5,
+      6
+    ],
+    [
+      35,
+      76,
+      -25,
+      8
+    ],
+    [
+      95,
+      62,
+      -60,
+      8
+    ],
+    [
+      100,
+      50,
+      -125,
+      8
+    ],
+    [
+      45,
+      41,
+      -170,
+      8
+    ],
+    [
+      -20,
+      34,
+      -195,
+      8
+    ],
+    [
+      -70,
+      28,
+      -240,
+      8.5
+    ],
+    [
+      -70,
+      8,
+      -345,
+      9.5
+    ],
+    [
+      -50,
+      4,
+      -415,
+      9
+    ],
+    [
+      0,
+      2,
+      -480,
+      8
+    ],
+    [
+      45,
+      0,
+      -545,
+      9
+    ],
+    [
+      60,
+      0,
+      -620,
+      9.5
+    ],
+    [
+      65,
+      0,
+      -720,
+      9.5
+    ]
+  ],
+  "features": [
+    {
+      "type": "item_boxes",
+      "at": [
+        2,
+        0
+      ]
+    },
+    {
+      "type": "road",
+      "surface": "ice",
+      "from": [
+        2,
+        10
+      ],
+      "to": [
+        3,
+        20
+      ]
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        3,
+        30
+      ],
+      "length": 8,
+      "lanes": [
+        1,
+        2
+      ]
+    },
+    {
+      "type": "bank",
+      "from": [
+        4,
+        -10
+      ],
+      "to": [
+        5,
+        25
+      ],
+      "angle": 14
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        6,
+        0
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        6,
+        25
+      ],
+      "offset": 3.2,
+      "shape": "pillar",
+      "prop": "crystal",
+      "width": 2,
+      "length": 2,
+      "height": 3
+    },
+    {
+      "type": "bank",
+      "from": [
+        7,
+        0
+      ],
+      "to": [
+        8,
+        25
+      ],
+      "angle": -16
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        9,
+        0
+      ]
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        9,
+        45
+      ],
+      "length": 8,
+      "lanes": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "type": "glide_ramp",
+      "at": [
+        10,
+        0
+      ],
+      "length": 16,
+      "height": 4.0,
+      "gap": 34
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        12,
+        20
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        12,
+        35
+      ],
+      "offset": 3.2,
+      "shape": "block",
+      "prop": "solid",
+      "width": 1.8,
+      "length": 1.8,
+      "height": 2.0,
+      "when": "rockfall"
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        13,
+        5
+      ],
+      "offset": -3.2,
+      "shape": "block",
+      "prop": "solid",
+      "width": 1.8,
+      "length": 1.8,
+      "height": 2.0,
+      "when": "!rockfall"
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        13,
+        25
+      ],
+      "length": 8,
+      "lanes": [
+        1,
+        2
+      ]
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        15,
+        5
+      ],
+      "length": 10,
+      "height": 1.5
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        15,
+        30
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        15,
+        45
+      ],
+      "offset": -5.5,
+      "width": 4.0,
+      "length": 3.0,
+      "height": 1.8,
+      "when": "avalanche"
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        16,
+        15
+      ],
+      "length": 9,
+      "height": 1.4
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        16,
+        40
+      ],
+      "offset": 5.5,
+      "width": 4.0,
+      "length": 3.0,
+      "height": 1.8,
+      "when": "avalanche"
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        18,
+        0
+      ]
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        18,
+        30
+      ],
+      "length": 8,
+      "lanes": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "type": "glide_ramp",
+      "at": [
+        19,
+        10
+      ],
+      "length": 20,
+      "height": 4.0,
+      "gap": 60
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        21,
+        5
+      ]
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        21,
+        18
+      ],
+      "length": 8,
+      "lanes": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        21,
+        35
+      ],
+      "offset": 2.8,
+      "shape": "pillar",
+      "prop": "crystal",
+      "width": 1.8,
+      "length": 1.8,
+      "height": 2.8
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        21,
+        58
+      ],
+      "offset": -2.8,
+      "shape": "pillar",
+      "prop": "crystal",
+      "width": 1.8,
+      "length": 1.8,
+      "height": 2.8
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        22,
+        8
+      ],
+      "offset": 2.8,
+      "shape": "pillar",
+      "prop": "crystal",
+      "width": 1.8,
+      "length": 1.8,
+      "height": 2.8
+    },
+    {
+      "type": "bank",
+      "from": [
+        22,
+        20
+      ],
+      "to": [
+        23,
+        10
+      ],
+      "angle": 12
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        22,
+        35
+      ]
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        23,
+        0
+      ],
+      "length": 8,
+      "lanes": [
+        1,
+        2
+      ]
+    },
+    {
+      "type": "verge",
+      "from": [
+        23,
+        30
+      ],
+      "to": [
+        25,
+        0
+      ],
+      "side": "right",
+      "width": 9,
+      "surface": "offroad_heavy"
+    }
+  ],
+  "gates": {
+    "rockfall": {
+      "cycle": [
+        9,
+        4,
+        1
+      ]
+    },
+    "avalanche": {
+      "from_section": 2
+    }
+  },
+  "branches": [
+    {
+      "name": "ice chute",
+      "from": [
+        14,
+        10
+      ],
+      "to": [
+        17,
+        5
+      ],
+      "side": "left",
+      "points": [
+        [
+          72,
+          69,
+          -70,
+          5.5
+        ],
+        [
+          66,
+          56,
+          -108,
+          5.5
+        ],
+        [
+          58,
+          46,
+          -142,
+          5.5
+        ]
+      ],
+      "half_width": 5.5,
+      "surface": "ice",
+      "junction": 18,
+      "cpu_share": 0.45,
+      "features": [
+        {
+          "type": "tunnel",
+          "from": 25,
+          "to": 100,
+          "height": 6.5,
+          "style": "ice"
+        },
+        {
+          "type": "item_boxes",
+          "at": 60
+        },
+        {
+          "type": "obstacle",
+          "at": 82,
+          "offset": 1.8,
+          "shape": "pillar",
+          "prop": "crystal",
+          "width": 1.6,
+          "length": 1.6,
+          "height": 2.4
+        },
+        {
+          "type": "boost_pad",
+          "at": 112,
+          "length": 10
+        }
+      ]
+    }
+  ]
+}

@@ -218,27 +218,45 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
 
     if (s.gliding) {
         // A glider, not a cursor: the stick rolls it into a bank and the bank
-        // turns it; the stick fore and aft tips the nose, trading height for
-        // speed. Both ease in, and the flight path lags the nose a little.
+        // turns it; the stick fore and aft tips the nose. Height and speed
+        // are one budget: the nose sets the path angle, and gravity along
+        // the path against a drag that grows with speed squared sets the
+        // airspeed, so a dive buys speed and a climb spends it. Hands off,
+        // the glider settles at its air speed stat, sinking at 1/glide_ratio
+        // of it, and a boosted launch carries on for seconds before the drag
+        // bleeds it back.
         constexpr float kMaxBank = 0.65f, kMaxPitch = 0.38f;
         s.glide_bank = approach(s.glide_bank, in.steer * kMaxBank, 3.2f * kDt);
         s.glide_pitch = approach(s.glide_pitch, in.pitch * kMaxPitch, 1.6f * kDt);
         const float bank = s.glide_bank / kMaxBank, pitch = s.glide_pitch / kMaxPitch; // -1..1
-        vec3 h(s.air_vel.x, 0.0f, s.air_vel.z);
-        float hs = glm::length(h);
+        const float v_trim = p.glide_speed, v_floor = v_trim * k.glide_floor, v_cap = p.top_speed * k.glide_cap_mult;
+        float v = glm::length(s.air_vel);
+        const vec3 h(s.air_vel.x, 0.0f, s.air_vel.z);
+        const float hs = glm::length(h);
         vec3 dir = hs > 0.1f ? h / hs : glm::normalize(vec3(s.forward().x, 0.0f, s.forward().z));
-        // Diving speeds up and climbing bleeds speed; a steep bank sinks faster.
-        const float target_hs = p.glide_speed * (1.0f - k.glide_pitch_speed * pitch);
-        hs = approach(hs, target_hs, (pitch < 0.0f ? 9.0f : 4.0f) * kDt);
-        const float target_vy = -k.glide_sink * (1.0f - 0.6f * pitch) * (1.0f + 0.15f * std::abs(bank));
-        const float vy = approach(s.air_vel.y, target_vy, 7.0f * kDt);
+        float path = v > 0.1f ? std::clamp(s.air_vel.y / v, -1.0f, 1.0f) : 0.0f; // sine of the path angle, + up
+        // What the nose asks for. Nose-up authority is the wing's lift, which
+        // grows with speed squared: it fades to the trim glide as the speed
+        // bleeds, and under trim near the floor the nose drops by itself. A
+        // mush, never a stall.
+        const float lift = std::clamp((v * v - v_floor * v_floor) / std::max(v_trim * v_trim - v_floor * v_floor, 1.0f), 0.0f, 1.0f);
+        const float trim = -1.0f / std::sqrt(1.0f + k.glide_ratio * k.glide_ratio);
+        const float up_limit = trim + k.glide_climb_range * lift, down_limit = trim - k.glide_dive_range;
+        float target = pitch >= 0.0f ? glm::mix(trim, up_limit, pitch) : glm::mix(trim, down_limit, -pitch);
+        target = std::min(target, trim + (v - v_floor) * k.glide_floor_gain);
+        path = approach(path, target, k.glide_path_rate * kDt);
+        // Energy: gravity along the path against a drag that balances it at
+        // trim; a banked turn needs more lift, which costs more drag.
+        const float rel = v / std::max(v_trim, 1.0f);
+        const float drag = (k.glide_gravity / k.glide_ratio) * rel * rel * (1.0f + k.glide_bank_drag * bank * bank);
+        v = std::clamp(v + (-k.glide_gravity * path - drag) * kDt, v_floor, v_cap);
         const float yaw = -bank * p.turn_rate_air * kDt;
         const quat q = glm::angleAxis(yaw, kUp);
         s.rot = glm::normalize(q * s.rot);
         // The path swings round to the nose: momentum carries it wide first.
         vec3 nose(s.forward().x, 0.0f, s.forward().z);
         if (glm::length(nose) > 1e-3f) dir = glm::normalize(glm::mix(dir, glm::normalize(nose), std::min(1.0f, 4.5f * kDt)));
-        s.air_vel = dir * hs + kUp * vy;
+        s.air_vel = dir * (v * std::sqrt(std::max(0.0f, 1.0f - path * path))) + kUp * (v * path);
     } else if (s.underwater) {
         // Underwater: half the gravity and a capped fall, so hops rise as high
         // but come down slowly; the stick tips the nose like the glider's,
@@ -310,6 +328,17 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     }
     const bool on_launch = on_glide || pr.touched[int(Surface::TrickRamp)] || pr.touched[int(Surface::BoostPad)];
     s.trick_window = on_launch ? k.trick_window_frames : 0;
+    // A vent on the floor of deep water throws the kart up its column of bubbles.
+    if (s.underwater) {
+        for (const Track::Vent& v : ctx.track.vents) {
+            if (glm::distance(s.pos, v.pos) > v.radius || !ctx.track.vent_active(v, ctx.track.mover_time)) continue;
+            take_off(s, ctx, v.lift);
+            s.trick_window = k.trick_window_frames;
+            emit(ctx, KartEventType::VentLift);
+            step_air(s, in, drift_pressed, ctx);
+            return;
+        }
+    }
 
     const vec3 fwd = s.forward();
     const vec3 up = s.up();
@@ -653,7 +682,9 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
         --s.stun_frames;
         in = KartInput{};
     }
-    if (s.finished) in = KartInput{.accelerate = true}; // coast through the finish; bots take over later
+    // Coast through the finish (bots take over later); an open road ends
+    // just past it, so there the kart rolls to a stop instead.
+    if (s.finished) in = KartInput{.accelerate = ctx.track.closed};
     const bool drift_pressed = in.drift && !s.drift_button_prev;
     s.drift_button_prev = in.drift;
 
@@ -667,11 +698,16 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     const SuspensionInput before{s.grounded, s.speed, s.velocity(), s.forward(), s.up()};
     if (s.grounded) step_ground(s, in, drift_pressed, ctx);
     else step_air(s, in, drift_pressed, ctx);
+    if (s.underwater) s.pos += ctx.track.current_at(s.pos, s.sample) * kDt; // carried by the water
     collide_walls(s, ctx);
     update_roof(s, ctx);
     step_suspension(s, before, ctx);
 
-    if (s.pos.y < ctx.track.kill_y || (s.grounded && s.surface == Surface::OutOfBounds)) {
+    // Lost: below the floor, on lava, or fallen a long way below the road
+    // (a glider or a dive under water is meant to be down there).
+    const bool fallen = !s.grounded && !s.gliding && !s.underwater && s.air_vel.y < 0.0f &&
+                        s.pos.y < ctx.track.sample(s.sample).pos.y - ctx.k.fall_respawn_drop;
+    if (s.pos.y < ctx.track.kill_y || (s.grounded && s.surface == Surface::OutOfBounds) || fallen) {
         start_respawn(s, ctx);
         return;
     }
@@ -703,6 +739,25 @@ bool kart_update_progress(KartState& s, const Track& track) {
     // so on one the next few regions may go by in a single step.
     const int ahead = ((region - s.checkpoint) % ncp + ncp) % ncp;
     const bool on_branch = track.sample(s.sample).branch >= 0;
+    if (track.point_to_point) {
+        // An open road: the regions in order up to the last, which begins at
+        // the finish line; `lap` is the section, by distance along the road.
+        const int sections = track.sections();
+        if (s.lap > sections) return false;
+        if (region == next || (on_branch && ahead > 0 && ahead <= 4)) {
+            s.checkpoint = region;
+            if (region == ncp - 1) {
+                s.lap = sections + 1;
+                return true;
+            }
+        }
+        const int section = std::min(track.section_at(track.sample(s.sample).s), sections);
+        if (section > s.lap) {
+            s.lap = section;
+            return true;
+        }
+        return false;
+    }
     if (region == next || (on_branch && ahead > 0 && ahead <= 4)) {
         const bool lapped = region == next ? next == 0 : s.checkpoint + ahead >= ncp;
         s.checkpoint = region;
@@ -717,6 +772,7 @@ bool kart_update_progress(KartState& s, const Track& track) {
 float kart_race_distance(const KartState& s, const Track& track) {
     if (track.center.empty()) return 0.0f;
     float along = track.sample(s.sample).s;
+    if (track.point_to_point) return along; // one run from start to finish; `lap` is the section
     if (s.checkpoint == 0 && along > track.length * 0.5f) along -= track.length; // still before the line
     return float(s.lap - 1) * track.length + along;
 }

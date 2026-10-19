@@ -6,9 +6,11 @@ add_executable(gk_tests
   test_net.cpp
   test_items.cpp
   test_water.cpp
+  test_glider.cpp
   test_tunnels.cpp
   test_ai.cpp
   test_tracks.cpp
+  test_point_to_point.cpp
   test_audio.cpp
   test_ghost.cpp
   test_props.cpp

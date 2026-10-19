@@ -68,7 +68,7 @@ int degree_note(const std::array<int, 7>& scale, int root, int d) {
 
 Mood mood_for_theme(const std::string& theme) {
     if (theme == "desert") return Mood::Dusty;
-    if (theme == "harbor") return Mood::Breezy;
+    if (theme == "harbor" || theme == "beach") return Mood::Breezy;
     if (theme == "snow") return Mood::Frosty;
     if (theme == "canyon") return Mood::Driving;
     if (theme == "volcano") return Mood::Fiery;

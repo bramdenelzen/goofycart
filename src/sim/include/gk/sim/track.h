@@ -17,8 +17,9 @@ struct TrackTriangle {
     uint8_t group = 0; // 0 always there; k > 0 the road of Track::branches[k - 1] (gone while its gate is shut)
 };
 
-// One sample of the closed 3D spline that runs along the middle of the road.
-// It drives lap progress, wrong-way detection, respawn points and the AI.
+// One sample of the 3D spline that runs along the middle of the road (a
+// loop, or an open road from start to finish). It drives lap progress,
+// wrong-way detection, respawn points and the AI.
 struct CenterSample {
     vec3 pos;
     vec3 tangent;   // unit, direction of travel
@@ -73,10 +74,22 @@ public:
     std::vector<vec3> vertices;
     std::vector<TrackTriangle> triangles;
     std::vector<CenterSample> center;
-    std::vector<int> checkpoints;    // sample index where each checkpoint region starts; [0] = start line
+    std::vector<int> checkpoints;    // sample index where each checkpoint region starts; [0] = start line (open roads: the road's start)
     float length = 0.0f;             // centre spline length in metres
     float kill_y = -100.0f;          // falling below this triggers a respawn
-    int laps = 3;
+    int laps = 3;                    // point to point: the number of sections
+    // A point-to-point track is an open road raced once from a start line
+    // to a finish line: their main samples (the grid forms before the start;
+    // the finish begins the last checkpoint region, and the road runs on
+    // past it to a wall), and where each section after the first begins (m
+    // along the road). A kart's `lap` is then its section, 1-based, and
+    // sections() + 1 once it has finished. (An open centre line alone, see
+    // `closed`, is just geometry: the test strips are open too.)
+    bool point_to_point = false;
+    int start = 0, finish = 0;
+    std::vector<float> section_s;
+    int sections() const { return point_to_point ? int(section_s.size()) + 1 : laps; }
+    int section_at(float s) const;   // 1-based; always 1 on a lap track
     std::vector<vec3> item_boxes;    // centres, in rows across the road
     // Stretches of road drawn as a flight of steps, (from, to) in metres
     // along the centre line; the kart drives a smooth slope under them.
@@ -197,6 +210,33 @@ public:
     bool in_deep_water(vec3 p, int sample) const;
     // The surface a zone puts at `p` (on road sample `sample`), if one is active there.
     std::optional<Surface> zone_surface(vec3 p, int sample) const;
+
+    // Deep water only: a stream over a stretch of road that carries karts
+    // along it (+ with the traffic) or across it (+ to the right), in m/s.
+    struct Current {
+        int first = 0, count = 0;      // samples in `road`, consecutive on one road
+        float lo = -1e9f, hi = 1e9f;   // across the road (m from its centre, + right)
+        float push = 0.0f, drift = 0.0f;
+        int gate = -1;
+    };
+    std::vector<Current> currents;
+    // The carry a kart at `p` (on road sample `sample`) gets from the currents, m/s.
+    vec3 current_at(vec3 p, int sample) const;
+
+    // A vent on the floor of deep water: a column of bubbles that lifts a kart
+    // driving over it, blowing all the time or for `open` of every `period` ticks.
+    struct Vent {
+        vec3 pos{0.0f};
+        vec3 up{0, 1, 0};
+        float radius = 3.0f;
+        float lift = 12.0f;            // m/s upwards
+        int period = 0, open = 0;      // ticks; period 0: always on
+        float phase = 0.0f;            // 0..1 of the period
+        int sample = 0;
+        int gate = -1;
+    };
+    std::vector<Vent> vents;
+    bool vent_active(const Vent& v, double tick) const;
 
     // A roofed stretch of road: the walls carry on up into an arched roof
     // `height` metres over the road's middle. The roof stops jumps and folds

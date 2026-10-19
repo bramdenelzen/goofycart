@@ -1,0 +1,477 @@
+{
+  "id": "coral_cove",
+  "name": "Coral Cove",
+  "theme": "beach",
+  "ground": true,
+  "half_width": 7.5,
+  "verge": 5,
+  "verge_surface": "sand",
+  "_comment": "A beach lap that spends two fifths of itself under the sea. The promenade along the shore, a banked climb over the headland, then the road drops off the point into the lagoon: along the lagoon floor a stream carries the karts with it, a vent throws them up its bubbles, and a hull breach on the right leads through the sunken wreck (narrow, dark, crates in the hold, a dash strip out of the stern). Up over the reef onto the far beach, a glide over the rocky inlet, then the dunes dive into the grotto: a rip current across the road comes and goes on a timer and a vent blows on the last lap. Out onto the sand and back to the line.",
+  "points": [
+    [
+      -30,
+      0,
+      -130,
+      9
+    ],
+    [
+      70,
+      0,
+      -130,
+      9
+    ],
+    [
+      120,
+      1,
+      -105,
+      8
+    ],
+    [
+      150,
+      5,
+      -60
+    ],
+    [
+      160,
+      7,
+      0
+    ],
+    [
+      150,
+      3,
+      55
+    ],
+    [
+      120,
+      -4,
+      100
+    ],
+    [
+      65,
+      -7,
+      135
+    ],
+    [
+      0,
+      -8,
+      165,
+      8
+    ],
+    [
+      -60,
+      -7,
+      138,
+      6.5
+    ],
+    [
+      -105,
+      -3,
+      110,
+      6.5
+    ],
+    [
+      -140,
+      1,
+      80
+    ],
+    [
+      -155,
+      3,
+      25
+    ],
+    [
+      -165,
+      0,
+      -35
+    ],
+    [
+      -166,
+      -5,
+      -75
+    ],
+    [
+      -152,
+      -7,
+      -120,
+      9
+    ],
+    [
+      -125,
+      -3,
+      -148,
+      9
+    ],
+    [
+      -95,
+      0,
+      -142
+    ]
+  ],
+  "features": [
+    {
+      "type": "item_boxes",
+      "at": [
+        0,
+        50
+      ]
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        1,
+        30
+      ],
+      "length": 8,
+      "lanes": [
+        1,
+        2
+      ]
+    },
+    {
+      "type": "verge",
+      "from": [
+        0,
+        0
+      ],
+      "to": [
+        1,
+        60
+      ],
+      "side": "right",
+      "width": 10,
+      "surface": "sand"
+    },
+    {
+      "type": "bank",
+      "from": [
+        2,
+        10
+      ],
+      "to": [
+        3,
+        20
+      ],
+      "angle": -12
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        3,
+        30
+      ],
+      "length": 10,
+      "height": 1.4
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        4,
+        0
+      ]
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        4,
+        20
+      ],
+      "offset": 3.5,
+      "shape": "block",
+      "prop": "crate"
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        4,
+        32
+      ],
+      "offset": -3.5,
+      "shape": "block",
+      "prop": "crate"
+    },
+    {
+      "type": "zone",
+      "from": [
+        5,
+        30
+      ],
+      "to": [
+        11,
+        0
+      ],
+      "surface": "water",
+      "depth": "deep",
+      "level": 0
+    },
+    {
+      "type": "current",
+      "from": [
+        6,
+        20
+      ],
+      "to": [
+        8,
+        20
+      ],
+      "push": 5
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        8,
+        0
+      ]
+    },
+    {
+      "type": "vent",
+      "at": [
+        8,
+        30
+      ],
+      "offset": 2.5,
+      "width": 6,
+      "lift": 13
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        9,
+        5
+      ],
+      "offset": 2.8,
+      "shape": "pillar",
+      "prop": "crystal",
+      "width": 1.6,
+      "length": 1.6,
+      "height": 2.2
+    },
+    {
+      "type": "obstacle",
+      "at": [
+        9,
+        25
+      ],
+      "offset": -2.8,
+      "shape": "pillar",
+      "prop": "crystal",
+      "width": 1.6,
+      "length": 1.6,
+      "height": 2.2
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        10,
+        10
+      ],
+      "length": 8,
+      "lanes": [
+        0,
+        1
+      ]
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        11,
+        10
+      ]
+    },
+    {
+      "type": "glide_ramp",
+      "at": [
+        12,
+        8
+      ],
+      "length": 16,
+      "height": 3.5,
+      "gap": 34
+    },
+    {
+      "type": "trick_ramp",
+      "at": [
+        13,
+        20
+      ],
+      "length": 9,
+      "height": 1.3
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        13,
+        30
+      ]
+    },
+    {
+      "type": "zone",
+      "from": [
+        13,
+        35
+      ],
+      "to": [
+        17,
+        0
+      ],
+      "surface": "water",
+      "depth": "deep",
+      "level": 0
+    },
+    {
+      "type": "current",
+      "from": [
+        14,
+        10
+      ],
+      "to": [
+        15,
+        20
+      ],
+      "drift": -2.5,
+      "when": "rip"
+    },
+    {
+      "type": "vent",
+      "at": [
+        15,
+        25
+      ],
+      "offset": -2,
+      "width": 6,
+      "lift": 13,
+      "when": "last_lap"
+    },
+    {
+      "type": "boost_pad",
+      "at": [
+        16,
+        15
+      ],
+      "length": 8,
+      "lanes": [
+        1,
+        2
+      ]
+    },
+    {
+      "type": "item_boxes",
+      "at": [
+        17,
+        10
+      ]
+    },
+    {
+      "type": "verge",
+      "from": [
+        17,
+        0
+      ],
+      "to": [
+        17,
+        60
+      ],
+      "side": "left",
+      "width": 9,
+      "surface": "sand"
+    }
+  ],
+  "gates": {
+    "rip": {
+      "cycle": [
+        10,
+        5,
+        0
+      ]
+    },
+    "last_lap": {
+      "from_lap": 3
+    }
+  },
+  "branches": [
+    {
+      "name": "shipwreck",
+      "from": [
+        7,
+        10
+      ],
+      "to": [
+        9,
+        20
+      ],
+      "side": "right",
+      "points": [
+        [
+          13,
+          -7.5,
+          145,
+          4.5
+        ],
+        [
+          -5,
+          -9,
+          130,
+          4.5
+        ],
+        [
+          -24,
+          -9.5,
+          129,
+          4.5
+        ],
+        [
+          -38,
+          -8,
+          137,
+          4.5
+        ]
+      ],
+      "half_width": 4.5,
+      "junction": 22,
+      "cpu_share": 0.5,
+      "features": [
+        {
+          "type": "zone",
+          "from": 0,
+          "to": 125,
+          "surface": "water",
+          "depth": "deep",
+          "level": 0
+        },
+        {
+          "type": "tunnel",
+          "from": 30,
+          "to": 90,
+          "height": 6,
+          "style": "wreck"
+        },
+        {
+          "type": "obstacle",
+          "at": 45,
+          "offset": 1.6,
+          "prop": "crate",
+          "width": 2,
+          "length": 2,
+          "height": 2
+        },
+        {
+          "type": "obstacle",
+          "at": 68,
+          "offset": -1.6,
+          "prop": "crate",
+          "width": 2,
+          "length": 2,
+          "height": 2
+        },
+        {
+          "type": "item_boxes",
+          "at": 80
+        },
+        {
+          "type": "boost_pad",
+          "at": 98,
+          "length": 10
+        }
+      ]
+    }
+  ]
+}

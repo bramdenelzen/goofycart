@@ -681,7 +681,9 @@ uint32_t hash_constants(const sim::PhysicsTables& t) {
                     k.coin_speed_bonus, k.charge_fast, k.charge_slow, k.spark_threshold, k.mt_thresholds[0],
                     k.mt_thresholds[1], k.mt_thresholds[2], k.mt_boost_mult, k.offroad_light, k.offroad_medium,
                     k.offroad_heavy, k.boost_pad_mult, k.mushroom_mult, k.trick_mult, k.rocket_mult, k.boost_accel,
-                    k.glide_launch_velocity, k.glide_sink, k.glide_pitch_speed})
+                    k.glide_launch_velocity, k.glide_gravity, k.glide_ratio, k.glide_dive_range, k.glide_climb_range,
+                    k.glide_path_rate, k.glide_floor, k.glide_floor_gain, k.glide_cap_mult, k.glide_bank_drag,
+                    k.glide_pitch_speed, k.fall_respawn_drop})
         w.f32(f);
     for (int i : {k.max_coins, k.mt_frames[0], k.mt_frames[1], k.mt_frames[2], k.boost_pad_frames, k.mushroom_frames,
                   k.trick_frames, k.rocket_frames, k.rocket_window_early, k.rocket_window_late, k.burnout_frames,

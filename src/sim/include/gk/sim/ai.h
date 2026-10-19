@@ -25,6 +25,7 @@ struct CpuSkill {
     int throttle_lift = 0;       // ticks out of 32 off the accelerator
     bool avoids = true;          // dodges karts and dropped items ahead
     bool rocket_start = true;    // times the accelerator on the countdown
+    float glide_dive = 0.0f;     // how hard it dives for speed while gliding with height to spare (0..1)
 };
 
 CpuSkill cpu_skill(CpuLevel level, int seat);
