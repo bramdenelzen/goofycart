@@ -143,7 +143,8 @@ LunarG Vulkan SDK, and `SDL_VULKAN_LIBRARY=/path/to/lib` picks another.
 | `--track id` | Skip the menus and race that track (ids below) |
 | `--mute` | No sound |
 | `--time-trial` | With `--track`: a Time Trial instead of a VS race |
-| `--menu options\|course` | Open on that menu (for screenshots) |
+| `--menu options\|course\|record` | Open on that menu (for screenshots; `record` starts recording an engine) |
+| `--engine-sound FILE` | Make a WAV file your engine sound, as if you had recorded it |
 | `--connect host[:port]` | Race online on a `gk_server` (default port 7777) |
 | `--name NAME` | Your name online (and your account name the first time) |
 | `--master URL --region R` | Master server and preferred region for ONLINE |
@@ -211,9 +212,11 @@ times, wall hits and falls: the quickest way to try a layout change.
 ## Options
 
 OPTIONS on the title menu sets master, music and effects volume, the low-res
-look, fullscreen, control hints, rumble and whether crash reports are sent
-(see [docs/ONLINE.md](docs/ONLINE.md#crash-reports)). Settings are saved to
-`settings.txt` in the same user data folder as the ghosts.
+look, fullscreen, control hints, rumble, whether crash reports are sent
+(see [docs/ONLINE.md](docs/ONLINE.md#crash-reports)), your engine sound
+(record one, or keep the synth) and whether you hear other players' recorded
+engines online. Settings are saved to `settings.txt` in the same user data
+folder as the ghosts; your recording is `engine.wav` next to it.
 
 ## Time Trials
 
@@ -231,8 +234,20 @@ All sound is synthesised when the game starts; there are no sample files.
 boosts, items, hits, countdown, laps), and a chiptune writer that composes a
 looping song for each track from its id and theme: chord progression, bass,
 lead melody, arpeggio and drums. The music speeds up on the final lap.
-`gk_audiodemo out_dir` renders every effect and one song per mood to WAV
-files for listening outside the game.
+`gk_audiodemo out_dir` renders every effect, the bots' engines, karts passing
+by and one song per mood to WAV files for listening outside the game.
+
+Your engine can be your own voice: OPTIONS > RECORD ENGINE counts you in,
+records whatever you say (a held "ahhh", a word, your name: up to 2 s),
+loops it round from its first sound to its last and plays it back revving.
+In a race it plays at your own pitch flat out and lower as you slow (the
+synth still adds the tyres, sparks and off-road grit). Every CPU kart sings
+an engine of its own (a vowel, a pitch and a wobble picked from its seat),
+and every other kart is heard where it is: quieter and duller with
+distance, panned, and bent by a cartoon Doppler shift (sound at 70 m/s) so a
+kart going by goes neeeeoow. Online, each player's recording is sent to
+everyone else in the room; PLAYERS' ENGINES turns other people's off.
+`--engine-sound FILE.wav` makes any sound file your engine instead.
 
 ## Controls
 
@@ -293,6 +308,10 @@ and snapshots use an unreliable sequenced channel and race setup and events a
 reliable one.
 
 - Every input packet repeats the last 8 inputs, so lost packets cost nothing.
+- A player's recorded engine (at most 32 KB: 2 s of 16 kHz mu-law) goes
+  to the server once on the low-priority reliable channel and from there to
+  everyone in the room, late joiners included; the server takes a new one
+  at most every 3 seconds.
 - The server sends 30 snapshots a second with every kart's quantised state
   (about 60 bytes each) and its latest input.
 - The client predicts: it runs its own copy of the race a few ticks ahead of

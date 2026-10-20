@@ -37,6 +37,7 @@ add_executable(gk_client
   menu.cpp
   frontend.cpp
   audio_device.cpp
+  voice_recorder.cpp
   settings.cpp
   assets.cpp
   render/mesh.cpp
@@ -75,7 +76,10 @@ if(APPLE AND GK_MACOS_BUNDLE)
     MACOSX_BUNDLE_BUNDLE_NAME "Gobby Kart"
     MACOSX_BUNDLE_GUI_IDENTIFIER "net.gobbykart.client"
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
-    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+    # CMake's own template plus the microphone line: without it macOS stops
+    # the app the moment OPTIONS > RECORD ENGINE opens the microphone.
+    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in)
   if(NOT MOLTENVK_DYLIB)
     execute_process(COMMAND brew --prefix molten-vk OUTPUT_VARIABLE _mvk OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
     if(_mvk AND EXISTS "${_mvk}/lib/libMoltenVK.dylib")

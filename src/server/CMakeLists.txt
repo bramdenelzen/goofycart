@@ -5,4 +5,4 @@ if(WIN32)
 endif()
 
 add_executable(gk_botclient bot_client.cpp)
-target_link_libraries(gk_botclient PRIVATE gk_net gk_online gk_warnings)
+target_link_libraries(gk_botclient PRIVATE gk_net gk_online gk_audio gk_warnings)

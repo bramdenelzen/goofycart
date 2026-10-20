@@ -88,6 +88,8 @@ bool Settings::load(const std::string& path) {
         else if (key == "crash_reports") crash_reports = v != 0;
         else if (key == "volumetric") volumetric = v != 0;
         else if (key == "show_checkpoints") show_checkpoints = v != 0;
+        else if (key == "engine_voice") engine_voice = v != 0;
+        else if (key == "others_voices") others_voices = v != 0;
     }
     return true;
 }
@@ -97,7 +99,8 @@ bool Settings::save(const std::string& path) const {
     f << "master=" << master << "\nmusic=" << music << "\nsfx=" << sfx << "\npixel_look=" << low_res
       << "\nfullscreen=" << fullscreen << "\nshow_help=" << show_help << "\nrumble=" << rumble
       << "\ncrash_reports=" << crash_reports << "\nvolumetric=" << volumetric
-      << "\nshow_checkpoints=" << show_checkpoints << "\nmaster_url=" << master_url << "\njoin_address=" << join_address << "\n";
+      << "\nshow_checkpoints=" << show_checkpoints << "\nengine_voice=" << engine_voice << "\nothers_voices=" << others_voices
+      << "\nmaster_url=" << master_url << "\njoin_address=" << join_address << "\n";
     for (int b = 0; b < kBindCount; ++b) f << bind_key(Bind(b)) << "=" << binds[size_t(b)][0] << "," << binds[size_t(b)][1] << "\n";
     return bool(f);
 }

@@ -161,13 +161,53 @@ void draw_online_status(render::Renderer& r, const std::string& text, bool faile
 // ---------------------------------------------------------------- options
 
 namespace {
-constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "VOLUMETRIC LIGHT", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "CRASH REPORTS", "MAP CHECKPOINTS", "CONTROLS", "BACK"};
-constexpr int kOptionCount = 12;
+constexpr const char* kOptionRows[] = {"VOLUME", "MUSIC", "EFFECTS", "LOW-RES LOOK", "VOLUMETRIC LIGHT", "FULLSCREEN", "CONTROL HINTS", "RUMBLE", "CRASH REPORTS", "MAP CHECKPOINTS", "ENGINE SOUND", "RECORD ENGINE", "PLAYERS' ENGINES", "CONTROLS", "BACK"};
+constexpr int kOptionCount = 15;
+constexpr int kRowEngine = 10, kRowRecord = 11, kRowOthers = 12;
+
+// The recording overlay: what to do now, the microphone's level and how far
+// through the take it is, or how it turned out.
+void draw_engine_recording(render::Renderer& r, const EngineRecording& rec) {
+    using Phase = EngineRecording::Phase;
+    const float W = ui::W(r), pw = 320.0f, ph = 116.0f, x = (W - pw) * 0.5f, y = 112.0f, cx = W * 0.5f;
+    ui::panel(r, x, y, pw, ph, 14.0f);
+    const float bx = x + 34.0f, bw = pw - 68.0f;
+    auto bar = [&](float by, float bh, float fill, uint32_t top, uint32_t bottom) {
+        r.ui_slant_rect(bx, by, bw, bh, ui::kBarSlant, rgba(255, 255, 255, 28), rgba(255, 255, 255, 14));
+        if (fill > 0.0f) r.ui_slant_rect(bx, by, bw * std::clamp(fill, 0.0f, 1.0f), bh, ui::kBarSlant, top, bottom);
+    };
+    switch (rec.phase) {
+    case Phase::CountIn:
+        ui::title(r, cx, y + 18.0f, "TAKE A BREATH...", 2.2f);
+        ui::text_c(r, cx, y + 54.0f, "THEN SAY ANYTHING: AHHH, VROOOM, YOUR NAME...", ui::kSubtle, 1.25f);
+        bar(y + 80.0f, 8.0f, 1.0f - rec.t / kCountInSeconds, ui::kSky, rgba(40, 120, 220));
+        break;
+    case Phase::Recording: {
+        // The title stretches as the take goes on: GO, GOO, GOOOOOO...
+        std::string go = "GO";
+        for (int i = 0; i < int(rec.t / kRecordSeconds * 8.0f); ++i) go += 'O';
+        go += '!';
+        ui::title(r, cx, y + 18.0f, go.c_str(), 2.6f);
+        ui::text_c(r, cx, y + 54.0f, "RECORDING", ui::kRed, 1.25f);
+        bar(y + 72.0f, 10.0f, rec.level * 1.6f, ui::kGold, ui::kGoldDeep); // the meter
+        bar(y + 90.0f, 5.0f, rec.t / kRecordSeconds, ui::kRed, ui::kRedDeep);
+        break;
+    }
+    case Phase::Result:
+        ui::title(r, cx, y + 18.0f, rec.ok ? "VROOOM!" : "HMM...", 2.6f, rec.ok ? 0 : ui::kWarn);
+        ui::text_c(r, cx, y + 58.0f, rec.message.c_str(), rec.ok ? ui::kText : ui::kWarn, 1.25f);
+        break;
+    case Phase::Off:
+        return;
+    }
+    footer(r, rec.phase == Phase::Result ? "ENTER  DONE" : "ESC  CANCEL");
+}
 } // namespace
 
 OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions& act) {
     if (act.back || (act.accept && s.row == kOptionCount - 1)) return OptionsAction::Back;
     if (act.accept && s.row == kOptionCount - 2) return OptionsAction::Controls;
+    if (act.accept && s.row == kRowRecord) return OptionsAction::RecordEngine;
     if (act.menu_up) s.row = (s.row + kOptionCount - 1) % kOptionCount;
     if (act.menu_down) s.row = (s.row + 1) % kOptionCount;
     const int d = step(act) + (act.accept ? 1 : 0);
@@ -184,14 +224,16 @@ OptionsAction update_options(OptionsState& s, Settings& st, const ClientActions&
     case 7: st.rumble = !st.rumble; break;
     case 8: st.crash_reports = !st.crash_reports; break;
     case 9: st.show_checkpoints = !st.show_checkpoints; break;
+    case kRowEngine: st.engine_voice = !st.engine_voice; break;
+    case kRowOthers: st.others_voices = !st.others_voices; break;
     default: return OptionsAction::None;
     }
     return OptionsAction::Changed;
 }
 
-void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st) {
+void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st, bool has_engine, const EngineRecording& rec) {
     const float W = ui::W(r);
-    const float pw = 300.0f, x = (W - pw) * 0.5f, y = 18.0f, rh = 19.0f;
+    const float pw = 300.0f, x = (W - pw) * 0.5f, y = 14.0f, rh = 17.0f;
     ui::panel(r, x, y, pw, 54.0f + rh * kOptionCount, 14.0f);
     ui::title(r, W * 0.5f, y + 12.0f, "OPTIONS", 2.6f);
     float ry = y + 44.0f;
@@ -206,15 +248,21 @@ void draw_options(render::Renderer& r, const OptionsState& s, const Settings& st
                 r.ui_slant_rect(bx, ry + 4.0f, 7.0f, 8.0f, ui::kBarSlant, b < v ? ui::kGold : rgba(255, 255, 255, sel ? 90 : 40),
                                 b < v ? ui::kGoldDeep : rgba(255, 255, 255, sel ? 90 : 40));
             }
+        } else if (i == kRowEngine) {
+            const char* v = !has_engine ? "<  NONE RECORDED  >" : st.engine_voice ? "<  MY VOICE  >" : "<  SYNTH  >";
+            ui::option_row(r, rx, ry, rw, kOptionRows[i], v, sel);
+        } else if (i == kRowRecord) {
+            ui::option_row(r, rx, ry, rw, kOptionRows[i], has_engine ? "AGAIN" : "SAY SOMETHING", sel);
         } else if (i < kOptionCount - 2) {
-            const bool on = i == 3 ? st.low_res : i == 4 ? st.volumetric : i == 5 ? st.fullscreen : i == 6 ? st.show_help : i == 7 ? st.rumble : i == 8 ? st.crash_reports : st.show_checkpoints;
+            const bool on = i == 3 ? st.low_res : i == 4 ? st.volumetric : i == 5 ? st.fullscreen : i == 6 ? st.show_help : i == 7 ? st.rumble : i == 8 ? st.crash_reports : i == 9 ? st.show_checkpoints : st.others_voices;
             ui::option_row(r, rx, ry, rw, kOptionRows[i], on ? "<  ON  >" : "<  OFF  >", sel);
         } else {
             ui::option_row(r, rx, ry, rw, kOptionRows[i], nullptr, sel);
         }
         ry += rh;
     }
-    footer(r, "UP/DOWN  CHOOSE      LEFT/RIGHT  CHANGE      ESC  BACK");
+    if (rec.phase != EngineRecording::Phase::Off) draw_engine_recording(r, rec);
+    else footer(r, "UP/DOWN  CHOOSE      LEFT/RIGHT  CHANGE      ESC  BACK");
 }
 
 // ---------------------------------------------------------------- controls

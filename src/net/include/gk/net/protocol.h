@@ -19,7 +19,7 @@
 //   kChannelChat     reliable, low priority: chat and emotes
 namespace gk::net {
 
-inline constexpr uint16_t kProtocolVersion = 26; // bump when the race changes too: both sides build the track from data
+inline constexpr uint16_t kProtocolVersion = 27; // bump when the race changes too: both sides build the track from data
 inline constexpr uint16_t kDefaultPort = 7777;
 inline constexpr uint8_t kChannelState = 0;
 inline constexpr uint8_t kChannelEvents = 1;
@@ -28,6 +28,10 @@ inline constexpr int kChannelCount = 3;
 inline constexpr int kMaxSeats = 12;
 inline constexpr int kInputRedundancy = 8; // each input packet repeats the last N inputs to cover loss
 inline constexpr int kSnapshotInterval = 2; // ticks: 30 Hz snapshots
+// A player's recorded engine on the wire: 2 s of 16 kHz mu-law
+// (gk::audio::kMaxWireBytes; tests/test_net.cpp keeps the two equal).
+inline constexpr size_t kMaxVoiceBytes = 32000;
+inline constexpr int kVoiceCooldownTicks = 60 * 3; // the server takes a new recording at most this often
 
 enum class MsgType : uint8_t {
     Hello = 1,    // C->S reliable
@@ -40,6 +44,7 @@ enum class MsgType : uint8_t {
     Lobby,        // S->C reliable: room phase, timer and players
     SetBuild,     // C->S reliable: kart parts and ready flag in the lobby
     Results,      // S->C reliable: final order and Grand Prix points
+    Voice,        // both ways, reliable low priority: a player's recorded engine sound
 };
 
 // Points per place in a 12-racer race, as in MK8 Deluxe.
@@ -60,6 +65,7 @@ public:
     void unit_vec3(gk::vec3 v); // 3 x int16
     void quat(gk::quat q);      // smallest three, 4 bytes
     void str(const std::string& s);
+    void bytes(std::span<const uint8_t> b); // up to 65535, length first
     // Fixed-point helpers for bounded values
     void q16(float v, float range) { i16(int16_t(std::clamp(v / range, -1.0f, 1.0f) * 32767.0f)); }
     void q8u(float v, float range) { u8(uint8_t(std::clamp(v / range, 0.0f, 1.0f) * 255.0f + 0.5f)); }
@@ -85,6 +91,9 @@ public:
     gk::vec3 unit_vec3();
     gk::quat quat();
     std::string str();
+    // Fails the read (ok() false) when the length is over `max`, before
+    // allocating anything for it.
+    std::vector<uint8_t> bytes(size_t max);
     float q16(float range) { return float(i16()) / 32767.0f * range; }
     float q8u(float range) { return float(u8()) / 255.0f * range; }
 
@@ -104,6 +113,7 @@ struct SeatInfo {
     std::string name;
     sim::Build build;
     sim::KartParams params;
+    uint32_t voice = 0; // whose recorded engine this kart plays (VoiceMsg::owner); 0 for a bot
 };
 
 struct RaceSetup {
@@ -208,6 +218,14 @@ struct EventsMsg {
     std::vector<sim::KartEvent> events;
 };
 
+// A player's engine sound: from the player to the server (owner unused),
+// then from the server to everyone else, saying whose it is. The clip is
+// gk::audio's wire format, at most kMaxVoiceBytes.
+struct VoiceMsg {
+    uint32_t owner = 0;
+    std::vector<uint8_t> clip;
+};
+
 MsgType peek_type(std::span<const uint8_t> data);
 
 std::vector<uint8_t> encode(const Hello& m);
@@ -219,6 +237,7 @@ std::vector<uint8_t> encode(const EventsMsg& m);
 std::vector<uint8_t> encode(const LobbyMsg& m);
 std::vector<uint8_t> encode(const SetBuildMsg& m);
 std::vector<uint8_t> encode(const ResultsMsg& m);
+std::vector<uint8_t> encode(const VoiceMsg& m);
 
 bool decode(std::span<const uint8_t> data, Hello& m);
 bool decode(std::span<const uint8_t> data, Welcome& m);
@@ -229,6 +248,7 @@ bool decode(std::span<const uint8_t> data, EventsMsg& m);
 bool decode(std::span<const uint8_t> data, LobbyMsg& m);
 bool decode(std::span<const uint8_t> data, SetBuildMsg& m);
 bool decode(std::span<const uint8_t> data, ResultsMsg& m);
+bool decode(std::span<const uint8_t> data, VoiceMsg& m);
 
 void write_input(Writer& w, const sim::KartInput& in);
 sim::KartInput read_input(Reader& r);

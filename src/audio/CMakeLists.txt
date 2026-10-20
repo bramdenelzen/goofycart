@@ -3,6 +3,7 @@ add_library(gk_audio STATIC
   mixer.cpp
   music.cpp
   sfx.cpp
+  voice.cpp
 )
 target_include_directories(gk_audio PUBLIC include)
 target_link_libraries(gk_audio PRIVATE gk_warnings)

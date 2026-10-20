@@ -10,6 +10,7 @@
 #include "menu.h"
 #include "render/renderer.h"
 #include "render/track_mesh.h"
+#include "voice_recorder.h"
 
 #include "gk/net/client_game.h"
 #include "gk/sim/ghost.h"
@@ -62,6 +63,7 @@ struct AppOptions {
     std::string master_url;       // master server for ONLINE (accounts, matchmaking)
     std::string region;           // preferred server region for matchmaking
     std::string crash;            // --crash segv|abort|throw: test the crash reporter
+    std::string engine_sound;     // --engine-sound FILE: make a WAV your engine, as if you had recorded it
     net::LinkConditions link; // simulated lag and loss for testing
 };
 
@@ -199,6 +201,27 @@ private:
     OptionsState options_menu_;
     Settings settings_;
     void apply_settings();
+
+    // Engines that sound like someone: the player's own recording (none: the
+    // synth), every seat's own bot voice, and online the other players'
+    // recordings, each decoded once and shared with the mixer.
+    std::shared_ptr<const audio::EngineClip> my_engine_;
+    std::array<std::shared_ptr<const audio::EngineClip>, 12> bot_engines_{};
+    std::map<uint32_t, std::shared_ptr<const audio::EngineClip>> heard_engines_; // by SeatInfo::voice
+    uint32_t heard_version_ = ~0u;
+    vec3 ear_pos_{0.0f}, ear_vel_{0.0f}; // the camera as a listener, for Doppler
+    bool ear_init_ = false;
+    std::string engine_path() const;
+    // Keeps, saves and (online) sends a new engine; false when the take had nothing usable in it.
+    bool adopt_engine(audio::EngineClip clip);
+    void send_engine();
+    std::shared_ptr<const audio::EngineClip> engine_for_seat(int seat);
+    void update_kart_engines(const sim::World& w, audio::EngineState& local);
+    // OPTIONS > RECORD ENGINE.
+    VoiceRecorder recorder_;
+    EngineRecording engine_rec_;
+    void start_engine_recording();
+    void update_engine_recording(const ClientActions& act);
 
     // ONLINE: sign in to the master server and matchmake on a worker thread.
     struct MatchResult {

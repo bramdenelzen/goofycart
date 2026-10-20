@@ -21,6 +21,8 @@ struct Settings {
     bool crash_reports = true;          // send crash reports to the master server
     bool volumetric = false;            // sun shafts and drifting mist (a post pass; off by default)
     bool show_checkpoints = false;      // checkpoint lines on the minimap
+    bool engine_voice = true;           // your kart's engine is your recording, when you made one
+    bool others_voices = true;          // online: hear the other players' recorded engines
     std::string master_url;             // ONLINE's master server (also --master)
     std::string join_address;           // the last server joined by address
     std::array<std::array<int, 2>, kBindCount> binds = default_binds();

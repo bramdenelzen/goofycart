@@ -52,13 +52,26 @@ std::string course_track(const CourseState& s, const sim::TrackCatalog& tracks);
 // ONLINE while it signs in and looks for a race, or why it could not.
 void draw_online_status(render::Renderer& r, const std::string& text, bool failed);
 
-// Volumes and display settings.
+// OPTIONS > RECORD ENGINE: a count-in, anything said into the microphone (a
+// held "ahhh", a word), then the result played back revving. Drawn over the options.
+struct EngineRecording {
+    enum class Phase { Off, CountIn, Recording, Result } phase = Phase::Off;
+    float t = 0.0f;      // seconds into the phase
+    float level = 0.0f;  // the microphone meter, 0..1
+    bool ok = false;     // the take made an engine
+    std::string message; // what the result says
+};
+inline constexpr float kCountInSeconds = 1.5f, kRecordSeconds = 2.5f, kResultSeconds = 3.5f;
+
+// Volumes, display and sound settings.
 struct OptionsState {
     int row = 0;
 };
-enum class OptionsAction { None, Changed, Controls, Back };
+enum class OptionsAction { None, Changed, Controls, RecordEngine, Back };
 OptionsAction update_options(OptionsState& s, Settings& settings, const ClientActions& act);
-void draw_options(render::Renderer& r, const OptionsState& s, const Settings& settings);
+// `has_engine`: the player has recorded one. `rec`: a recording under way, drawn on top.
+void draw_options(render::Renderer& r, const OptionsState& s, const Settings& settings, bool has_engine,
+                  const EngineRecording& rec);
 
 // CONTROLS: rebind the keyboard. `waiting` = the row whose key is being set.
 struct ControlsState {

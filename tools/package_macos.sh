@@ -42,7 +42,9 @@ for lib in "$app"/Contents/Frameworks/*.dylib; do if [ -f "$lib" ]; then sign "$
 # The game hosts races by starting gk_server, so the app carries a copy.
 cp "$stage/gk_server" "$app/Contents/MacOS/gk_server"
 sign "$app/Contents/MacOS/gk_server"
-sign "$app"
+# The game may record from the microphone (its engine sound), which the
+# hardened runtime only allows with this entitlement.
+sign --entitlements "$(cd "$(dirname "$0")/.." && pwd)/src/client/gk_client.entitlements" "$app"
 for tool in gk_server gk_master gk_botclient; do sign "$stage/$tool"; done
 
 dmg="$out/$name.dmg"

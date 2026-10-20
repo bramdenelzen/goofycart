@@ -46,7 +46,11 @@ sim::KartParams Room::params_for(const sim::Build& b) const {
     return tables_.params(parts_.levels(v), parts_.body(v), config_.engine);
 }
 
-void Room::on_connect(ClientId id) { clients_[id] = Client{}; }
+void Room::on_connect(ClientId id) {
+    Client c;
+    c.voice_tag = next_voice_tag_++;
+    clients_[id] = std::move(c);
+}
 
 void Room::on_disconnect(ClientId id) {
     auto it = clients_.find(id);
@@ -100,6 +104,22 @@ void Room::on_message(ClientId id, std::span<const uint8_t> data) {
         if (world_ && phase_ == RoomPhase::Racing) sink_.send(id, kChannelEvents, encode(make_setup()), true);
         if (phase_ == RoomPhase::Results) sink_.send(id, kChannelEvents, encode(results_), true);
         send_lobby();
+        // Everyone else's engine sound, so their karts sound like them from the start.
+        for (const auto& [other, oc] : clients_)
+            if (other != id && !oc.voice.empty()) sink_.send(id, kChannelChat, encode(VoiceMsg{oc.voice_tag, oc.voice}), true);
+        break;
+    }
+    case MsgType::Voice: {
+        VoiceMsg m;
+        if (!c.hello || !decode(data, m)) return; // decode caps the size
+        // A new recording at most every few seconds: a client cannot flood
+        // the room with them.
+        if (!c.voice.empty() && server_tick_ - c.voice_tick < uint32_t(kVoiceCooldownTicks)) return;
+        c.voice = std::move(m.clip);
+        c.voice_tick = server_tick_;
+        const std::vector<uint8_t> out = encode(VoiceMsg{c.voice_tag, c.voice});
+        for (const auto& [other, oc] : clients_)
+            if (other != id && oc.hello) sink_.send(other, kChannelChat, out, true);
         break;
     }
     case MsgType::SetBuild: {
@@ -261,7 +281,10 @@ RaceSetup Room::make_setup() const {
     s.cpu_level = config_.cpu_level;
     s.track = current_track();
     s.data_hash = data_hash_;
-    for (const Seat& seat : seats_) s.seats.push_back({seat.human, seat.name, seat.build, seat.params});
+    for (const Seat& seat : seats_) {
+        const auto it = seat.human ? clients_.find(seat.client) : clients_.end();
+        s.seats.push_back({seat.human, seat.name, seat.build, seat.params, it != clients_.end() ? it->second.voice_tag : 0u});
+    }
     return s;
 }
 

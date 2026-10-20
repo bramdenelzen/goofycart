@@ -20,6 +20,11 @@ ClientGame::ClientGame(sim::PhysicsTables tables, SendFn send) : tables_(std::mo
     data_hash_ = hash_constants(tables_);
 }
 
+void ClientGame::set_voice(std::vector<uint8_t> clip) {
+    my_voice_ = std::move(clip);
+    if (welcomed_ && !my_voice_.empty()) send_(kChannelChat, encode(VoiceMsg{0, my_voice_}), true);
+}
+
 void ClientGame::join(const std::string& name, const sim::Build& build, const std::string& token) {
     Hello h;
     h.name = name;
@@ -48,6 +53,14 @@ void ClientGame::on_message(std::span<const uint8_t> data) {
         if (!decode(data, w)) return;
         welcomed_ = true;
         seat_ = w.seat == 255 ? -1 : int(w.seat);
+        if (!my_voice_.empty()) send_(kChannelChat, encode(VoiceMsg{0, my_voice_}), true);
+        break;
+    }
+    case MsgType::Voice: {
+        VoiceMsg m;
+        if (!decode(data, m) || m.owner == 0) return;
+        voices_[m.owner] = std::move(m.clip);
+        ++voices_version_;
         break;
     }
     case MsgType::RaceSetup: {

@@ -19,7 +19,7 @@ them, including screenshot/testing flags like `--pixel`, `--no-ui`,
 | Effects | `handle_events`, `event_particles`, `emit_kart_particles`, `burst`, `explosion_burst`, `draw_flame`, `draw_speed_lines` |
 | World drawing | `draw_items`, `draw_held_item`, `draw_movers`, `draw_gates`, `draw_breakables`, `update_lava`, `draw_water_overlay` |
 | Camera | `update_camera`, `spring`, `seam_tour_step`; on a loop it rolls fully with the road and follows the kart's own forward (`cam_dir3_`) |
-| Sound | `event_sound`, `update_audio`, `play_at` |
+| Sound | `event_sound`, `update_audio`, `play_at`; engines as voices: `update_kart_engines` (every kart's loop, distance, pan, Doppler from the camera's motion), `engine_for_seat`, `adopt_engine`, `send_engine`; OPTIONS > RECORD ENGINE: `start_engine_recording`, `update_engine_recording` |
 | Pause | `pause_items`, `update_pause`, `draw_pause` |
 
 ## Other files
@@ -33,7 +33,10 @@ them, including screenshot/testing flags like `--pixel`, `--no-ui`,
   data folder (volumes, low-res look, fullscreen, rebinding, crash reports).
 - `particles.*`: presentation-only particles. `assets.*`: optional model
   packs (`docs/model-packs.md`).
-- `audio_device.*`: feeds `gk_audio`'s mixer to SDL.
+- `audio_device.*`: feeds `gk_audio`'s mixer to SDL. `voice_recorder.*`:
+  the microphone through SDL, for RECORD ENGINE. On macOS the app bundle
+  needs `Info.plist.in`'s microphone line and `gk_client.entitlements`
+  (passed by `tools/package_macos.sh`), or the hardened runtime stops it.
 
 ## Audio (`src/audio`, `gk_audio`)
 
@@ -42,3 +45,12 @@ Everything synthesised at start-up, no sample files. `mixer.h` (`Mixer`,
 (chiptune writer: a song per track from its id and theme, faster on the
 final lap), `synth.h`. `gk_audiodemo out_dir` renders everything to WAV.
 Tested without a device in `tests/test_audio.cpp`.
+
+Engines as voices: `voice.h` (`EngineClip`; `make_loop` loops whatever was
+said, first sound to last, `make_bot_clip` sings each seat its own, mu-law
+`encode_clip`/`decode_clip` for the wire, WAV load/save, `doppler_factor`).
+`Mixer::set_kart_engines` plays up to 12 looped clips at `engine_revs`
+(the clip's own pitch flat out, lower when slow) times Doppler, gliding so 60 Hz updates never click;
+`EngineState::voiced` mutes the synth's own note when the player's recording
+plays it. `kLocalEngineGain` keeps the two equally loud. Tested in
+`tests/test_voice.cpp`.

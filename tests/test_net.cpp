@@ -2,6 +2,7 @@
 // ClientGames over an in-memory link with latency and packet loss.
 #include "sim_fixture.h"
 
+#include "gk/audio/voice.h"
 #include "gk/net/client_game.h"
 #include "gk/net/room.h"
 
@@ -498,4 +499,64 @@ TEST_CASE("clients race on the server's track, not their previous one") {
     REQUIRE(h.run_until([&] { return h.room.racing() && g.world(); }, 5000));
     CHECK(h.room.world()->track().id == cfg.track);
     CHECK(g.world()->track().id == cfg.track);
+}
+
+TEST_CASE("a voice message carries a recording, and turns away one too big or cut short") {
+    CHECK(kMaxVoiceBytes == gk::audio::kMaxWireBytes);
+    VoiceMsg m{7, std::vector<uint8_t>(1000)};
+    for (size_t i = 0; i < m.clip.size(); ++i) m.clip[i] = uint8_t(i * 7);
+    VoiceMsg back;
+    REQUIRE(decode(encode(m), back));
+    CHECK(back.owner == 7);
+    CHECK(back.clip == m.clip);
+    // A hand-made packet claiming more than the limit is refused before
+    // anything is allocated for it.
+    Writer big;
+    big.u8(uint8_t(MsgType::Voice));
+    big.u32(1);
+    big.u16(uint16_t(kMaxVoiceBytes + 1));
+    std::vector<uint8_t> flood = big.take();
+    flood.resize(flood.size() + kMaxVoiceBytes + 1, 0x55);
+    CHECK_FALSE(decode(flood, back));
+    // So is one whose length runs past its end, and an empty one means nothing.
+    Writer cut;
+    cut.u8(uint8_t(MsgType::Voice));
+    cut.u32(1);
+    cut.u16(500);
+    for (int i = 0; i < 10; ++i) cut.u8(1);
+    CHECK_FALSE(decode(cut.data(), back));
+    CHECK_FALSE(decode(encode(VoiceMsg{1, {}}), back));
+}
+
+TEST_CASE("players hear each other's recorded engines, late joiners too, and nobody can flood the room") {
+    Harness h(40, 0.0f);
+    ClientGame& ann = h.connect(1, "Ann");
+    ClientGame& bob = h.connect(2, "Bob");
+    std::vector<uint8_t> ahh(2000), ooh(1500, 0x42);
+    for (size_t i = 0; i < ahh.size(); ++i) ahh[i] = uint8_t(i * 31);
+    ann.set_voice(ahh); // before the server has welcomed her: sent once it does
+    h.run_ms(300);
+    ann.set_voice(ooh); // straight after: too soon, so the room ignores it
+    REQUIRE(h.run_until([&] { return bob.voices_version() > 0 && bob.world(); }, 20000));
+    // Bob finds Ann's kart in the race setup, and her recording under its tag.
+    uint32_t tag = 0;
+    for (const auto& s : bob.setup().seats) {
+        if (s.human && s.name == "Ann") tag = s.voice;
+        if (!s.human) CHECK(s.voice == 0); // bots have none
+    }
+    REQUIRE(tag != 0);
+    REQUIRE(bob.voice(tag) != nullptr);
+    CHECK(*bob.voice(tag) == ahh);
+    CHECK(ann.voice(tag) == nullptr); // nobody is sent their own back
+    // Someone joining later hears her from the start.
+    ClientGame& cid = h.connect(3, "Cid");
+    REQUIRE(h.run_until([&] { return cid.voices_version() > 0; }, 5000));
+    REQUIRE(cid.voice(tag) != nullptr);
+    CHECK(*cid.voice(tag) == ahh);
+    // After the cooldown a new recording goes through, to everyone.
+    h.run_ms(kVoiceCooldownTicks * 1000 / 60 + 500);
+    ann.set_voice(ooh);
+    REQUIRE(h.run_until([&] { const auto* v = bob.voice(tag); return v && *v == ooh; }, 3000));
+    h.run_ms(500);
+    CHECK(*cid.voice(tag) == ooh);
 }

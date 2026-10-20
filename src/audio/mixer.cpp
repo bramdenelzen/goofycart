@@ -17,6 +17,7 @@ struct Mixer::EngineSynth {
     Noise noise{0xabcdefu};
     OnePole tone, squeal_lp, squeal_hp, rumble;
     float level = 0.0f, speed = 0.0f, throttle = 0.0f, drift = 0.0f, rough = 0.0f, spark = 0.0f, air = 0.0f;
+    float note = 1.0f; // the synth's own engine note: off while a recording plays it
     float spark_freq = 1800.0f;
 
     void sample(const EngineState& e, int rate, float& out) {
@@ -29,6 +30,7 @@ struct Mixer::EngineSynth {
         glide(spark, e.drift_tier >= 1 && !e.airborne ? 1.0f : 0.0f);
         glide(rough, e.airborne ? 0.0f : e.rough);
         glide(air, e.airborne ? 1.0f : 0.0f);
+        glide(note, e.voiced ? 0.0f : 1.0f);
         if (e.drift_tier >= 1) spark_freq = e.drift_tier == 1 ? 1700.0f : e.drift_tier == 2 ? 2300.0f : 3000.0f;
         if (level < 1e-4f) {
             out = 0.0f;
@@ -42,7 +44,7 @@ struct Mixer::EngineSynth {
         const float squeal = squeal_hp.high(squeal_lp.low(noise.next(), 0.6f), 0.15f) * drift * std::min(1.0f, speed * 2.0f);
         const float sparks = shimmer.sine(spark_freq, rate) * (0.6f + 0.4f * trem.sine(13.0f, rate)) * spark;
         const float grit = rumble.low(noise.next(), 0.03f) * rough * std::min(1.0f, speed * 1.5f);
-        out = level * (0.55f * engine + 0.12f * squeal + 0.05f * sparks + 0.9f * grit);
+        out = level * (0.55f * note * engine + 0.12f * squeal + 0.05f * sparks + 0.9f * grit);
     }
 };
 
@@ -81,6 +83,26 @@ void Mixer::play(Sfx s, float gain, float pan, float pitch) {
 void Mixer::set_engine(const EngineState& e) {
     std::lock_guard lock(mutex_);
     engine_target_ = e;
+}
+
+void Mixer::set_kart_engines(std::span<const KartEngine> engines) {
+    std::lock_guard lock(mutex_);
+    for (size_t i = 0; i < kart_engines_.size(); ++i) {
+        EngineVoice& v = kart_engines_[i];
+        KartEngine next = i < engines.size() ? engines[i] : KartEngine{};
+        if (next.clip && next.clip->samples.size() < 2) next.clip.reset();
+        if (!next.clip && v.target.clip) { // gone: fade out what was playing rather than cut it
+            next = v.target;
+            next.gain = 0.0f;
+        }
+        if (next.clip != v.target.clip) { // a different sound in this slot: start it fresh
+            v.pos = 0.0;
+            v.step = 0.0f;
+            v.gain_l = v.gain_r = 0.0f;
+            v.lp = 0.0f;
+        }
+        v.target = std::move(next);
+    }
 }
 
 void Mixer::play_music(uint32_t seed, Mood mood) {
@@ -156,6 +178,7 @@ Volumes Mixer::volumes() const {
 void Mixer::render(float* out, int frames) {
     std::lock_guard lock(mutex_);
     const float fade_step = 1.0f / (0.5f * float(rate_));
+    const float glide = 1.0f / (0.04f * float(rate_)); // ~40 ms: a 60 Hz update never clicks
     for (int i = 0; i < frames; ++i) {
         float l = 0.0f, r = 0.0f;
         for (Voice& v : voices_) {
@@ -170,6 +193,30 @@ void Mixer::render(float* out, int frames) {
             l += s * v.gain_l;
             r += s * v.gain_r;
             v.pos += double(v.step);
+        }
+        // The kart engines: each loop played faster as its kart revs, shifted
+        // by the Doppler factor, panned, and dulled with distance.
+        for (EngineVoice& v : kart_engines_) {
+            const KartEngine& t = v.target;
+            if (!t.clip || (t.gain <= 0.0f && v.gain_l + v.gain_r < 1e-6f)) continue; // silent: skip the work
+            const std::vector<float>& s = t.clip->samples;
+            const size_t n = s.size();
+            const float step = float(t.clip->rate) / float(rate_) * engine_revs(t.speed, t.throttle) * t.doppler;
+            const float level = t.gain * (0.6f + 0.4f * t.throttle);
+            const float pan = std::clamp(t.pan, -1.0f, 1.0f);
+            if (v.step <= 0.0f) v.step = step; // a fresh start begins at pitch (and silent)
+            v.step += (step - v.step) * glide;
+            v.gain_l += (level * std::sqrt(0.5f * (1.0f - pan)) - v.gain_l) * glide;
+            v.gain_r += (level * std::sqrt(0.5f * (1.0f + pan)) - v.gain_r) * glide;
+            v.muffle += (std::clamp(t.muffle, 0.0f, 1.0f) - v.muffle) * glide;
+            const size_t i0 = size_t(v.pos) % n, i1 = (i0 + 1) % n;
+            const float frac = float(v.pos - std::floor(v.pos));
+            const float x = s[i0] * (1.0f - frac) + s[i1] * frac;
+            v.lp += (x - v.lp) * (1.0f - 0.9f * v.muffle); // far off, the top end goes first
+            l += v.lp * v.gain_l;
+            r += v.lp * v.gain_r;
+            v.pos += double(v.step);
+            if (v.pos >= double(n)) v.pos = std::fmod(v.pos, double(n));
         }
         float eng = 0.0f;
         engine_->sample(engine_target_, rate_, eng);

@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -39,6 +40,16 @@ public:
     void join(const std::string& name, const sim::Build& build, const std::string& token = {});
     // Kart choice and ready flag for the lobby (also allowed between races).
     void set_build(const sim::Build& build, bool ready);
+    // Our recorded engine in the wire format (empty: none). Sent now if we
+    // are in, else as soon as the server welcomes us.
+    void set_voice(std::vector<uint8_t> clip);
+    // Other players' recorded engines, by SeatInfo::voice; the version
+    // goes up whenever one arrives or changes.
+    const std::vector<uint8_t>* voice(uint32_t owner) const {
+        const auto it = voices_.find(owner);
+        return owner != 0 && it != voices_.end() ? &it->second : nullptr;
+    }
+    uint32_t voices_version() const { return voices_version_; }
     void on_message(std::span<const uint8_t> data);
 
     // One fixed step with the local player's input. Returns false while there
@@ -109,6 +120,9 @@ private:
     LobbyMsg lobby_;
     bool has_lobby_ = false;
     ResultsMsg results_;
+    std::vector<uint8_t> my_voice_;
+    std::map<uint32_t, std::vector<uint8_t>> voices_;
+    uint32_t voices_version_ = 0;
     std::unique_ptr<sim::World> world_;
 
     bool clock_started_ = false;

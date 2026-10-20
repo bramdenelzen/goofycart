@@ -12,6 +12,7 @@ add_executable(gk_tests
   test_tracks.cpp
   test_point_to_point.cpp
   test_audio.cpp
+  test_voice.cpp
   test_ghost.cpp
   test_props.cpp
   test_paths.cpp

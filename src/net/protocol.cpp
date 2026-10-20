@@ -42,6 +42,24 @@ std::string Reader::str() {
     return s;
 }
 
+void Writer::bytes(std::span<const uint8_t> b) {
+    const size_t n = std::min<size_t>(b.size(), 65535);
+    u16(uint16_t(n));
+    buf_.insert(buf_.end(), b.begin(), b.begin() + long(n));
+}
+
+std::vector<uint8_t> Reader::bytes(size_t max) {
+    const uint16_t n = u16();
+    // Over the limit or past the end: fail before allocating for it.
+    if (!ok_ || n > max || n > data_.size() - pos_) {
+        ok_ = false;
+        return {};
+    }
+    std::vector<uint8_t> b(data_.begin() + long(pos_), data_.begin() + long(pos_ + n));
+    pos_ += n;
+    return b;
+}
+
 void Writer::unit_vec3(gk::vec3 v) {
     q16(v.x, 1.0f);
     q16(v.y, 1.0f);
@@ -436,6 +454,7 @@ std::vector<uint8_t> encode(const RaceSetup& m) {
         w.str(s.name);
         write_build(w, s.build);
         write_params(w, s.params);
+        w.u32(s.voice);
     }
     return w.take();
 }
@@ -459,6 +478,7 @@ bool decode(std::span<const uint8_t> d, RaceSetup& m) {
         s.name = r.str();
         s.build = read_build(r);
         s.params = read_params(r);
+        s.voice = r.u32();
     }
     return r.ok();
 }
@@ -686,6 +706,22 @@ bool decode(std::span<const uint8_t> d, ResultsMsg& m) {
         e.total = r.u16();
     }
     return r.ok();
+}
+
+std::vector<uint8_t> encode(const VoiceMsg& m) {
+    Writer w;
+    w.u8(uint8_t(MsgType::Voice));
+    w.u32(m.owner);
+    w.bytes(std::span<const uint8_t>(m.clip).first(std::min(m.clip.size(), kMaxVoiceBytes)));
+    return w.take();
+}
+
+bool decode(std::span<const uint8_t> d, VoiceMsg& m) {
+    Reader r(d);
+    if (!expect(r, MsgType::Voice)) return false;
+    m.owner = r.u32();
+    m.clip = r.bytes(kMaxVoiceBytes);
+    return r.ok() && !m.clip.empty();
 }
 
 uint32_t crc32(std::span<const uint8_t> data, uint32_t crc) {

@@ -99,6 +99,9 @@ private:
         uint32_t used_tick = 0;
         float lead = 0.0f;                         // smoothed ticks of input headroom
         std::string account;                       // verified master server account, if any
+        uint32_t voice_tag = 0;                    // names this player's recorded engine to everyone else
+        std::vector<uint8_t> voice;                // that recording, as sent (empty: none)
+        uint32_t voice_tick = 0;                   // server tick it last changed, to slow down spam
     };
     struct Seat {
         bool human = false;
@@ -130,6 +133,7 @@ private:
     uint32_t data_hash_ = 0;
 
     std::map<ClientId, Client> clients_;
+    uint32_t next_voice_tag_ = 1; // 0 means a bot: no recording
     std::vector<Seat> seats_;
     std::array<int, kMaxSeats> bot_points_{};
     std::unique_ptr<sim::World> world_;

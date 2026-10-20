@@ -215,6 +215,19 @@ bool App::init() {
     // path still runs without speakers.
     if (options_.max_frames >= 0) SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
     if (!options_.mute) audio_.open();
+    // The player's engine: a sound file handed over on the command line
+    // becomes it, else the one recorded last time (if any).
+    if (!options_.engine_sound.empty()) {
+        const auto take = audio::load_wav(options_.engine_sound);
+        if (take && adopt_engine(audio::make_loop(take->samples, take->rate))) {
+            settings_.engine_voice = true;
+            log_info("Engine sound made from {}", options_.engine_sound);
+        } else {
+            log_warn("--engine-sound {}: no steady sound in it to make an engine from", options_.engine_sound);
+        }
+    } else if (const std::string ep = engine_path(); !ep.empty()) {
+        if (auto clip = audio::load_wav(ep)) my_engine_ = std::make_shared<const audio::EngineClip>(std::move(*clip));
+    }
 
     select_.build = options_.build;
     if (!options_.connect_host.empty() && !connect_online(options_.connect_host, options_.connect_port, {})) return false;
@@ -248,7 +261,10 @@ bool App::init() {
             for (sim::KartState& k : world_->karts_mut()) k.lap = options_.start_lap;
     } else {
         if (options_.menu == "options") screen_ = Screen::Options;
-        else if (options_.menu == "controls") screen_ = Screen::Controls;
+        else if (options_.menu == "record") { // the engine recording under way, for screenshots
+            screen_ = Screen::Options;
+            start_engine_recording();
+        } else if (options_.menu == "controls") screen_ = Screen::Controls;
         else if (options_.menu == "course") screen_ = Screen::Course;
         else if (options_.menu == "online") start_matchmaking();
         show_track(course_track(course_, tracks_));
@@ -933,6 +949,9 @@ bool App::connect_online(const std::string& host, uint16_t port, const std::stri
     });
     online_->set_tracks(tracks_);
     online_->join(options_.name, select_.build, token);
+    send_engine(); // everyone else hears our kart as we recorded it
+    heard_engines_.clear();
+    heard_version_ = ~0u;
     select_.ready = false;
     screen_ = Screen::Select;
     return true;
@@ -1161,8 +1180,22 @@ void App::update_audio() {
     const sim::World* w = world();
     const bool in_race = (screen_ == Screen::Race || screen_ == Screen::Standings) && w && size_t(player_) < w->karts().size();
     if (!in_race) {
-        mx.play_music(0x6b617274u, audio::Mood::Menu);
+        // Quiet while the microphone listens, so the take is only the player.
+        using Phase = EngineRecording::Phase;
+        if (engine_rec_.phase == Phase::CountIn || engine_rec_.phase == Phase::Recording) mx.stop_music();
+        else mx.play_music(0x6b617274u, audio::Mood::Menu);
         mx.set_engine({});
+        // A fresh recording played back revving up from idle, so you hear what your kart will sound like.
+        if (engine_rec_.phase == Phase::Result && engine_rec_.ok && my_engine_) {
+            audio::KartEngine k;
+            k.clip = my_engine_;
+            k.speed = std::min(1.1f, engine_rec_.t / (kResultSeconds * 0.7f));
+            k.throttle = 1.0f;
+            k.gain = audio::kLocalEngineGain;
+            mx.set_kart_engines({&k, 1});
+        } else {
+            mx.set_kart_engines({});
+        }
         last_count_ = -1;
         return;
     }
@@ -1201,7 +1234,140 @@ void App::update_audio() {
             : k.surface == sim::Surface::OffroadHeavy ? 1.0f : k.surface == sim::Surface::Sand ? 0.3f : 0.0f;
     e.airborne = !k.grounded;
     e.boosting = k.boost_frames > 0;
+    update_kart_engines(*w, e);
     mx.set_engine(e);
+}
+
+namespace {
+constexpr float kEngineRange = 90.0f;  // other karts' engines fade to nothing by here (metres)
+constexpr float kSpeedOfSound = 70.0f; // a cartoon one, a fifth of the real: passing a kart goes neeeeoow
+} // namespace
+
+// Every kart's engine as a voice. Ours plays straight at the ears like the
+// synth it replaces (which then keeps only the tyres and the grit); every
+// other kart is placed around the camera, quieter and duller with distance,
+// its pitch rising as it closes in and dropping as it pulls away.
+void App::update_kart_engines(const sim::World& w, audio::EngineState& local) {
+    audio::Mixer& mx = audio_.mixer();
+    if (!local.active) {
+        mx.set_kart_engines({});
+        return;
+    }
+    // The ears are the camera, moving as it moved since the last frame. A
+    // jump (a respawn, a new race) is a cut, not a flight at 500 m/s.
+    const vec3 moved = cam_pos_ - ear_pos_;
+    ear_vel_ = !ear_init_ || glm::length(moved) > 20.0f ? vec3(0.0f) : glm::mix(ear_vel_, moved / std::max(frame_dt_, 1e-3f), 0.3f);
+    ear_pos_ = cam_pos_;
+    ear_init_ = true;
+    const mat4 view = glm::lookAt(cam_pos_, cam_look_, vec3(0, 1, 0));
+    std::array<audio::KartEngine, audio::kKartEngines> engines{};
+    for (size_t i = 0; i < w.karts().size() && i < engines.size(); ++i) {
+        const sim::KartState& k = w.karts()[i];
+        audio::KartEngine& out = engines[i];
+        const float top = std::max(1.0f, w.params(int(i)).top_speed);
+        out.speed = (k.grounded ? std::abs(k.speed) : glm::length(k.air_vel)) / top + (k.boost_frames > 0 ? 0.15f : 0.0f);
+        if (int(i) == player_) {
+            if (!settings_.engine_voice || !my_engine_) continue; // the synth, as before
+            out.clip = my_engine_;
+            out.throttle = local.throttle;
+            out.gain = audio::kLocalEngineGain;
+            local.voiced = true;
+            continue;
+        }
+        const vec3 rel = cam_pos_ - k.pos;
+        const float d = glm::length(rel);
+        if (d > kEngineRange) continue;
+        const vec4 v = view * vec4(k.pos, 1.0f);
+        out.clip = engine_for_seat(int(i));
+        out.throttle = k.finished ? 0.3f : 1.0f;
+        out.pan = std::clamp(v.x / (std::abs(v.z) + 4.0f), -1.0f, 1.0f) * 0.8f; // as play_at pans their effects
+        out.gain = 0.55f / (1.0f + d / 10.0f) * std::min(1.0f, (kEngineRange - d) / 20.0f);
+        out.muffle = std::min(1.0f, d / 70.0f);
+        const vec3 to_ear = d > 0.01f ? rel / d : vec3(0.0f);
+        out.doppler = audio::doppler_factor(glm::dot(k.velocity(), to_ear), glm::dot(ear_vel_, -to_ear), kSpeedOfSound);
+    }
+    mx.set_kart_engines(engines);
+}
+
+// The engine a seat sounds like: online, the player's own recording when they
+// made one (and we want to hear them); otherwise the seat's own bot voice.
+std::shared_ptr<const audio::EngineClip> App::engine_for_seat(int seat) {
+    if (online_ && settings_.others_voices && size_t(seat) < online_->setup().seats.size()) {
+        const net::SeatInfo& s = online_->setup().seats[size_t(seat)];
+        if (s.human && s.voice != 0) {
+            if (online_->voices_version() != heard_version_) { // something new arrived: decode afresh
+                heard_engines_.clear();
+                heard_version_ = online_->voices_version();
+            }
+            auto it = heard_engines_.find(s.voice);
+            if (it == heard_engines_.end()) {
+                const std::vector<uint8_t>* wire = online_->voice(s.voice);
+                it = heard_engines_.emplace(s.voice, wire ? std::make_shared<const audio::EngineClip>(audio::decode_clip(*wire)) : nullptr).first;
+            }
+            if (it->second) return it->second;
+        }
+    }
+    auto& bot = bot_engines_[size_t(seat) % bot_engines_.size()];
+    if (!bot) bot = std::make_shared<const audio::EngineClip>(audio::make_bot_clip(uint32_t(seat), audio_.mixer().sample_rate()));
+    return bot;
+}
+
+std::string App::engine_path() const { return pref_dir_.empty() ? std::string() : pref_dir_ + "engine.wav"; }
+
+bool App::adopt_engine(audio::EngineClip clip) {
+    if (clip.samples.empty()) return false;
+    my_engine_ = std::make_shared<const audio::EngineClip>(std::move(clip));
+    if (const std::string p = engine_path(); !p.empty() && !audio::save_wav(p, *my_engine_)) log_warn("Could not save the engine to {}", p);
+    send_engine();
+    return true;
+}
+
+void App::send_engine() {
+    if (online_ && settings_.engine_voice && my_engine_) online_->set_voice(audio::encode_clip(*my_engine_));
+}
+
+void App::start_engine_recording() {
+    engine_rec_ = {};
+    if (!recorder_.start(audio_.mixer().sample_rate())) {
+        engine_rec_.phase = EngineRecording::Phase::Result;
+        engine_rec_.message = "NO MICROPHONE FOUND";
+        return;
+    }
+    engine_rec_.phase = EngineRecording::Phase::CountIn;
+}
+
+// A count-in that warms the microphone up, the take itself, then the verdict:
+// a loop made, kept and played back revving, or why not.
+void App::update_engine_recording(const ClientActions& act) {
+    using Phase = EngineRecording::Phase;
+    EngineRecording& r = engine_rec_;
+    r.t += frame_dt_;
+    if (r.phase == Phase::Result) {
+        if (act.accept || act.back || r.t > kResultSeconds) r = {};
+        return;
+    }
+    if (act.back) {
+        recorder_.stop();
+        r = {};
+        return;
+    }
+    recorder_.update(r.phase == Phase::Recording);
+    r.level = recorder_.level();
+    if (r.phase == Phase::CountIn && r.t >= kCountInSeconds) {
+        r.phase = Phase::Recording;
+        r.t = 0.0f;
+    } else if (r.phase == Phase::Recording && r.t >= kRecordSeconds) {
+        recorder_.stop();
+        const bool heard = recorder_.heard() > 0.003f;
+        r.ok = heard && adopt_engine(audio::make_loop(recorder_.take(), recorder_.rate()));
+        r.message = r.ok ? "THAT'S YOUR ENGINE NOW" : heard ? "TOO SHORT OR TOO QUIET: A BIT LOUDER" : "NOTHING HEARD: IS THE MICROPHONE ALLOWED?";
+        if (r.ok) {
+            settings_.engine_voice = true;
+            if (const std::string sp = settings_path(); !sp.empty()) settings_.save(sp);
+        }
+        r.phase = Phase::Result;
+        r.t = 0.0f;
+    }
 }
 
 void App::update_camera(float alpha, float dt) {
@@ -2930,9 +3096,14 @@ void App::handle_menu_actions(const ClientActions& act, bool& running) {
         }
         return;
     case Screen::Options:
+        if (engine_rec_.phase != EngineRecording::Phase::Off) {
+            update_engine_recording(act);
+            return;
+        }
         switch (update_options(options_menu_, settings_, act)) {
         case OptionsAction::Changed: apply_settings(); break;
         case OptionsAction::Controls: screen_ = Screen::Controls; controls_ = {}; break;
+        case OptionsAction::RecordEngine: start_engine_recording(); break;
         case OptionsAction::Back:
             if (const std::string sp = settings_path(); !sp.empty()) settings_.save(sp);
             screen_ = Screen::Title;
@@ -3064,7 +3235,7 @@ void App::render_menu(float dt) {
     }
     switch (screen_) {
     case Screen::Title: draw_title(renderer_, title_); break;
-    case Screen::Options: draw_options(renderer_, options_menu_, settings_); break;
+    case Screen::Options: draw_options(renderer_, options_menu_, settings_, my_engine_ != nullptr, engine_rec_); break;
     case Screen::Controls: draw_controls(renderer_, controls_, settings_); break;
     case Screen::Online: draw_online_status(renderer_, online_error_.empty() ? "SIGNING IN AND FINDING A RACE..." : online_error_, !online_error_.empty()); break;
     case Screen::OnlineMenu:
@@ -3149,6 +3320,7 @@ void App::shutdown() {
     if (window_) SDL_DestroyWindow(window_);
     window_ = nullptr;
     if (const std::string sp = settings_path(); !sp.empty()) settings_.save(sp);
+    recorder_.stop(); // quitting mid-recording: close the microphone while SDL still owns it
     audio_.close();
     SDL_Quit();
 }

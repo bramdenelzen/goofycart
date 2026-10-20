@@ -71,12 +71,12 @@ jobs:
       - name: Server smoke test
         run: ./build/release/src/server/gk_server --ticks 60 --port 7801
 
-      - name: Online smoke test (4 headless clients, 150 ms, 2% loss)
+      - name: Online smoke test (4 headless clients, 150 ms, 2% loss, engine voices)
         shell: bash
         run: |
           ./build/release/src/server/gk_server --port 7802 --ticks 1200 &
           sleep 1
-          ./build/release/src/server/gk_botclient --connect 127.0.0.1:7802 --clients 4 --seconds 12 --lag 150 --loss 2 --jitter 10
+          ./build/release/src/server/gk_botclient --connect 127.0.0.1:7802 --clients 4 --seconds 12 --lag 150 --loss 2 --jitter 10 --voices
           wait
 
       - name: Online smoke test through the master server (accounts, matchmaking, ratings)
