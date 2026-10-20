@@ -106,6 +106,7 @@ void ClientGame::apply_setup(const RaceSetup& s) {
         clock_started_ = false;
         history_ = {};
         snapshots_applied_ = 0;
+        last_bump_tick_ = 0;
         last_snapshot_tick_ = 0;
         ignore_lead_until_ = 0;
         time_scale_ = 1.0;
@@ -140,6 +141,8 @@ void ClientGame::simulate_to(uint32_t target, bool forward) {
             else step_inputs_[i] = remote_inputs_[i];
         }
         world_->tick(step_inputs_);
+        for (const auto& e : world_->events())
+            if (e.type == sim::KartEventType::Bump && (e.kart == seat_ || e.value == seat_)) last_bump_tick_ = t; // a bump names both karts
         if (seat_ >= 0 && size_t(seat_) < karts.size()) {
             InputSlot& slot = history_[t % kHistory];
             if (slot.tick == t) {
@@ -235,9 +238,14 @@ void ClientGame::apply_snapshot(const SnapshotMsg& m) {
     }
     // A hit we only learn about now (an item fired by a lagging player) moves
     // the kart, but that is the hit, not a prediction error: the spin-out
-    // animation covers it, so it doesn't count as a correction.
-    const bool newly_hit = had_local && !knocked_before && karts[size_t(seat_)].knocked();
-    if (had_local && snapshots_applied_ > 1 && !newly_hit) {
+    // animation covers it, so it doesn't count as a correction. Nor does the
+    // rest of the spin: a kart that hit an oil slick a tick apart on the two
+    // sides tumbles along two paths that only meet again when it recovers.
+    // Nor a bump with another kart since the snapshot's tick, in either
+    // simulation: the other kart is only a guess here, so where they touch is too.
+    const bool spinning = had_local && (knocked_before || karts[size_t(seat_)].knocked());
+    const bool bumped = last_bump_tick_ >= m.tick;
+    if (had_local && snapshots_applied_ > 1 && !spinning && !bumped) {
         last_correction_ = glm::length(local_before - karts[size_t(seat_)].pos);
         max_correction_ = std::max(max_correction_, last_correction_);
     }

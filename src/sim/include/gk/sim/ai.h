@@ -26,7 +26,17 @@ struct CpuSkill {
     bool avoids = true;          // dodges karts and dropped items ahead
     bool rocket_start = true;    // times the accelerator on the countdown
     float glide_dive = 0.0f;     // how hard it dives for speed while gliding with height to spare (0..1)
+    float edge_room = 1.6f;      // metres kept from the road's edge at the line's widest (the line itself keeps 1.6)
+    float weave = 0.0f;          // sways this far either side of the line on straights (m)
+    bool overtakes = false;      // commits to a side to pass a slower kart ahead
+    int mistakes = 0;            // chance in 100 of a slip in each 20 s spell: a missed apex or an early drift release
+    bool brushes = false;        // its slips are brushes against the wall instead
 };
+
+// The slip a CPU is making right now, if any. A pure function of the tick
+// and the kart, so the server and every client agree.
+enum class CpuMistake : uint8_t { None, MissedApex, EarlyRelease, WallBrush };
+CpuMistake cpu_mistake(const World& world, int kart, const CpuSkill& skill);
 
 CpuSkill cpu_skill(CpuLevel level, int seat);
 // Speed-matching strength against the leading player (KartParams::rubber_band).

@@ -454,3 +454,80 @@ TEST_CASE("no trick of its own high above the road, gliding, under water or on a
     hop.step(gas(0.0f, true)); // pressed again mid-hop
     CHECK(tricks(hop) == 0);
 }
+
+namespace {
+
+// Drives a snake down the straight: hop into a drift one way with the stick
+// over, counter-steer through the charge so the kart runs nearly straight,
+// release at `tier`, and hop the other way. The first drift is cut short at
+// `setup` radians of heading so the snake runs symmetric about the centre
+// line, as a player lines one up. Returns how far it got.
+struct Snake {
+    float z = 0.0f, max_x = 0.0f, swing = 0.0f;
+    int boosts = 0, drifts = 0;
+};
+Snake snake(int seconds, int tier, float counter = -1.0f, bool straight_only = false, float wide = 0.0f, float setup = 0.0f) {
+    Bench b(test::flat_track());
+    if (wide > 0.0f) b.tables.constants.drift_turn_wide = wide;
+    b.step(gas(), 60 * 3);
+    const float z0 = b.kart.pos.z;
+    int dir = -1;
+    bool lining_up = true;
+    float last_release = 0.0f;
+    Snake r;
+    auto heading = [&] { const vec3 fw = b.kart.forward(); return std::atan2(fw.x, fw.z); };
+    for (int f = 0; f < seconds * 60; ++f) {
+        KartInput in = gas();
+        if (!straight_only) {
+            const KartState& k = b.kart;
+            if (k.drift == DriftState::None && k.grounded) {
+                in = gas(float(dir), true); // hop, stick over to start the drift
+                ++r.drifts;
+            } else if (k.drift == DriftState::Hop) {
+                in = gas(float(dir), true);
+            } else if (k.drift == DriftState::Drifting) {
+                const bool done = lining_up ? std::abs(heading()) >= setup : k.mt_tier(b.tables.constants) >= tier;
+                if (done) { // release, next one the other way
+                    in = gas(0.0f, false);
+                    dir = -dir;
+                    if (!lining_up && r.swing == 0.0f && last_release != 0.0f) r.swing = std::abs(heading() - last_release);
+                    last_release = lining_up ? 0.0f : heading();
+                    lining_up = false;
+                } else {
+                    in = gas(float(dir) * counter, true);
+                }
+            }
+        }
+        b.step(in);
+        r.max_x = std::max(r.max_x, std::abs(b.kart.pos.x));
+    }
+    r.z = b.kart.pos.z - z0;
+    r.boosts = b.count(KartEventType::Boost);
+    return r;
+}
+// A snake lined up so its heading swings evenly either side of straight.
+Snake even_snake(int seconds, int tier, float counter = -1.0f, float wide = 0.0f) {
+    const Snake rough = snake(seconds, tier, counter, false, wide, 0.0f);
+    return snake(seconds, tier, counter, false, wide, rough.swing * 0.5f);
+}
+
+} // namespace
+
+TEST_CASE("snaking: alternating counter-steered drifts on a straight earn mini-turbos and gain on flat out") {
+    const Snake flat = snake(15, 1, -1.0f, true);
+    const Snake blue = even_snake(15, 1);
+    const Snake blue_half = even_snake(15, 1, -0.5f);
+    const Snake blue_in = even_snake(15, 1, 0.0f);
+    const Snake orange = even_snake(15, 2);
+    for (float wide : {0.12f, 0.08f, 0.04f}) {
+        const Snake w = even_snake(15, 1, -1.0f, wide);
+        MESSAGE("wide " << wide << ": " << w.z << " m, " << w.boosts << " boosts, max x " << w.max_x << ", swing " << w.swing);
+    }
+    MESSAGE("flat out " << flat.z << " m; blue snake " << blue.z << " m (" << blue.boosts << " boosts, " << blue.drifts << " drifts, max x " << blue.max_x
+                        << " m, swing " << blue.swing << "); half counter " << blue_half.z << " m (x " << blue_half.max_x << "); stick centred "
+                        << blue_in.z << " m (x " << blue_in.max_x << "); orange " << orange.z << " m (" << orange.boosts << " boosts, x " << orange.max_x << ")");
+    CHECK(blue.boosts >= 4);
+    CHECK(blue.max_x < 5.0f);       // stays on a 14 m road
+    CHECK(blue.z > flat.z * 1.01f); // and it pays, a little
+    CHECK(blue.z < flat.z * 1.08f); // but not so much that a straight is a drift test
+}

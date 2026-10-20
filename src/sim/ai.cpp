@@ -73,6 +73,9 @@ CpuSkill cpu_skill(CpuLevel level, int seat) {
         s.throttle_lift = 9;
         s.avoids = false;
         s.rocket_start = false;
+        s.edge_room = 2.4f;
+        s.mistakes = 50;
+        s.brushes = true;
         break;
     case CpuLevel::Normal:
         s.lookahead = 7.5f + jitter;
@@ -83,11 +86,18 @@ CpuSkill cpu_skill(CpuLevel level, int seat) {
         s.reaction = 6;
         s.rocket_start = seat % 3 != 2;
         s.glide_dive = 0.4f;
+        s.weave = 1.0f;
+        s.overtakes = true;
+        s.mistakes = 45; // about one a lap
         break;
     case CpuLevel::Hard:
         s.lookahead = 7.0f + jitter;
         s.lane = lane * 0.4f;
         s.glide_dive = 0.85f;
+        s.edge_room = 1.0f;
+        s.weave = 1.5f;
+        s.overtakes = true;
+        s.mistakes = 22; // half as often
         break;
     }
     return s;
@@ -123,6 +133,29 @@ float cpu_rubber_band(CpuLevel level) {
     case CpuLevel::Hard: return 1.0f;
     }
     return 0.0f;
+}
+
+namespace {
+constexpr uint32_t kSpellTicks = 1200;  // a slip is rolled once per 20 s spell
+constexpr uint32_t kSlipTicks = 90;     // and lasts 1.5 s
+uint32_t mix_hash(uint32_t h) {
+    h ^= h >> 15, h *= 2246822519u, h ^= h >> 13, h *= 3266489917u, h ^= h >> 16;
+    return h;
+}
+} // namespace
+
+// Each kart's spells are staggered so the field doesn't slip in unison. The
+// roll decides whether this spell has a slip, when in the spell, and which.
+CpuMistake cpu_mistake(const World& world, int kart, const CpuSkill& skill) {
+    if (skill.mistakes <= 0 || !world.racing()) return CpuMistake::None;
+    const uint32_t tick = uint32_t(world.tick_count()) + uint32_t(kart) * 977u;
+    const uint32_t spell = tick / kSpellTicks, at = tick % kSpellTicks;
+    const uint32_t h = mix_hash(spell * 2654435761u ^ uint32_t(kart + 1) * 40503u);
+    if (int(h % 100u) >= skill.mistakes) return CpuMistake::None;
+    const uint32_t start = (h >> 8) % (kSpellTicks - kSlipTicks);
+    if (at < start || at >= start + kSlipTicks) return CpuMistake::None;
+    if (skill.brushes) return CpuMistake::WallBrush;
+    return (h >> 20) & 1u ? CpuMistake::EarlyRelease : CpuMistake::MissedApex;
 }
 
 KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
@@ -183,6 +216,28 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     const CenterSample& tc = t.sample(target_sample);
     const Track::LinePoint& lp = t.line[size_t(target_sample)];
     float offset = lp.offset * skill.line_follow + skill.lane;
+    const CpuMistake slip = cpu_mistake(world, kart, skill);
+    // How much of the road this CPU uses: the line keeps 1.6 m off the edge;
+    // a harder CPU clips the apex closer to the inside edge, an easier one
+    // stays further from it. A missed apex runs wide of the line.
+    const float extra = 1.6f - skill.edge_room;
+    const bool inside = lp.offset * lp.curvature > 0.0f; // the line is on the inside of its bend
+    if (std::abs(lp.offset) > 0.1f && (inside || extra < 0.0f)) {
+        const float side_band = std::max(lp.offset > 0.0f ? lp.hi : -lp.lo, 0.1f);
+        offset += sign(lp.offset) * extra * std::min(1.0f, std::abs(lp.offset) / side_band);
+    }
+    if (slip == CpuMistake::MissedApex) offset -= lp.offset * skill.line_follow * 0.7f;
+    // On a straight, sway across the road: harder to draft and to hit, and
+    // it reads as a driver, not a rail. Not where the road is narrow.
+    const float room = std::min(lp.hi - lp.lo, t.line[size_t(cur)].hi - t.line[size_t(cur)].lo);
+    const float bend = std::abs(turn_ahead(t, cur, 40.0f, spacing, route));
+    if (skill.weave > 0.0f && room > 5.0f) {
+        if (bend < 0.15f) { // and fading out as a corner comes up
+            const float phase = (float(tick % 360u) / 360.0f + 0.37f * float(kart)) * 2.0f * 3.14159265f;
+            const float sway = skill.weave * std::min(1.0f, (room - 5.0f) / 3.0f); // full sway needs 8 m of road
+            offset += sway * std::sin(phase) * std::min(1.0f, (0.15f - bend) / 0.08f);
+        }
+    }
 
     // Head for an item box when empty-handed, but not out of a drift (a
     // swerve across the road drops the mini-turbo, worth more than the box)
@@ -216,11 +271,34 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     if (skill.avoids) {
         float shift = 0.0f;
         const auto& karts = world.karts();
+        // A slower kart ahead: commit to the side with more room and aim a
+        // kart's width past it, keeping the side once off its tail. Without
+        // `overtakes`, just a nudge away from it.
+        int slow = -1;
+        float slow_z = 1e9f;
         for (size_t j = 0; j < karts.size(); ++j) {
             if (int(j) == kart) continue;
             const Local l = to_local(k, karts[j].pos);
-            if (l.z > 0.0f && l.z < 12.0f && std::abs(l.x) < 1.8f && std::abs(l.y) < 2.0f && karts[j].speed < k.speed + 2.0f)
+            if (l.z > 0.0f && l.z < 12.0f && std::abs(l.x) < 1.8f && std::abs(l.y) < 2.0f && karts[j].speed < k.speed + 2.0f) {
                 shift += -sign(l.x) * (1.8f - std::abs(l.x)) * 1.2f;
+                if (skill.overtakes && l.z < slow_z && l.z < 16.0f && !karts[j].finished && karts[j].respawn_frames == 0) slow = int(j), slow_z = l.z;
+            } else if (skill.overtakes && l.z > 0.0f && l.z < 16.0f && std::abs(l.x) < 2.6f && std::abs(l.y) < 2.0f && karts[j].speed < k.speed - 1.0f &&
+                       !karts[j].finished && karts[j].respawn_frames == 0 && l.z < slow_z) {
+                slow = int(j), slow_z = l.z;
+            }
+        }
+        // Only on road wide enough here and at the aim point, and not into a
+        // corner: leaving the line for the edge of the road mid-bend is how
+        // a CPU meets the wall.
+        if (slow >= 0 && room > 6.0f && bend < 0.12f) {
+            const CenterSample& here = t.sample(cur);
+            const float lat_them = glm::dot(karts[size_t(slow)].pos - here.pos, here.right);
+            const float lat_me = glm::dot(k.pos - here.pos, here.right);
+            const float lo_room = std::max(lp.lo, t.line[size_t(cur)].lo) + 0.4f, hi_room = std::min(lp.hi, t.line[size_t(cur)].hi) - 0.4f;
+            float side = (hi_room - lat_them) >= (lat_them - lo_room) ? 1.0f : -1.0f;
+            if (std::abs(lat_me - lat_them) > 0.6f) side = sign(lat_me - lat_them); // already going round one side: stay there
+            offset = std::clamp(lat_them + side * 2.2f, lo_room, hi_room);
+            shift = 0.0f;
         }
         for (const ItemEntity& e : world.entities()) {
             if (e.type != EntityType::Banana && e.type != EntityType::Bomb && e.type != EntityType::OilSlick) continue;
@@ -232,7 +310,13 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     }
     // Obstacles between here and the target: aim so the straight path there
     // passes them on the open side.
-    float lo = lp.lo, hi = lp.hi;
+    float lo = lp.lo - extra, hi = lp.hi + extra;
+    if (slip == CpuMistake::WallBrush) { // drifts out to the wall for a moment
+        const float side = ((tick / kSpellTicks + uint32_t(kart)) & 1u) ? 1.0f : -1.0f;
+        offset = side > 0.0f ? hi + 1.3f : lo - 1.3f;
+        if (side > 0.0f) hi = offset;
+        else lo = offset;
+    }
     for (int i = t.next(cur, route), guard = 0; i != target_sample && guard < 200; i = t.next(i, route), ++guard) {
         const Track::LinePoint& b = t.line[size_t(i)];
         if (!b.blocked) continue;
@@ -383,8 +467,12 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     const float turn = turn_ahead(t, ahead4, 30.0f, spacing, route);
     const float turn_long = turn_ahead(t, ahead4, 55.0f, spacing, route);
     const bool going_right_way = to.z > 0.5f;
-    // A drift can't turn gentler than this; only drift where the corner needs most of it.
-    const float min_drift_yaw = p.turn_rate * drift_turn_target(c, p, -1.0f) * speed_fac;
+    // The gentlest arc worth a drift, as a fraction of the kart's full lock
+    // (a counter-steered drift can turn gentler still, since the snaking
+    // tune, but a corner needing less than this isn't worth one).
+    constexpr float kGentlestDrift = 0.12f;
+    const float inward = drift_turn_target(c, p, 0.0f) / std::max(c.drift_turn_neutral, 1e-3f); // the body's inward bonus
+    const float min_drift_yaw = p.turn_rate * kGentlestDrift * inward * speed_fac;
     const float near_turn = turn_ahead(t, t.next(cur, route), 14.0f, spacing, route);
     const float corner_yaw = std::abs(near_turn) / 14.0f * speed;
     const bool want_drift = skill.drifts && !dodging_lava && k.grounded && going_right_way && speed > c.min_drift_speed + 3.0f &&
@@ -395,18 +483,19 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         const CenterSample& here = t.sample(cur);
         const Track::LinePoint& band = t.line[size_t(cur)];
         const float lat = glm::dot(k.pos - here.pos, here.right);
-        return dir < 0.0f ? lat - band.lo : band.hi - lat;
+        return dir < 0.0f ? lat - (band.lo - extra) : band.hi + extra - lat;
     };
     if (k.drift == DriftState::Drifting) {
         const float dir = float(k.drift_dir);
-        float rel = drift_rel_for(c, p, yaw_needed * dir / (p.turn_rate * speed_fac)); // +1 = into the turn
+        const float f_needed = yaw_needed * dir / (p.turn_rate * speed_fac * inward); // the arc the line wants, as a fraction of full lock
+        float rel = drift_rel_for(c, p, yaw_needed * dir / (p.turn_rate * speed_fac));  // +1 = into the turn
         const float rest = turn_ahead(t, cur, 12.0f, spacing, route) * dir;
         const int tier = k.mt_tier(c);
         // Let go once the wanted mini-turbo is ready (and drift again if the
-        // corner goes on), when the drift turns tighter than the line, or
-        // when the corner has ended.
-        const bool cash_in = tier >= skill.max_tier;
-        const bool losing_line = rel < (tier >= 1 ? -1.4f : -1.8f);
+        // corner goes on), when the line bends the other way (further than
+        // a little, while there's no spark yet), or when the corner has ended.
+        const bool cash_in = tier >= skill.max_tier || slip == CpuMistake::EarlyRelease; // a slip: lets go before the sparks
+        const bool losing_line = f_needed < (tier >= 1 ? 0.0f : -0.12f);
         const bool straight = rest < 0.05f;
         const bool edge = room_inside(dir) < -0.9f; // the band already keeps 1.6 m off the edge
         if (cash_in || losing_line || straight || edge || !going_right_way || dodging_lava) {
@@ -422,7 +511,7 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         const float dir = std::abs(turn) > 0.05f ? sign(turn) : sign(k.hop_steer);
         in.drift = true;
         in.steer = dir * std::max(steer * dir, 0.4f);
-    } else if (want_drift && k.grounded && room_inside(sign(turn)) > 2.0f) {
+    } else if (want_drift && k.grounded && room_inside(sign(turn)) > 2.0f && slip != CpuMistake::EarlyRelease) {
         in.drift = !k.drift_button_prev; // press: hop, then land into the drift
         in.steer = sign(turn) * std::max(steer * sign(turn), 0.4f);
     }

@@ -80,7 +80,7 @@ TEST_CASE("every track is a clean lap for a CPU, and a 12-kart race finishes") {
         }
         std::vector<KartInput> in(12);
         std::vector<int> last_hit(12, -1000); // frame each kart was last hit by an item
-        int respawns = 0, unforced = 0, frames = 0, first_lap = 0;
+        int respawns = 0, unforced = 0, frames = 0, first_lap = 0, wall_hits = 0;
         auto done = [&] { return std::all_of(w.karts().begin(), w.karts().end(), [](const KartState& k) { return k.finished; }); };
         while (!done() && frames < 60 * 60 * 4) {
             for (int i = 0; i < 12; ++i) in[size_t(i)] = cpu_input(w, i, cpu_skill(i % 3 == 0 ? CpuLevel::Hard : CpuLevel::Normal, i));
@@ -88,6 +88,7 @@ TEST_CASE("every track is a clean lap for a CPU, and a 12-kart race finishes") {
             ++frames;
             for (const auto& e : w.events()) {
                 if (e.type == KartEventType::Hit) last_hit[size_t(e.kart)] = frames;
+                if (e.type == KartEventType::WallHit && !w.karts()[size_t(e.kart)].finished) ++wall_hits;
                 if (e.type == KartEventType::Respawn && !w.karts()[size_t(e.kart)].finished) { // finished karts coast without steering
                     ++respawns;
                     // Hit within the last while: an item did it, not the road (a
@@ -101,7 +102,7 @@ TEST_CASE("every track is a clean lap for a CPU, and a 12-kart race finishes") {
             }
         }
         MESSAGE(def.name << ": first lap " << first_lap / 60.0f << " s, race " << frames / 60.0f << " s, " << respawns
-                         << " respawns, " << unforced << " unforced");
+                         << " respawns, " << unforced << " unforced, " << wall_hits << " wall hits");
         CHECK(done());
         CHECK(unforced <= 3); // the road itself: a slip off an edge now and then
         // A hit mid-glide drops the kart now, so one lightning over a chasm can
