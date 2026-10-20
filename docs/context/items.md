@@ -27,6 +27,13 @@ Star, Fireball, Boomerang, Chomper, Horn, Lucky Eight, Coin, Ghost).
   shield; Up throws forward, Down throws back. Triples orbit and block one
   hit each.
 - Spiked Shell seeks the leader; the Horn is the only defence.
+- Tilted road: things on the ground rest and ride by the road's own normal
+  (a slope up to 60 degrees, a grip bank at any angle) and keep their speed
+  over a change of slope. `ItemEntity::sample` follows each one's spot,
+  except for red and spiked shells, where it is their progress along the
+  road; those steer in the plane of the road and fly along its up. The
+  client stands each item on `sample`'s up. Tests: the grip bank and slope
+  cases in `tests/test_mechanics.cpp`.
 - Test hooks: `World::give_item`, `spawn_explosion`, `apply_hit`; the client
   has `--give-item N`. Tests: `tests/test_items.cpp`.
 
