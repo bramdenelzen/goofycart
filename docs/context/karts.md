@@ -63,6 +63,15 @@ queries against the track.
   bounces when the wheels slam down. Normal steering at 150cc stays flat;
   a tight drift lifts ~0.3 rad, 200cc hits the cap. Visual only and synced
   on the wire; the client pivots on the outside wheels (bikes lean in).
+- Shoves (`kart_shove`): kart-kart bumps (`World`) and wall hits (half)
+  kick the body roll and, past `bump_tilt_min`, the two-wheel tilt.
+- Wheelie (bikes, `wheelie_*` in `physics.json`): a fresh pull back on the
+  stick (`pitch_prev`) when not drifting; top speed up by
+  `wheelie_speed_bonus` x `wheelie_lift` (not on boosts), steering to
+  `wheelie_steer`. Drift, brake, a shove, a hit or the air ends it, then
+  `wheelie_cooldown_frames`. Chained down a straight it gains ~4% vs ~7%
+  for snaking (`tests/test_kart.cpp` "wheelie"); CPUs with `tricks` (Hard,
+  half of Normal) pull them on long straights.
 - Grip road (`CenterSample::grip`, `Track::grip_up`): airborne gravity,
   yaw and the landing test use the road's up instead of world up, so hops
   off an 80° bank come back to it; `align_up` keeps the heading when the

@@ -515,6 +515,12 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
         in.drift = !k.drift_button_prev; // press: hop, then land into the drift
         in.steer = sign(turn) * std::max(steer * sign(turn), 0.4f);
     }
+    // Bikes pull a wheelie down a long straight: a fresh pull back, then let
+    // go; a drift into the next corner drops the front again.
+    if (p.is_bike && skill.tricks && k.grounded && k.drift == DriftState::None && !in.drift && k.wheelie_frames == 0 &&
+        k.wheelie_cooldown == 0 && k.boost_frames == 0 && !is_offroad(k.surface) && std::abs(steer) < 0.25f &&
+        speed > c.min_drift_speed + 3.0f && std::abs(turn_ahead(t, cur, 45.0f, spacing, route)) < 0.25f)
+        in.pitch = k.pitch_prev ? 0.0f : 1.0f;
     // Gliding turns by banking, which takes a moment: steer harder and
     // ease off as the bank builds, so the glider doesn't overshoot.
     if (k.gliding) {

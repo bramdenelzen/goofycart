@@ -443,6 +443,7 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
         const float boosted = top * s.boost_mult;
         if (s.speed < boosted) s.speed = std::min(boosted, s.speed + k.boost_accel * kDt);
     } else if (in.accelerate && !in.brake) {
+        top *= 1.0f + k.wheelie_speed_bonus * s.wheelie_lift; // a wheelie, only off the engine: no boost stacks on it
         if (s.speed < -0.5f) s.speed = std::min(0.0f, s.speed + k.brake_decel * kDt); // rolling backwards: brake first
         else if (s.speed < top) {
             const float x = std::clamp(s.speed / top, 0.0f, 1.0f);
@@ -463,6 +464,14 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     // On a loop gravity is the road's down, so the climb costs nothing and
     // the drop gives nothing beyond the capped grip gain above.
     if (ctx.track.loop_radius(s.sample) <= 0.0f) s.speed -= fwd.y * k.gravity * k.slope_factor * kDt;
+
+    // Wheelie: a fresh pull back on a bike going straight on. The drift
+    // button (a hop), the brakes or the time running out drop the front.
+    const bool pull = in.pitch >= k.wheelie_stick;
+    if (s.wheelie_frames > 0 && (drift_pressed || in.brake || --s.wheelie_frames == 0)) kart_end_wheelie(s, k);
+    else if (p.is_bike && pull && !s.pitch_prev && s.wheelie_frames == 0 && s.wheelie_cooldown == 0 && s.drift == DriftState::None &&
+             !s.knocked() && !s.underwater && s.speed > k.min_drift_speed)
+        s.wheelie_frames = uint8_t(std::clamp(k.wheelie_frames, 1, 255));
 
     // Hop: the drift button lifts the kart; landing with the stick held starts a drift.
     if (drift_pressed && s.drift == DriftState::None && s.speed > 1.0f) {
@@ -515,6 +524,7 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
         yaw_rate = in.steer * turn_rate * at_speed;
         if (s.speed < 0.0f) yaw_rate = -yaw_rate;
         if (s.susp_wobble > 0) yaw_rate *= 1.0f - k.susp_wobble_steer; // still wobbling from a hard landing
+        yaw_rate *= glm::mix(1.0f, k.wheelie_steer, s.wheelie_lift);   // one wheel on the road
     }
     yaw_rate *= std::clamp(std::abs(s.speed) / 4.0f, 0.0f, 1.0f);
 
@@ -564,8 +574,10 @@ void collide_walls(KartState& s, const KartStepContext& ctx) {
     const float vn = glm::dot(v, n);
     if (vn >= 0.0f) return;
     const float speed = glm::length(v);
+    const vec3 v_in = v;
     v -= n * vn * 1.3f; // small bounce
     if (-vn > 0.5f * speed) v *= 0.75f;
+    kart_shove(s, (v - v_in) * 0.5f, ctx.k); // half a kart's: scraping along a wall shouldn't throw the body about
     if (-vn > 5.0f) {
         s.wall_bump = 1.0f;
         emit(ctx, KartEventType::WallHit, int(-vn));
@@ -672,6 +684,8 @@ void step_suspension(KartState& s, const SuspensionInput& before, const KartStep
 void reset_suspension(KartState& s) {
     s.susp_y = s.susp_vy = s.susp_pitch = s.susp_pitch_v = s.susp_roll = s.susp_roll_v = 0.0f;
     s.tilt = s.tilt_v = 0.0f;
+    s.wheelie_frames = s.wheelie_cooldown = 0;
+    s.wheelie_lift = 0.0f;
     s.susp_wobble = 0;
 }
 } // namespace
@@ -717,6 +731,23 @@ void kart_give_boost(KartState& s, BoostKind kind, int frames, float mult, bool 
     }
     s.boost_frames = std::max(s.boost_frames, frames);
     s.boost = kind;
+}
+
+void kart_end_wheelie(KartState& s, const PhysicsConstants& k) {
+    if (s.wheelie_frames == 0) return;
+    s.wheelie_frames = 0;
+    s.wheelie_cooldown = uint8_t(std::clamp(k.wheelie_cooldown_frames, 0, 255));
+}
+
+void kart_shove(KartState& s, vec3 dv, const PhysicsConstants& k) {
+    const float side = glm::dot(dv, s.right()); // + = pushed to the right
+    const float along = glm::dot(dv, s.forward());
+    // Pushed right at the body, the kart rolls onto its right wheels: + right side down.
+    s.susp_roll_v += side * k.bump_roll_gain;
+    s.susp_pitch_v -= along * k.bump_roll_gain * 0.5f; // shoved from behind, the nose dips
+    if (s.grounded && std::abs(side) > k.bump_tilt_min)
+        s.tilt_v += std::copysign(std::abs(side) - k.bump_tilt_min, side) * k.bump_tilt_gain;
+    if (glm::length(dv) > 2.0f) kart_end_wheelie(s, k);
 }
 
 void kart_on_go(KartState& s, const KartStepContext& ctx) {
@@ -788,6 +819,7 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     if (ctx.frozen) {
         s.accel_hold_frames = raw.accelerate ? s.accel_hold_frames + 1 : 0;
         s.drift_button_prev = raw.drift;
+        s.pitch_prev = raw.pitch >= ctx.k.wheelie_stick;
         return;
     }
     KartInput in = raw;
@@ -815,6 +847,11 @@ void kart_step(KartState& s, const KartInput& raw, const KartStepContext& ctx) {
     collide_walls(s, ctx);
     update_roof(s, ctx);
     step_suspension(s, before, ctx);
+    // Leaving the ground drops the front; the lift follows the wheelie, quick up, quicker down.
+    if (!s.grounded || s.knocked()) kart_end_wheelie(s, ctx.k);
+    if (s.wheelie_frames == 0 && s.wheelie_cooldown > 0) --s.wheelie_cooldown;
+    s.wheelie_lift = approach(s.wheelie_lift, s.wheelie_frames > 0 ? 1.0f : 0.0f, (s.wheelie_frames > 0 ? 3.0f : 5.0f) * kDt);
+    s.pitch_prev = in.pitch >= ctx.k.wheelie_stick;
 
     // Lost: below the floor, on lava, or fallen a long way below the road
     // (a glider or a dive under water is meant to be down there).

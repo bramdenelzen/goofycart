@@ -15,7 +15,7 @@ them, including screenshot/testing flags like `--pixel`, `--no-ui`,
 | Screens | `Screen` enum in `app.h` (Title, Options, Controls, Online, OnlineMenu, Join, Hosting, Course, Select, Race, Standings); `handle_menu_actions`, `render_menu` |
 | Races offline | `show_track`, `start_race`, `finish_offline_race`, `draw_standings`, Time Trial: `ghost_path`, `finish_time_trial`, `draw_ghost` |
 | Online | `start_matchmaking`, `poll_matchmaking`, `connect_online`, `start_join`, `start_hosting` / `poll_hosting` / `stop_hosting` (spawns a local `gk_server`), `leave_online`, `draw_online_results`, `draw_net_status` |
-| Karts | `build_visual`, `set_kart_meshes`, `draw_kart`, `draw_kart_visual`, `draw_glider_visual` |
+| Karts | `build_visual`, `set_kart_meshes`, `draw_kart`, `draw_kart_visual`, `draw_glider_visual`; `draw_kart` poses wheelies, two wheels and hits from sim state (`hit_angle`/`hit_speed`: spin direction and turns, flip axis, height under a tunnel roof, surface and water) |
 | Effects | `handle_events`, `event_particles`, `emit_kart_particles`, `burst`, `explosion_burst`, `draw_flame`, `draw_speed_lines` |
 | World drawing | `draw_items`, `draw_held_item`, `draw_movers`, `draw_gates`, `draw_breakables`, `update_lava`, `draw_water_overlay` |
 | Camera | `update_camera`, `spring`, `seam_tour_step`; on a loop it rolls fully with the road and follows the kart's own forward (`cam_dir3_`) |

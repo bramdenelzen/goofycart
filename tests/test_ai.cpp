@@ -13,23 +13,25 @@ namespace {
 
 struct LapRun {
     float seconds = 0.0f;
-    int mini_turbos = 0, tricks = 0, respawns = 0, walls = 0;
+    int mini_turbos = 0, tricks = 0, respawns = 0, walls = 0, wheelies = 0;
 };
 
 // One CPU alone on the greybox loop, items off.
-LapRun solo_lap(CpuLevel level, Track track, int seat = 0) {
+LapRun solo_lap(CpuLevel level, Track track, int seat = 0, Build build = {1, 0, 0, 0}) {
     auto t = test::tables();
     auto c = test::parts();
     World w(std::move(track), t, RaceConfig{.laps = 3, .countdown_frames = 1, .items = false});
-    w.add_kart(test::default_params(t, c));
+    w.add_kart(test::default_params(t, c, build));
     LapRun r;
     int frames = 0;
     // Start from a rolling lap: the first lap begins from the grid.
     while (w.karts()[0].lap < 3 && frames < 60 * 240) {
         KartInput in = cpu_input(w, 0, cpu_skill(level, seat));
+        const bool up = w.karts()[0].wheelie_frames > 0;
         w.tick(std::span(&in, 1));
         if (w.karts()[0].lap == 2) {
             ++frames;
+            r.wheelies += !up && w.karts()[0].wheelie_frames > 0;
             for (const auto& e : w.events()) {
                 if (e.type == KartEventType::Boost && (e.value == int(BoostKind::MiniTurbo) || e.value == int(BoostKind::SuperMiniTurbo) ||
                                                        e.value == int(BoostKind::UltraMiniTurbo)))
@@ -100,6 +102,18 @@ TEST_CASE("CPUs drift through hairpins for mini-turbos") {
     CHECK(hard.mini_turbos >= 2);
     CHECK(easy.mini_turbos == 0);
     CHECK(hard.seconds < easy.seconds);
+}
+
+TEST_CASE("CPUs on bikes pull wheelies down the straights, and drop them for the corners") {
+    // Straights long enough to outlast the mini-turbo out of each hairpin.
+    const LapRun bike = solo_lap(CpuLevel::Hard, test::stadium_track(22.0f, 250.0f), 0, {1, 3, 0, 0});
+    const LapRun easy = solo_lap(CpuLevel::Easy, test::stadium_track(22.0f, 250.0f), 0, {1, 3, 0, 0});
+    MESSAGE("stadium on a bike: hard " << bike.seconds << " s, " << bike.wheelies << " wheelies, " << bike.mini_turbos << " MT; easy "
+                                       << easy.seconds << " s, " << easy.wheelies << " wheelies");
+    CHECK(bike.wheelies >= 2);
+    CHECK(bike.mini_turbos >= 2); // still drifts the hairpins
+    CHECK(bike.respawns == 0);
+    CHECK(easy.wheelies == 0);
 }
 
 TEST_CASE("a full race of 12 CPUs with items finishes") {

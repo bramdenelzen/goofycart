@@ -1331,6 +1331,18 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     if (s.wall_bump > 0.0f) m = glm::rotate(m, std::sin(float(frame_) * 1.7f) * 0.08f * s.wall_bump, vec3(0, 1, 0));
     const mat4 base = m; // before hit animations, for held items
     const KartVisual& visual = kart_visuals_[size_t(index % 12)];
+    // A wheelie (sim): the bike rears up about its back wheel's contact,
+    // bobbing a little as the rider balances it.
+    if (const float lift = glm::mix(p.wheelie_lift, s.wheelie_lift, alpha); lift > 0.0f) {
+        float rear = 0.0f;
+        for (const auto& w : visual.layout.wheels) rear = std::min(rear, w.center.z);
+        if (rear >= 0.0f) rear = -0.6f;
+        const float balance = std::sin(float(frame_) * 0.21f + float(index)) * 0.035f * lift;
+        const float up = smooth(lift) * 0.42f + balance;
+        m = glm::translate(m, vec3(0, 0, rear));
+        m = glm::rotate(m, -up, vec3(1, 0, 0)); // + nose up
+        m = glm::translate(m, vec3(0, 0, -rear));
+    }
     // Two wheels in a hard corner (sim): the kart pivots on its outside
     // wheels' contact line. A bike has no outside wheels; it leans in instead.
     if (const float tilt = glm::mix(p.tilt, s.tilt, alpha); tilt != 0.0f) {
@@ -1342,20 +1354,63 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         m = glm::rotate(m, visual.layout.bike ? -tilt : tilt, vec3(0, 0, 1)); // + right side down
         m = glm::translate(m, -pivot);
     }
-    if (s.spin_frames > 0) { // spun out: two fast turns that wind down, bouncing on the wheels
-        const float t = 1.0f - float(s.spin_frames) / float(std::max(1, world()->item_tuning().spin_frames));
-        const float e = ease_out(t);
-        const float bounce = std::abs(std::sin(t * kPi * 3.0f)) * (1.0f - t) * 0.22f;
-        m = glm::translate(m, vec3(0, bounce, 0));
-        m = glm::rotate(m, e * 4.0f * kPi, vec3(0, 1, 0));
-        const float squash = (1.0f - t) * 0.12f * std::max(0.0f, std::cos(t * kPi * 3.0f));
-        m = glm::scale(m, vec3(1.0f + squash, 1.0f - squash * 1.4f, 1.0f + squash));
+    // Hits play out from what the sim saw: which side the hit came from, how
+    // fast the kart was going, what it is on and how much room is overhead.
+    const float hit_speed01 = std::clamp(float(s.hit_speed) / 30.0f, 0.0f, 1.0f);
+    const float hit_a = float(s.hit_angle) / 127.0f * kPi; // 0 ahead, + from the right
+    auto hit_t = [&](int now, int before, int total) { // 0 at the hit .. 1 at the end, smooth between ticks
+        const float left = before > now ? glm::mix(float(before), float(now), alpha) : float(now);
+        return std::clamp(1.0f - left / float(std::max(1, total)), 0.0f, 1.0f);
+    };
+    if (s.spin_frames > 0) { // spun out: turns that wind down, bouncing on the wheels
+        const float t = hit_t(s.spin_frames, p.spin_frames, world()->item_tuning().spin_frames);
+        // Struck on the right, the nose is knocked left (+ yaw); with no
+        // direction, the way it was sliding.
+        float dir = s.hit_aimed ? (hit_a >= 0.0f ? 1.0f : -1.0f) : (glm::dot(s.slide, s.right()) > 0.0f ? -1.0f : 1.0f);
+        // Faster means more turns; ice and oil let it whirl on, sand and grass drag it round.
+        int turns = 1 + int(std::lround(hit_speed01 * 2.0f));
+        if (s.surface == sim::Surface::Ice || s.surface == sim::Surface::Oil) ++turns;
+        if (sim::is_offroad(s.surface) || s.surface == sim::Surface::Sand) --turns;
+        if (s.underwater) turns = std::min(turns, 1);
+        turns = std::clamp(turns, 1, 4);
+        const float e = s.underwater ? smooth(t) : ease_out(t);
+        const float rate = s.underwater ? 6.0f * t * (1.0f - t) : 3.0f * (1.0f - t) * (1.0f - t); // d(e)/dt, for the lean
+        float lift = 0.0f;
+        if (s.underwater) lift = std::sin(t * kPi) * 0.25f; // drifts up and settles
+        else if (s.grounded) lift = std::abs(std::sin(t * kPi * float(turns + 1))) * (1.0f - t) * glm::mix(0.12f, 0.3f, hit_speed01);
+        m = glm::translate(m, vec3(0, lift, 0));
+        m = glm::rotate(m, dir * e * 2.0f * kPi * float(turns), vec3(0, 1, 0));
+        // Thrown outwards by its own whirl, and rocking on landing each hop.
+        m = glm::rotate(m, -dir * std::min(rate, 1.5f) * 0.1f * float(turns), vec3(0, 0, 1));
+        if (!s.grounded && !s.underwater) m = glm::rotate(m, std::sin(t * kPi * 2.0f) * 0.2f, vec3(1, 0, 0));
+        if (s.grounded && !s.underwater) {
+            const float squash = (1.0f - t) * glm::mix(0.06f, 0.14f, hit_speed01) * std::max(0.0f, std::cos(t * kPi * float(turns + 1)));
+            m = glm::scale(m, vec3(1.0f + squash, 1.0f - squash * 1.4f, 1.0f + squash));
+        }
     }
-    if (s.tumble_frames > 0) { // blown up: thrown high, flipping over, landing with a thump
-        const float t = 1.0f - float(s.tumble_frames) / float(std::max(1, world()->item_tuning().tumble_frames));
-        m = glm::translate(m, vec3(0, std::sin(t * kPi) * 1.6f, 0));
-        m = glm::rotate(m, smooth(t) * 2.0f * kPi, vec3(1, 0, 0));
-        m = glm::rotate(m, std::sin(t * kPi) * 0.6f, vec3(0, 1, 0));
+    if (s.tumble_frames > 0) { // blown up: thrown over the way the blast pushed it, landing with a thump
+        const float t = hit_t(s.tumble_frames, p.tumble_frames, world()->item_tuning().tumble_frames);
+        // The top goes over away from the hit: a front flip from behind, a
+        // back flip from ahead, a barrel roll from the side.
+        const float a = s.hit_aimed ? hit_a : kPi;
+        const vec3 axis(-std::cos(a), 0.0f, -std::sin(a)); // cross(up, away), +X being the kart's left
+        // Height from the speed, held under a tunnel roof; slower and lower in water.
+        float height = glm::mix(1.0f, 2.2f, hit_speed01) * (s.underwater ? 0.6f : 1.0f);
+        if (const auto roof = world()->track().tunnel_roof(pos, s.sample)) height = std::min(height, std::max(0.25f, *roof - pos.y - 1.6f));
+        const int flips = !s.underwater && hit_speed01 > 0.85f && height > 1.9f ? 2 : 1;
+        const float up_t = s.underwater ? smooth(t) : t;
+        if (s.air_frames < 20 || s.underwater) m = glm::translate(m, vec3(0, 4.0f * up_t * (1.0f - up_t) * height, 0)); // not while falling from a glide
+        // A low ceiling leaves no room to go over: the kart rolls on its side and back instead.
+        const float over = height < 0.8f ? std::sin(smooth(t) * kPi) * 1.2f : smooth(t) * 2.0f * kPi * float(flips);
+        const vec3 pivot(0, 0.5f, 0);
+        m = glm::translate(m, pivot);
+        m = glm::rotate(m, over, axis);
+        m = glm::rotate(m, std::sin(t * kPi) * 0.6f * (a >= 0.0f ? 1.0f : -1.0f), vec3(0, 1, 0));
+        m = glm::translate(m, -pivot);
+        if (t > 0.82f && s.grounded) { // the thump
+            const float k = std::sin((t - 0.82f) / 0.18f * kPi) * glm::mix(0.08f, 0.18f, hit_speed01);
+            m = glm::scale(m, vec3(1.0f + k, 1.0f - k * 1.5f, 1.0f + k));
+        }
     }
     if (s.shrink_frames > 0) m = glm::scale(m, vec3(0.55f));
     // The sprung body over the wheels: it sinks, pitches and rolls about a

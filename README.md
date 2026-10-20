@@ -240,7 +240,7 @@ Kart select and lobby: Up/Down pick a part, Left/Right change it, Enter (or
 A) to race or ready up, Esc to quit.
 
 Racing: arrows or WASD steer, X or Space accelerate, Z brake, Shift
-hop/drift (press it at a ramp lip or any ledge to trick), Up/Down pitch the glider, E or
+hop/drift (press it at a ramp lip or any ledge to trick), Up/Down pitch the glider (tap Down on a bike for a wheelie), E or
 Ctrl use item (hold to drag it behind you), C look back, R restart, F1 help, F2 low-res toggle, Esc back to kart
 select (online: quit). After the finish, Enter or A continues.
 

@@ -569,3 +569,121 @@ TEST_CASE("snaking: alternating counter-steered drifts on a straight earn mini-t
     CHECK(blue.z > flat.z * 1.01f); // and it pays, a little
     CHECK(blue.z < flat.z * 1.08f); // but not so much that a straight is a drift test
 }
+
+namespace {
+// A bike down a straight for `seconds`, pulling a wheelie whenever one is
+// ready: how far it gets, and how many it pulled.
+struct Wheelies {
+    float z = 0.0f;
+    int pulled = 0;
+};
+Wheelies wheelie_run(int seconds, bool pull, int body = 3) {
+    Bench b(test::flat_track());
+    b.params = test::default_params(b.tables, b.parts, {1, body, 0, 0});
+    b.step(gas(), 60 * 3);
+    const float z0 = b.kart.pos.z;
+    Wheelies r;
+    for (int f = 0; f < seconds * 60; ++f) {
+        KartInput in = gas();
+        if (pull && b.kart.wheelie_frames == 0 && b.kart.wheelie_cooldown == 0) in.pitch = b.kart.pitch_prev ? 0.0f : 1.0f;
+        const bool was = b.kart.wheelie_frames > 0;
+        b.step(in);
+        r.pulled += !was && b.kart.wheelie_frames > 0;
+    }
+    r.z = b.kart.pos.z - z0;
+    return r;
+}
+} // namespace
+
+TEST_CASE("wheelie: bikes only, a little faster on a straight, worth about a snake") {
+    const Wheelies flat = wheelie_run(15, false), chained = wheelie_run(15, true);
+    MESSAGE("bike flat out " << flat.z << " m; chained wheelies " << chained.z << " m (" << chained.pulled << ")");
+    CHECK(chained.pulled >= 4);
+    CHECK(chained.z > flat.z * 1.02f);
+    CHECK(chained.z < flat.z * 1.05f); // snaking pays more (7%), and takes more doing
+
+    // A kart can't: the same pull does nothing.
+    Bench k(test::flat_track());
+    k.step(gas(), 120);
+    KartInput in = gas();
+    in.pitch = 1.0f;
+    k.step(in, 30);
+    CHECK(k.kart.wheelie_frames == 0);
+    CHECK(k.kart.wheelie_lift == 0.0f);
+}
+
+TEST_CASE("wheelie: needs a fresh pull, steers weaker, and a drift, the brakes or the air drop the front") {
+    auto bike = [] {
+        Bench b(test::flat_track());
+        b.params = test::default_params(b.tables, b.parts, {1, 3, 0, 0});
+        b.step(gas(), 150);
+        return b;
+    };
+    KartInput pull = gas();
+    pull.pitch = 1.0f;
+    Bench b = bike();
+    b.step(pull, 40); // held from the first frame: one wheelie
+    REQUIRE(b.kart.wheelie_frames > 0);
+    CHECK(b.kart.wheelie_lift > 0.9f);
+    // Holding the stick back doesn't start another after it ends.
+    b.step(pull, 200);
+    CHECK(b.kart.wheelie_frames == 0);
+    b.step(pull, 100);
+    CHECK(b.kart.wheelie_frames == 0);
+
+    // Steering: the same stick turns less up on one wheel.
+    Bench a = bike(), w = bike();
+    w.step(pull, 30);
+    a.step(gas(), 30);
+    w.kart.pos = a.kart.pos, w.kart.rot = a.kart.rot, w.kart.speed = a.kart.speed;
+    a.step(gas(1.0f), 10);
+    KartInput turn = gas(1.0f);
+    turn.pitch = 1.0f;
+    w.step(turn, 10);
+    const float turned_a = std::acos(std::clamp(a.kart.forward().z, -1.0f, 1.0f));
+    const float turned_w = std::acos(std::clamp(w.kart.forward().z, -1.0f, 1.0f));
+    CHECK(turned_w < turned_a * 0.7f);
+
+    // Drift, brake: the front comes down at once and the cooldown starts.
+    for (int how = 0; how < 2; ++how) {
+        Bench c = bike();
+        c.step(pull, 20);
+        REQUIRE(c.kart.wheelie_frames > 0);
+        KartInput end = gas();
+        if (how == 0) end.drift = true;
+        else end.brake = true, end.accelerate = false;
+        c.step(end);
+        CHECK(c.kart.wheelie_frames == 0);
+        CHECK(c.kart.wheelie_cooldown > 0);
+        c.step(gas(), 20);
+        CHECK(c.kart.wheelie_lift < 0.1f);
+    }
+}
+
+TEST_CASE("bumps rock the body and a hard one tips the kart onto two wheels; hits remember where they came from") {
+    Bench b(test::flat_track());
+    b.step(gas(), 120);
+    KartState soft = b.kart, hard = b.kart;
+    const PhysicsConstants& k = b.tables.constants;
+    kart_shove(soft, soft.right() * 2.0f, k);
+    kart_shove(hard, hard.right() * 9.0f, k);
+    CHECK(soft.susp_roll_v > 0.0f); // pushed right: rolls onto the right side
+    CHECK(soft.tilt_v == 0.0f);     // a nudge keeps four wheels down
+    CHECK(hard.tilt_v > 0.0f);      // a big shove lifts the left wheels
+    b.kart = hard;
+    float peak = 0.0f;
+    for (int f = 0; f < 30; ++f) b.step(gas()), peak = std::max(peak, b.kart.tilt);
+    CHECK(peak > 0.1f);
+    b.step(gas(), 60);
+    CHECK(std::abs(b.kart.tilt) < 0.01f);
+
+    // A shell from behind and a banana from ahead.
+    auto w = test::racing_world(2);
+    w.apply_hit(0, HitKind::Tumble, 1, w.karts()[0].pos - w.karts()[0].forward() * 3.0f);
+    CHECK(w.karts()[0].hit_aimed);
+    CHECK(std::abs(int(w.karts()[0].hit_angle)) > 120);
+    w.apply_hit(1, HitKind::Spin, 0, w.karts()[1].pos + w.karts()[1].forward() * 3.0f + w.karts()[1].right());
+    CHECK(w.karts()[1].hit_aimed);
+    CHECK(w.karts()[1].hit_angle > 0);
+    CHECK(w.karts()[1].hit_angle < 30);
+}

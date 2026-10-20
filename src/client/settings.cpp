@@ -18,7 +18,7 @@ const char* bind_name(Bind b) {
     case Bind::Item: return "USE ITEM";
     case Bind::LookBack: return "LOOK BACK";
     case Bind::Up: return "NOSE DOWN / AIM FORWARD";
-    case Bind::Down: return "NOSE UP / AIM BACK";
+    case Bind::Down: return "NOSE UP / WHEELIE / AIM BACK";
     default: return "?";
     }
 }

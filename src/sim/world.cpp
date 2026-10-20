@@ -363,6 +363,8 @@ bool World::adopt_motion(int kart, const KartState& c, std::span<const KartInput
     k.susp_pitch = c.susp_pitch, k.susp_pitch_v = c.susp_pitch_v;
     k.susp_roll = c.susp_roll, k.susp_roll_v = c.susp_roll_v;
     k.tilt = c.tilt, k.tilt_v = c.tilt_v;
+    k.wheelie_frames = c.wheelie_frames, k.wheelie_cooldown = c.wheelie_cooldown;
+    k.wheelie_lift = c.wheelie_lift, k.pitch_prev = c.pitch_prev;
     k.susp_wobble = c.susp_wobble;
     // Boosts the kart earned by how it was driven (drift, slipstream, pads)
     // go with the movement; item boosts are the server's (they cost an item).
@@ -460,6 +462,8 @@ void World::collide_karts() {
             };
             apply(ka, va0, va);
             apply(kb, vb0, vb);
+            kart_shove(ka, va - va0, tables_.constants);
+            kart_shove(kb, vb - vb0, tables_.constants);
             if (-rel > 2.0f) events_.push_back({KartEventType::Bump, int(a), int(b)});
         }
     }
