@@ -56,6 +56,13 @@ queries against the track.
   every 2.5 s) and gain a few percent on flat out while swinging about
   3 m either side of the line; `tests/test_kart.cpp` "snaking" keeps it
   between 1% and 8%.
+- Two wheels (`KartState::tilt`, + right side down, in `step_suspension`):
+  sideways force past `tilt_lateral_light`..`heavy` (30..38 m/s², by
+  weight) tips the whole kart onto its outside wheels, `tilt_per_lateral`
+  per m/s² up to `tilt_max`, on a softer spring that overshoots a flick and
+  bounces when the wheels slam down. Normal steering at 150cc stays flat;
+  a tight drift lifts ~0.3 rad, 200cc hits the cap. Visual only and synced
+  on the wire; the client pivots on the outside wheels (bikes lean in).
 - Grip road (`CenterSample::grip`, `Track::grip_up`): airborne gravity,
   yaw and the landing test use the road's up instead of world up, so hops
   off an 80° bank come back to it; `align_up` keeps the heading when the

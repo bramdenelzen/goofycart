@@ -1330,6 +1330,18 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     m = glm::rotate(m, pose.pitch, vec3(1, 0, 0));
     if (s.wall_bump > 0.0f) m = glm::rotate(m, std::sin(float(frame_) * 1.7f) * 0.08f * s.wall_bump, vec3(0, 1, 0));
     const mat4 base = m; // before hit animations, for held items
+    const KartVisual& visual = kart_visuals_[size_t(index % 12)];
+    // Two wheels in a hard corner (sim): the kart pivots on its outside
+    // wheels' contact line. A bike has no outside wheels; it leans in instead.
+    if (const float tilt = glm::mix(p.tilt, s.tilt, alpha); tilt != 0.0f) {
+        float hw = 0.0f;
+        for (const auto& w : visual.layout.wheels) hw = std::max(hw, std::abs(w.center.x));
+        if (hw <= 0.0f) hw = 0.6f;
+        const vec3 pivot = visual.layout.bike ? vec3(0.0f) : vec3(tilt < 0.0f ? hw : -hw, 0.0f, 0.0f);
+        m = glm::translate(m, pivot);
+        m = glm::rotate(m, visual.layout.bike ? -tilt : tilt, vec3(0, 0, 1)); // + right side down
+        m = glm::translate(m, -pivot);
+    }
     if (s.spin_frames > 0) { // spun out: two fast turns that wind down, bouncing on the wheels
         const float t = 1.0f - float(s.spin_frames) / float(std::max(1, world()->item_tuning().spin_frames));
         const float e = ease_out(t);
@@ -1375,7 +1387,6 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
     }
     if (s.ghost_frames > 0) tint = vec4(index == player_ ? 0.45f : 0.12f), fx = 0;
     if (fx == 3) tint = glow;
-    const KartVisual& visual = kart_visuals_[size_t(index % 12)];
     if (s.grounded && s.respawn_frames == 0)
         renderer_.draw(shadow_mesh_, glm::scale(glm::translate(base, vec3(0, 0.03f, -0.02f)), vec3(1.15f, 1.0f, 1.55f)));
     if (!visual.layout.wheels.empty() && index < 12)

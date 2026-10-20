@@ -611,7 +611,7 @@ void step_suspension(KartState& s, const SuspensionInput& before, const KartStep
     const float omega = glm::mix(k.susp_freq_light, k.susp_freq_heavy, w);
     const float zeta = glm::mix(k.susp_damping_light, k.susp_damping_heavy, w);
     if (s.susp_wobble > 0) --s.susp_wobble;
-    float pitch_target = 0.0f, roll_target = 0.0f;
+    float pitch_target = 0.0f, roll_target = 0.0f, tilt_target = 0.0f;
     if (s.grounded && !before.grounded) {
         const float fall = std::max(0.0f, -glm::dot(before.velocity, s.up()));
         s.susp_vy += fall * glm::mix(k.susp_land_gain_light, k.susp_land_gain_heavy, w);
@@ -624,6 +624,12 @@ void step_suspension(KartState& s, const SuspensionInput& before, const KartStep
         const float lateral = std::clamp(yaw * s.speed, -60.0f, 60.0f);
         pitch_target = accel * k.susp_pitch_per_accel;
         roll_target = -lateral * k.susp_roll_per_lateral; // the body leans out of the turn
+        // Past a threshold the whole kart lifts its inside wheels: lighter
+        // karts tip sooner. Not while spun out or tumbling, whose yaw isn't cornering.
+        if (s.spin_frames == 0 && s.tumble_frames == 0 && s.stun_frames == 0) {
+            const float lift = std::abs(lateral) - glm::mix(k.tilt_lateral_light, k.tilt_lateral_heavy, w);
+            if (lift > 0.0f) tilt_target = -std::copysign(lift * k.tilt_per_lateral, lateral);
+        }
         // The ground tipping up under the wheels (a ramp, the bottom of a dip)
         // pushes them up into the body; tipping away (a crest) lets it float.
         const float dpitch = std::asin(std::clamp(f.y, -1.0f, 1.0f)) - std::asin(std::clamp(before.forward.y, -1.0f, 1.0f));
@@ -652,10 +658,20 @@ void step_suspension(KartState& s, const SuspensionInput& before, const KartStep
     };
     cap(s.susp_pitch, s.susp_pitch_v, k.susp_max_pitch);
     cap(s.susp_roll, s.susp_roll_v, k.susp_max_roll);
+    // Two wheels: a softer spring, so a sudden flick overshoots and the kart
+    // rocks. Dropping back past flat, the lifted wheels slam down and bounce.
+    const float was = s.tilt;
+    spring_step(s.tilt, s.tilt_v, std::clamp(tilt_target, -k.tilt_max, k.tilt_max), k.tilt_freq, k.tilt_damping);
+    if (was != 0.0f && (s.tilt == 0.0f || (s.tilt > 0.0f) != (was > 0.0f))) {
+        s.tilt = 0.0f;
+        s.tilt_v *= -k.tilt_bounce;
+    }
+    cap(s.tilt, s.tilt_v, k.tilt_max);
 }
 
 void reset_suspension(KartState& s) {
     s.susp_y = s.susp_vy = s.susp_pitch = s.susp_pitch_v = s.susp_roll = s.susp_roll_v = 0.0f;
+    s.tilt = s.tilt_v = 0.0f;
     s.susp_wobble = 0;
 }
 } // namespace

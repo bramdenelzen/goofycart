@@ -121,6 +121,9 @@ struct KartState {
     float susp_pitch = 0.0f, susp_pitch_v = 0.0f;
     float susp_roll = 0.0f, susp_roll_v = 0.0f;
     uint8_t susp_wobble = 0;       // frames of reduced steering after bottoming out
+    // Two wheels: the whole kart tipped onto its outside wheels in a hard
+    // corner, radians, + right side down (left wheels up). Visual only.
+    float tilt = 0.0f, tilt_v = 0.0f;
 
     // Visual-only helpers (the client may also derive these)
     float visual_drift_yaw = 0.0f;

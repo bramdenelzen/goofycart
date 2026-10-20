@@ -208,6 +208,14 @@ struct PhysicsConstants {
     float susp_air_droop = 0.06f;      // metres the body hangs while airborne
     int susp_wobble_frames = 10;       // after bottoming out on a landing
     float susp_wobble_steer = 0.45f;   // fraction of steering lost during the wobble
+    // Two wheels: cornering force past the threshold tips the kart onto its
+    // outside wheels. Visual only. Provisional, tuned by feel.
+    float tilt_lateral_light = 30.0f, tilt_lateral_heavy = 38.0f; // m/s^2 sideways before the wheels lift
+    float tilt_per_lateral = 0.018f;   // rad per m/s^2 past the threshold
+    float tilt_max = 0.42f;            // radians
+    float tilt_freq = 7.0f;            // rad/s
+    float tilt_damping = 0.45f;
+    float tilt_bounce = 0.25f;         // velocity kept, reversed, when the wheels slam down
 };
 
 class PhysicsTables {

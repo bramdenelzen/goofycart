@@ -100,6 +100,10 @@
     "susp_max_pitch": 0.14, "susp_max_roll": 0.12,
     "susp_air_droop": 0.06,
     "susp_wobble_frames": 10, "susp_wobble_steer": 0.45,
+    "_two_wheels": "provisional, tuned by feel: sideways force (m/s^2) past the threshold, lightest to heaviest, tips the kart onto its outside wheels. Visual only.",
+    "tilt_lateral_light": 30.0, "tilt_lateral_heavy": 38.0,
+    "tilt_per_lateral": 0.018, "tilt_max": 0.42,
+    "tilt_freq": 7.0, "tilt_damping": 0.45, "tilt_bounce": 0.25,
     "stuck_respawn_frames": 300
   }
 }
