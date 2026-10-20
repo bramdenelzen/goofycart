@@ -305,12 +305,21 @@ const App::KartVisual& App::build_visual(const sim::Build& b, int slot) {
     v.tire_model = assets_.tire(id_of(parts_.tires, b.tires));
     v.glider_model = assets_.glider(id_of(parts_.gliders, b.glider));
     // Procedural pieces for whatever the pack doesn't cover, and the layout.
-    render::MeshData full = render::make_kart_mesh(look, &v.layout, render::KartAll);
+    // The driver always comes out as a loose rig instead of being welded in,
+    // so the client can flop it about; the rest is one mesh when nothing is
+    // replaced.
+    render::MeshData body_wheels = render::make_kart_mesh(look, &v.layout, render::KartBody | render::KartWheels);
+    if (!v.driver_model) {
+        const render::DriverRig rig = render::make_driver_rig(look, v.layout);
+        for (int i = 0; i < render::DriverRig::PieceCount; ++i) {
+            v.rig[i] = renderer_.upload_mesh(rig.piece[i]);
+            v.rig_offset[i] = rig.offset[i];
+        }
+    }
     if (!v.body_model && !v.driver_model && !v.tire_model) {
-        v.body = renderer_.upload_mesh(full);
+        v.body = renderer_.upload_mesh(body_wheels);
     } else {
         if (!v.body_model) v.body = renderer_.upload_mesh(render::make_kart_mesh(look, nullptr, render::KartBody));
-        if (!v.driver_model) v.driver = renderer_.upload_mesh(render::make_kart_mesh(look, nullptr, render::KartDriver));
         if (!v.tire_model) v.wheels = renderer_.upload_mesh(render::make_kart_mesh(look, nullptr, render::KartWheels));
     }
     // A body model may say where its wheels and seat are.
@@ -337,13 +346,129 @@ void App::draw_model(const GpuModel& model, const mat4& m, vec4 tint) {
     for (render::MeshId id : model.meshes) renderer_.draw(id, m, tint);
 }
 
-void App::draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle, const mat4* body) {
+void App::flop_spring(float& x, float& v, float target, float omega, float zeta, float dt) {
+    // Underdamped on purpose: it overshoots the target and keeps wobbling
+    // afterwards, which is the whole point of a rubber doll. Sub-stepped so a
+    // long frame cannot make it blow up.
+    dt = std::min(dt, 0.05f);
+    const int steps = std::clamp(int(std::ceil(dt * 120.0f)), 1, 8);
+    const float h = dt / float(steps);
+    for (int i = 0; i < steps; ++i) {
+        v += (omega * omega * (target - x) - 2.0f * zeta * omega * v) * h;
+        x += v * h;
+    }
+}
+
+// The driver flops because of what the kart is doing. Everything here is read
+// off state the sim already computes for the chassis -- the suspension's roll
+// and pitch, the two-wheel tilt, air time, a wheelie, a hit -- so the doll
+// leans and lurches the same way the kart does, only much further and with no
+// hurry about settling. Presentation only: nothing is written back to the sim.
+void App::update_driver_flop(DriverFlop& f, int seed, const sim::KartState& s, const sim::KartState& p, float alpha) {
+    if (!f.seeded) {
+        f.seeded = true;
+        f.phase = float(seed) * 2.39996f; // golden angle: twelve drivers never wobble in step
+    }
+    const float dt = paused_ ? 0.0f : frame_dt_;
+    if (dt <= 0.0f) return;
+    // + right side down, + nose up, matching the chassis's own convention, so
+    // the doll is always thrown the way the kart body already leans.
+    const float roll = glm::mix(p.susp_roll, s.susp_roll, alpha) + glm::mix(p.tilt, s.tilt, alpha);
+    const float pitch = glm::mix(p.susp_pitch, s.susp_pitch, alpha);
+    const float wheelie = glm::mix(p.wheelie_lift, s.wheelie_lift, alpha);
+    const float speed01 = std::clamp(s.speed / 24.0f, 0.0f, 1.4f);
+    const float air01 = std::clamp(float(s.air_frames) / 14.0f, 0.0f, 1.0f);
+    const float flail = s.spin_frames > 0 || s.tumble_frames > 0 ? 1.0f : 0.0f;
+    const float boost = s.boost_frames > 0 ? 1.0f : 0.0f;
+    auto wob = [&](float rate, float off) { return std::sin(float(frame_) * rate + f.phase + off); };
+
+    // Kicks: landing after real air, a wall scrape, and a hit, which throws
+    // every joint at once.
+    const float was = f.jolt;
+    if (f.air_was > 10 && s.air_frames == 0) f.jolt = std::max(f.jolt, std::min(1.0f, float(f.air_was) / 45.0f));
+    if (s.wall_bump > 0.0f) f.jolt = std::max(f.jolt, s.wall_bump * 0.7f);
+    if (flail > 0.0f) f.jolt = 1.0f;
+    f.air_was = s.air_frames;
+    if (f.jolt > was + 0.01f) { // the moment it lands: throw the whole doll
+        const float k = f.jolt * 3.5f;
+        for (int i = 0; i < render::DriverRig::PieceCount; ++i) {
+            DriverFlop::Joint& j = f.joint[i];
+            j.pitch_v += k * wob(0.53f, float(i) * 1.7f);
+            j.yaw_v += k * wob(0.47f, float(i) * 2.3f);
+            j.roll_v += k * wob(0.61f, float(i) * 3.1f);
+        }
+    }
+    f.jolt = std::max(0.0f, f.jolt - dt * 3.0f);
+    const float g = f.jolt;
+    // Never stiff: a slow sway that speed makes busier.
+    const float idle = 0.035f + 0.05f * speed01;
+
+    auto drive = [&](int piece, float tp, float ty, float tr, float omega, float zeta, float limit) {
+        DriverFlop::Joint& j = f.joint[piece];
+        flop_spring(j.pitch, j.pitch_v, std::clamp(tp, -limit, limit), omega, zeta, dt);
+        flop_spring(j.yaw, j.yaw_v, std::clamp(ty, -limit, limit), omega, zeta, dt);
+        flop_spring(j.roll, j.roll_v, std::clamp(tr, -limit, limit), omega, zeta, dt);
+        // Rubbery stops, so a limb bounces off its limit instead of inverting.
+        const float hard = limit * 1.35f;
+        auto cap = [&](float& x, float& v) {
+            if (std::abs(x) > hard) x = std::copysign(hard, x), v *= -0.3f;
+        };
+        cap(j.pitch, j.pitch_v), cap(j.yaw, j.yaw_v), cap(j.roll, j.roll_v);
+    };
+
+    using R = render::DriverRig;
+    // Hips: wedged into the seat, so barely more than a shimmy.
+    drive(R::Pelvis, idle * 0.3f * wob(0.1f, 0.5f), idle * 0.4f * wob(0.07f, 1.2f), idle * 0.3f * wob(0.09f, 2.4f), 16.0f, 0.5f, 0.12f);
+    // Torso: leans with the chassis, only twice as far, and wallows after.
+    drive(R::Torso, -pitch * 1.8f - wheelie * 0.3f + air01 * 0.18f + idle * 0.6f * wob(0.09f, 2.0f) + flail * 0.45f * wob(0.27f, 0.4f),
+          -roll * 0.8f + idle * 0.5f * wob(0.05f, 1.3f) + flail * 0.6f * wob(0.23f, 2.2f),
+          roll * 2.0f + idle * wob(0.07f, 0.0f) + flail * 0.5f * wob(0.31f, 1.0f), 11.0f, 0.26f, 0.5f);
+    // Head: the floppiest thing on the kart, on a neck with no spine in it.
+    drive(R::Head, -pitch * 2.4f + air01 * 0.3f - wheelie * 0.25f + g * 0.4f * wob(0.45f, 0.8f) + flail * 0.9f * wob(0.39f, 1.5f) + idle * 1.2f * wob(0.15f, 2.1f),
+          -roll * 1.6f + flail * 1.2f * wob(0.35f, 2.6f) + idle * wob(0.08f, 0.3f),
+          roll * 3.2f + flail * 1.0f * wob(0.43f, 0.2f) + idle * 1.4f * wob(0.12f, 0.9f), 13.0f, 0.18f, 0.75f);
+    // Arms: thrown outward by cornering, up in the air, back under a boost.
+    // They leave the wheel altogether when it gets rough, which is the point.
+    const float arm_pitch = -pitch * 1.4f - air01 * 0.35f - boost * 0.2f + g * 0.25f * wob(0.37f, 0.0f) + flail * 0.6f * wob(0.29f, 1.1f) +
+                            idle * 0.8f * wob(0.11f, 0.6f);
+    const float arm_roll = roll * 2.6f + flail * 0.8f * wob(0.33f, 2.0f) + idle * wob(0.13f, 1.9f);
+    for (int i = 0; i < 2; ++i) {
+        const float side = float(i) * 0.7f; // the two arms a little out of phase
+        drive(R::UpperL + i, arm_pitch + idle * 0.3f * wob(0.19f, side), idle * 0.4f * wob(0.1f, side + 1.0f), arm_roll + flail * 0.3f * wob(0.3f, side),
+              12.0f, 0.22f, 0.5f);
+        // The elbow keeps a tighter rein than the shoulder: a forearm folded
+        // right back reads as broken rather than floppy.
+        drive(R::ForeL + i, arm_pitch * 0.6f + air01 * 0.3f + flail * 0.7f * wob(0.41f, side + 0.3f) + idle * 0.8f * wob(0.17f, side + 2.7f),
+              idle * 0.5f * wob(0.14f, side + 2.0f), arm_roll * 0.5f + flail * 0.5f * wob(0.37f, side + 1.4f), 15.0f, 0.16f, 0.55f);
+    }
+}
+
+// The driver's pieces, each swung about its joint by the flop's springs. With
+// no flop (a ghost, a kart on a menu) every joint sits at rest and the pieces
+// assemble into exactly the driver the welded mesh used to draw.
+void App::draw_driver_rig(const KartVisual& v, const mat4& body, vec4 tint, const DriverFlop* flop) {
+    mat4 world[render::DriverRig::PieceCount];
+    for (int i = 0; i < render::DriverRig::PieceCount; ++i) {
+        const int parent = render::kDriverParent[i];
+        mat4 x = glm::translate(parent < 0 ? body : world[parent], v.rig_offset[i]);
+        if (flop) {
+            const DriverFlop::Joint& j = flop->joint[i];
+            x = glm::rotate(x, j.pitch, vec3(1, 0, 0));
+            x = glm::rotate(x, j.yaw, vec3(0, 1, 0));
+            x = glm::rotate(x, j.roll, vec3(0, 0, 1));
+        }
+        world[i] = x;
+        if (v.rig[i]) renderer_.draw(v.rig[i], x, tint);
+    }
+}
+
+void App::draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle, const mat4* body, const DriverFlop* flop) {
     const mat4& bm = body ? *body : m;
     const mat4 lifted = glm::translate(bm, vec3(0, v.layout.lift, 0));
     if (v.body_model) draw_model(*v.body_model, lifted, tint);
     if (v.body) renderer_.draw(v.body, bm, tint);
     if (v.driver_model) draw_model(*v.driver_model, glm::translate(bm, v.layout.seat), tint);
-    if (v.driver) renderer_.draw(v.driver, bm, tint);
+    else draw_driver_rig(v, bm, tint, flop);
     if (v.tire_model) {
         for (const auto& w : v.layout.wheels) {
             const float ref = v.tire_model->bounds_max.y - v.tire_model->bounds_min.y;
@@ -592,7 +717,8 @@ void App::draw_ghost(float alpha) {
                                    glm::mat4_cast(glm::slerp(ghost_prev_.rot, s.rot, alpha)),
                                -s.visual_drift_yaw, vec3(0, 1, 0));
     const KartVisual& v = build_visual(ghost_build_, 6);
-    draw_kart_visual(v, m, vec4(0.7f, 0.85f, 1.0f, 0.45f), 0.0f);
+    update_driver_flop(ghost_flop_, 6, s, ghost_prev_, alpha);
+    draw_kart_visual(v, m, vec4(0.7f, 0.85f, 1.0f, 0.45f), 0.0f, nullptr, &ghost_flop_);
     if (s.gliding) draw_glider_visual(v, m, vec4(0.7f, 0.85f, 1.0f, 0.45f));
 }
 
@@ -1311,6 +1437,8 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         const float pitch_target = s.boost_frames > 0 ? -0.025f : 0.0f;
         spring(pose.pitch, pose.pitch_v, pitch_target, 9.0f, dt);
     }
+    // The rider aboard it: a rubber doll thrown about by the same forces.
+    update_driver_flop(flops_[size_t(index % 12)], index, s, p, alpha);
     m = glm::rotate(m, -pose.yaw, vec3(0, 1, 0));
     if (s.gliding) { // bank into the turn, nose up or down with the stick
         const float bank = glm::mix(p.glide_bank, s.glide_bank, alpha), pitch = glm::mix(p.glide_pitch, s.glide_pitch, alpha);
@@ -1453,7 +1581,7 @@ void App::draw_kart(int index, const sim::KartState& s, float alpha) {
         draw_flame(base, vec3(0, 0.8f, -1.3f), vec3(0, 0, -1), 0.8f, 1.9f * flicker, vec3(0.4f, 0.7f, 1.0f), float(index) * 0.137f);
     } else {
         renderer_.set_fx(fx);
-        draw_kart_visual(visual, m, tint, index < 12 ? wheel_angle_[size_t(index)] : 0.0f, &body);
+        draw_kart_visual(visual, m, tint, index < 12 ? wheel_angle_[size_t(index)] : 0.0f, &body, &flops_[size_t(index % 12)]);
         renderer_.set_fx(0);
     }
     if (s.chomper_frames > 0) {
@@ -2925,7 +3053,10 @@ void App::render_menu(float dt) {
         renderer_.draw(spark_mesh_, glm::scale(glm::translate(kart_m, vec3(0, 1.5f, 0)), vec3(2.0f)), vec4(0, 3, 0, 1));
         renderer_.draw(spark_mesh_, glm::scale(glm::translate(kart_m, vec3(0, 0.1f, 1.5f)), vec3(2.0f)), vec4(0, 0, 3, 1));
     } else {
-        draw_kart_visual(build_visual(select_.build, mesh), kart_m, vec4(1.0f), 0.0f);
+        // Sitting still on the menu, the driver still wobbles gently.
+        const sim::KartState idle{};
+        update_driver_flop(select_flop_, 0, idle, idle, 1.0f);
+        draw_kart_visual(build_visual(select_.build, mesh), kart_m, vec4(1.0f), 0.0f, nullptr, &select_flop_);
     }
     if (options_.hide_ui) {
         renderer_.end_frame();

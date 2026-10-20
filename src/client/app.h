@@ -267,7 +267,11 @@ private:
     // What a kart looks like: procedural pieces, each replaced by a model
     // from the asset pack when it has one.
     struct KartVisual {
-        render::MeshId body = 0, driver = 0, wheels = 0, glider = 0;
+        render::MeshId body = 0, wheels = 0, glider = 0;
+        // The driver as loose pieces about its joints, so it can flop; unused
+        // when a model pack hands us a whole driver.
+        render::MeshId rig[render::DriverRig::PieceCount]{};
+        vec3 rig_offset[render::DriverRig::PieceCount]{};
         const GpuModel* body_model = nullptr;
         const GpuModel* driver_model = nullptr;
         const GpuModel* tire_model = nullptr;
@@ -307,11 +311,35 @@ private:
         float yaw = 0.0f, yaw_v = 0.0f, roll = 0.0f, roll_v = 0.0f, pitch = 0.0f, pitch_v = 0.0f;
     };
     std::array<KartPose, 12> poses_{};
+    // The driver as a rubber doll: one underdamped spring per joint axis, so
+    // every limb overshoots and keeps wobbling after the force that threw it
+    // has gone. Driven by what the sim says the kart is doing (cornering,
+    // boosting, airborne, hit) and nothing else: presentation only, never fed
+    // back into the sim, so it cannot desync a prediction.
+    struct DriverFlop {
+        struct Joint {
+            float pitch = 0.0f, pitch_v = 0.0f; // about local X
+            float yaw = 0.0f, yaw_v = 0.0f;     // about local Y
+            float roll = 0.0f, roll_v = 0.0f;   // about local Z
+        };
+        Joint joint[render::DriverRig::PieceCount];
+        float jolt = 0.0f;    // a kick from a landing, bump or hit, dying away
+        int air_was = 0;      // last frame's air_frames, to catch the landing
+        float phase = 0.0f;   // per-kart, so twelve drivers never wobble in step
+        bool seeded = false;
+    };
+    std::array<DriverFlop, 12> flops_{};
+    DriverFlop select_flop_{}; // the one idling in kart select
+    DriverFlop ghost_flop_{};  // and the ghost's, so the replay flops too
+    static void flop_spring(float& x, float& v, float target, float omega, float zeta, float dt);
+    void update_driver_flop(DriverFlop& f, int seed, const sim::KartState& s, const sim::KartState& p, float alpha);
+    void draw_driver_rig(const KartVisual& v, const mat4& body, vec4 tint, const DriverFlop* flop);
     static void spring(float& x, float& v, float target, float omega, float dt);
     float frame_dt_ = 1.0f / 60.0f;
     const KartVisual& build_visual(const sim::Build& b, int slot);
     // `body`: the sprung part (body and driver) when it moves apart from the wheels.
-    void draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle, const mat4* body = nullptr);
+    void draw_kart_visual(const KartVisual& v, const mat4& m, vec4 tint, float wheel_angle, const mat4* body = nullptr,
+                          const DriverFlop* flop = nullptr);
     void draw_glider_visual(const KartVisual& v, const mat4& m, vec4 tint);
     void set_kart_meshes(const std::vector<sim::Build>& builds);
     sim::Build ghost_build_;

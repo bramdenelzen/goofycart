@@ -203,59 +203,100 @@ void hat(MeshBuilder& b, vec3 head, float r, const sim::PartLook& d) {
     }
 }
 
-// The driver: a rounded torso, arms to the wheel, a big round head with eyes.
-void driver(MeshBuilder& b, vec3 seat, const sim::PartLook& d, bool bike, vec3 hands_at) {
+// The driver, cut at its joints: a rounded torso, arms to the wheel, a big
+// round head with eyes. Every piece is built around its own joint so the
+// client can swing it; the joint balls keep the seams closed when it does.
+DriverRig build_rig(vec3 seat, const sim::PartLook& d, bool bike, vec3 hands_at) {
     const float s = std::clamp(d.size, 0.6f, 1.5f);
     const uint32_t outfit = hex_rgba(d.color2), skin = hex_rgba(d.color);
     const vec3 hips = seat + vec3(0, 0.05f * s, bike ? 0.05f : 0.0f);
-    // Torso as a loft of ellipses, hips to neck.
-    std::vector<std::vector<vec3>> torso;
-    struct Slice { float y, w, dpt; };
-    for (const Slice& sl : {Slice{0.0f, 0.19f, 0.14f}, Slice{0.12f, 0.17f, 0.12f}, Slice{0.26f, 0.21f, 0.15f}, Slice{0.36f, 0.22f, 0.14f}, Slice{0.42f, 0.14f, 0.1f}}) {
-        std::vector<vec3> ring;
-        for (int i = 0; i < kRing; ++i) {
-            const float a = 2.0f * kPi * float(i) / float(kRing);
-            ring.push_back(hips + vec3(std::sin(a) * sl.w * s, sl.y * s, std::cos(a) * sl.dpt * s));
-        }
-        torso.push_back(ring);
-    }
-    b.loft(torso, outfit, true);
-    const vec3 shoulder_l = hips + vec3(-0.21f * s, 0.36f * s, 0.0f), shoulder_r = hips + vec3(0.21f * s, 0.36f * s, 0.0f);
-    for (const vec3& sh : {shoulder_l, shoulder_r}) b.sphere(sh, 0.075f * s, outfit, 12, 8);
-    // Arms: upper arm forward and down, forearm to the hands on the wheel.
-    for (float x : {-1.0f, 1.0f}) {
-        const vec3 sh = x < 0 ? shoulder_l : shoulder_r;
-        const vec3 hand = hands_at + vec3(x * 0.16f, 0.0f, 0.0f);
-        const vec3 elbow = glm::mix(sh, hand, 0.5f) + vec3(x * 0.06f, -0.08f * s, -0.04f);
-        b.capsule(sh, elbow, 0.055f * s, outfit, 12, 4);
-        b.capsule(elbow, hand, 0.05f * s, outfit, 12, 4);
-        b.sphere(hand, 0.07f * s, kGlove, 12, 8);
-    }
-    // Legs: thighs forward from the hips to knees, mostly inside the body.
-    for (float x : {-1.0f, 1.0f}) {
-        const vec3 hip = hips + vec3(x * 0.1f * s, 0.02f * s, 0.05f);
-        const vec3 knee = hip + vec3(x * 0.03f, 0.12f * s, 0.42f * s);
-        b.capsule(hip, knee, 0.075f * s, shade(outfit, 0.8f), 12, 4);
-        b.sphere(knee, 0.08f * s, shade(outfit, 0.8f), 12, 8);
-    }
-    // Neck and head.
+    const vec3 shoulder[2] = {hips + vec3(-0.21f * s, 0.36f * s, 0.0f), hips + vec3(0.21f * s, 0.36f * s, 0.0f)};
     const float r = 0.2f * s;
     const vec3 neck = hips + vec3(0, 0.42f * s, 0.0f);
-    const vec3 head = neck + vec3(0, r * 1.05f, 0.03f);
-    b.tube(neck - vec3(0, 0.02f, 0), head, 0.07f * s, 0.07f * s, skin, 12, false);
-    b.sphere(head, vec3(r, r * 1.04f, r * 0.98f), skin, 28, 18);
-    // Eyes: whites, irises, a highlight; a small nose.
-    for (float x : {-0.42f, 0.42f}) {
-        const vec3 e = head + vec3(x * r, r * 0.12f, r * 0.88f);
-        b.sphere(e, vec3(r * 0.17f, r * 0.24f, r * 0.08f), rgba(250, 250, 250), 14, 10);
-        b.sphere(e + vec3(0, -r * 0.02f, r * 0.05f), vec3(r * 0.1f, r * 0.14f, r * 0.05f), rgba(30, 40, 60), 12, 8);
-        b.sphere(e + vec3(r * 0.03f, r * 0.05f, r * 0.09f), r * 0.03f, rgba(255, 255, 255), 8, 5);
+
+    DriverRig rig;
+    rig.offset[DriverRig::Pelvis] = hips;
+    rig.offset[DriverRig::Torso] = vec3(0.0f);
+    rig.offset[DriverRig::Head] = neck - hips;
+
+    // Legs: thighs forward from the hips to knees, mostly inside the body.
+    // They stay with the pelvis, wedged into the kart.
+    {
+        MeshBuilder b;
+        for (float x : {-1.0f, 1.0f}) {
+            const vec3 hip = vec3(x * 0.1f * s, 0.02f * s, 0.05f);
+            const vec3 knee = hip + vec3(x * 0.03f, 0.12f * s, 0.42f * s);
+            b.capsule(hip, knee, 0.075f * s, shade(outfit, 0.8f), 12, 4);
+            b.sphere(knee, 0.08f * s, shade(outfit, 0.8f), 12, 8);
+        }
+        rig.piece[DriverRig::Pelvis] = b.take();
     }
-    b.sphere(head + vec3(0, -r * 0.12f, r * 0.98f), r * 0.14f, shade(skin, 0.95f), 12, 8);
-    // Mouth: a thin dark smile.
-    b.sweep({head + vec3(-r * 0.22f, -r * 0.38f, r * 0.9f), head + vec3(0, -r * 0.46f, r * 0.95f), head + vec3(r * 0.22f, -r * 0.38f, r * 0.9f)},
-            r * 0.025f, rgba(90, 40, 40), 6);
-    hat(b, head, r, d);
+    // Torso as a loft of ellipses, hips to neck, and the joint balls.
+    {
+        MeshBuilder b;
+        std::vector<std::vector<vec3>> torso;
+        struct Slice { float y, w, dpt; };
+        for (const Slice& sl : {Slice{0.0f, 0.19f, 0.14f}, Slice{0.12f, 0.17f, 0.12f}, Slice{0.26f, 0.21f, 0.15f}, Slice{0.36f, 0.22f, 0.14f}, Slice{0.42f, 0.14f, 0.1f}}) {
+            std::vector<vec3> ring;
+            for (int i = 0; i < kRing; ++i) {
+                const float a = 2.0f * kPi * float(i) / float(kRing);
+                ring.push_back(vec3(std::sin(a) * sl.w * s, sl.y * s, std::cos(a) * sl.dpt * s));
+            }
+            torso.push_back(ring);
+        }
+        b.loft(torso, outfit, true);
+        for (int i = 0; i < 2; ++i) b.sphere(shoulder[i] - hips, 0.075f * s, outfit, 12, 8);
+        b.sphere(neck - hips, 0.07f * s, skin, 12, 8); // caps the neck when the head tips right over
+        rig.piece[DriverRig::Torso] = b.take();
+    }
+    // Arms: upper arm forward and down, forearm to the hands on the wheel.
+    for (int i = 0; i < 2; ++i) {
+        const float x = i == 0 ? -1.0f : 1.0f;
+        const vec3 sh = shoulder[i];
+        const vec3 hand = hands_at + vec3(x * 0.16f, 0.0f, 0.0f);
+        const vec3 elbow = glm::mix(sh, hand, 0.5f) + vec3(x * 0.06f, -0.08f * s, -0.04f);
+        MeshBuilder up;
+        up.capsule(vec3(0.0f), elbow - sh, 0.055f * s, outfit, 12, 4);
+        rig.piece[DriverRig::UpperL + i] = up.take();
+        rig.offset[DriverRig::UpperL + i] = sh - hips;
+        MeshBuilder fore;
+        fore.sphere(vec3(0.0f), 0.052f * s, outfit, 12, 8); // the elbow ball
+        fore.capsule(vec3(0.0f), hand - elbow, 0.05f * s, outfit, 12, 4);
+        fore.sphere(hand - elbow, 0.07f * s, kGlove, 12, 8);
+        rig.piece[DriverRig::ForeL + i] = fore.take();
+        rig.offset[DriverRig::ForeL + i] = elbow - sh;
+    }
+    // Neck and head: eyes (whites, irises, a highlight), a small nose, a thin
+    // dark smile and the hat.
+    {
+        MeshBuilder b;
+        const vec3 head = vec3(0, r * 1.05f, 0.03f); // in the neck's space
+        b.tube(vec3(0, -0.02f, 0), head, 0.07f * s, 0.07f * s, skin, 12, false);
+        b.sphere(head, vec3(r, r * 1.04f, r * 0.98f), skin, 28, 18);
+        for (float x : {-0.42f, 0.42f}) {
+            const vec3 e = head + vec3(x * r, r * 0.12f, r * 0.88f);
+            b.sphere(e, vec3(r * 0.17f, r * 0.24f, r * 0.08f), rgba(250, 250, 250), 14, 10);
+            b.sphere(e + vec3(0, -r * 0.02f, r * 0.05f), vec3(r * 0.1f, r * 0.14f, r * 0.05f), rgba(30, 40, 60), 12, 8);
+            b.sphere(e + vec3(r * 0.03f, r * 0.05f, r * 0.09f), r * 0.03f, rgba(255, 255, 255), 8, 5);
+        }
+        b.sphere(head + vec3(0, -r * 0.12f, r * 0.98f), r * 0.14f, shade(skin, 0.95f), 12, 8);
+        b.sweep({head + vec3(-r * 0.22f, -r * 0.38f, r * 0.9f), head + vec3(0, -r * 0.46f, r * 0.95f), head + vec3(r * 0.22f, -r * 0.38f, r * 0.9f)},
+                r * 0.025f, rgba(90, 40, 40), 6);
+        hat(b, head, r, d);
+        rig.piece[DriverRig::Head] = b.take();
+    }
+    return rig;
+}
+
+// The welded driver: the rig with every joint at rest.
+void driver(MeshBuilder& b, vec3 seat, const sim::PartLook& d, bool bike, vec3 hands_at) {
+    const DriverRig rig = build_rig(seat, d, bike, hands_at);
+    mat4 world[DriverRig::PieceCount];
+    for (int i = 0; i < DriverRig::PieceCount; ++i) {
+        const mat4 parent = kDriverParent[i] < 0 ? mat4(1.0f) : world[kDriverParent[i]];
+        world[i] = glm::translate(parent, rig.offset[i]);
+        b.append(rig.piece[i], world[i]);
+    }
 }
 
 } // namespace
@@ -425,18 +466,22 @@ MeshData make_kart_mesh(const KartLook& l, KartLayout* layout, unsigned parts) {
         layout->lift = lift;
     }
     if (!(parts & KartBody)) body = {};
-    if (parts & KartDriver) {
-        if (bike) {
-            // Hands on the handlebar ends.
-            driver(body, seat, l.driver, bike, wheel);
-        } else {
-            if (parts & KartBody) steering_wheel(body, wheel, 0.17f, trim);
-            driver(body, seat, l.driver, bike, wheel + vec3(0, 0.02f, -0.03f));
-        }
-    }
+    // The steering wheel belongs to the kart, not the driver: a bike has
+    // handlebars in its shape instead.
+    if ((parts & KartBody) && !bike) steering_wheel(body, wheel, 0.17f, trim);
+    // A bike's hands go on the handlebar ends, everyone else's just behind the wheel.
+    if (parts & KartDriver) driver(body, seat, l.driver, bike, bike ? wheel : wheel + vec3(0, 0.02f, -0.03f));
     b.append(body.data(), glm::translate(mat4(1.0f), vec3(0, lift, 0)));
     if (parts & KartWheels) wheels(b, ws, l.tires);
     return b.take();
+}
+
+DriverRig make_driver_rig(const KartLook& l, const KartLayout& layout) {
+    // The seat and hands `make_kart_mesh` gave the welded driver: the layout
+    // already carries the tyre lift, and a bike's hands sit on the handlebar
+    // ends rather than just behind a steering wheel.
+    const vec3 hands = layout.bike ? layout.hands : layout.hands + vec3(0, 0.02f, -0.03f);
+    return build_rig(layout.seat, l.driver, layout.bike, hands);
 }
 
 MeshData make_glider_mesh(const sim::PartLook& g) {
