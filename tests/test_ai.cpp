@@ -241,3 +241,121 @@ TEST_CASE("CPUs in front save mushrooms for straights and use stars at once") {
     CHECK(d.world.karts()[0].item == Item::None); // a straight: boost now
     CHECK(d.world.karts()[1].star_frames > 0);
 }
+
+namespace {
+
+// The widest a CPU strays from the road's centre in the stadium's bends over
+// its second lap. Seat 1: no personal lane offset at any level.
+float widest_lateral(CpuLevel level) {
+    auto t = test::tables();
+    auto c = test::parts();
+    World w(test::stadium_track(), t, RaceConfig{.laps = 3, .countdown_frames = 1, .items = false});
+    w.add_kart(test::default_params(t, c));
+    float widest = 0.0f;
+    for (int f = 0; f < 60 * 120 && w.karts()[0].lap < 3; ++f) {
+        KartInput in = cpu_input(w, 0, cpu_skill(level, 1));
+        w.tick(std::span(&in, 1));
+        const KartState& k = w.karts()[0];
+        if (k.lap != 2 || std::abs(w.track().line[size_t(k.sample)].curvature) < 0.02f) continue;
+        const CenterSample& s = w.track().sample(k.sample);
+        widest = std::max(widest, std::abs(glm::dot(k.pos - s.pos, s.right)));
+    }
+    return widest;
+}
+
+} // namespace
+
+TEST_CASE("a hard CPU uses more of the road than an easy one") {
+    const float hard = widest_lateral(CpuLevel::Hard), normal = widest_lateral(CpuLevel::Normal), easy = widest_lateral(CpuLevel::Easy);
+    MESSAGE("widest from the centre: hard " << hard << " m, normal " << normal << " m, easy " << easy << " m (half width 7)");
+    CHECK(hard > normal + 0.3f);
+    CHECK(normal > easy + 0.3f);
+    CHECK(hard < 6.5f); // and still on the road
+}
+
+TEST_CASE("hard and normal CPUs weave on a straight, easy ones hold their lane") {
+    auto span = [](CpuLevel level) {
+        World w(test::flat_track(), test::tables(), RaceConfig{.laps = 1 << 30, .countdown_frames = 1, .items = false});
+        w.add_kart(test::default_params(w.tables(), test::parts()));
+        std::vector<KartInput> in(1);
+        w.tick(in);
+        KartState& k = w.karts_mut()[0];
+        k.pos = {0.0f, 0.0f, 300.0f}; // the grid is at the strip's far end
+        k.rot = quat(1, 0, 0, 0);
+        k.sample = w.track().nearest_sample(k.pos);
+        float lo = 1e9f, hi = -1e9f;
+        for (int f = 0; f < 60 * 10; ++f) {
+            in[0] = cpu_input(w, 0, cpu_skill(level, 0));
+            w.tick(in);
+            if (f < 120) continue; // up to speed first
+            lo = std::min(lo, w.karts()[0].pos.x), hi = std::max(hi, w.karts()[0].pos.x);
+        }
+        return hi - lo;
+    };
+    const float hard = span(CpuLevel::Hard), normal = span(CpuLevel::Normal), easy = span(CpuLevel::Easy);
+    MESSAGE("sway across the road over 8 s: hard " << hard << " m, normal " << normal << " m, easy " << easy << " m");
+    CHECK(hard > 2.0f);
+    CHECK(normal > 1.2f);
+    CHECK(easy < 1.0f);
+}
+
+TEST_CASE("a hard CPU overtakes a slower kart cleanly") {
+    World w(test::flat_track(), test::tables(), RaceConfig{.laps = 1 << 30, .countdown_frames = 1, .items = false});
+    const auto parts = test::parts();
+    KartParams slow = test::default_params(w.tables(), parts);
+    slow.top_speed *= 0.6f;
+    w.add_kart(slow);
+    w.add_kart(test::default_params(w.tables(), parts));
+    std::vector<KartInput> in(2);
+    w.tick(in);
+    for (int i = 0; i < 2; ++i) {
+        KartState& k = w.karts_mut()[size_t(i)];
+        k.pos = {0.0f, 0.0f, i == 0 ? 318.0f : 300.0f};
+        k.rot = quat(1, 0, 0, 0);
+        k.speed = i == 0 ? 12.0f : 22.0f;
+        k.sample = w.track().nearest_sample(k.pos);
+    }
+    float closest = 1e9f;
+    int passed_at = -1, bumps = 0;
+    for (int f = 0; f < 60 * 8; ++f) {
+        in[0] = KartInput{.accelerate = true};
+        in[1] = cpu_input(w, 1, cpu_skill(CpuLevel::Hard, 1));
+        w.tick(in);
+        const vec3 d = w.karts()[1].pos - w.karts()[0].pos;
+        closest = std::min(closest, glm::length(d));
+        for (const auto& e : w.events()) bumps += e.type == KartEventType::Hit || e.type == KartEventType::WallHit;
+        if (passed_at < 0 && d.z > 3.0f) passed_at = f;
+    }
+    MESSAGE("passed after " << passed_at / 60.0f << " s, closest " << closest << " m, bumps " << bumps);
+    CHECK(passed_at >= 0);
+    CHECK(closest > 1.5f); // round it, not through it
+    CHECK(bumps == 0);
+}
+
+TEST_CASE("CPU slips are seeded from the tick: a normal CPU slips about once a lap, a hard one half as often") {
+    World w = test::racing_world();
+    std::vector<KartInput> in(1);
+    int normal = 0, hard = 0, easy = 0, easy_other = 0;
+    CpuMistake was_n = CpuMistake::None, was_h = CpuMistake::None, was_e = CpuMistake::None;
+    for (int f = 0; f < 60 * 135; ++f) { // about three laps' worth of ticks
+        w.tick(in);
+        const CpuMistake n = cpu_mistake(w, 0, cpu_skill(CpuLevel::Normal, 0)), h = cpu_mistake(w, 0, cpu_skill(CpuLevel::Hard, 0)),
+                         e = cpu_mistake(w, 0, cpu_skill(CpuLevel::Easy, 0));
+        normal += n != CpuMistake::None && n != was_n;
+        hard += h != CpuMistake::None && h != was_h;
+        easy += e == CpuMistake::WallBrush && e != was_e;
+        easy_other += e != CpuMistake::None && e != CpuMistake::WallBrush;
+        was_n = n, was_h = h, was_e = e;
+    }
+    MESSAGE("slips in 135 s: normal " << normal << ", hard " << hard << ", easy " << easy << " wall brushes");
+    CHECK(normal >= 1);
+    CHECK(normal <= 7);
+    CHECK(hard <= normal);
+    CHECK(easy_other == 0);
+    CHECK(easy >= 1);
+    // The same tick gives the same slip for the same kart.
+    const WorldState s = w.save();
+    const CpuMistake a = cpu_mistake(w, 0, cpu_skill(CpuLevel::Normal, 0));
+    w.restore(s);
+    CHECK(a == cpu_mistake(w, 0, cpu_skill(CpuLevel::Normal, 0)));
+}
