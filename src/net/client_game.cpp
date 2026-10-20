@@ -235,9 +235,11 @@ void ClientGame::apply_snapshot(const SnapshotMsg& m) {
     }
     // A hit we only learn about now (an item fired by a lagging player) moves
     // the kart, but that is the hit, not a prediction error: the spin-out
-    // animation covers it, so it doesn't count as a correction.
-    const bool newly_hit = had_local && !knocked_before && karts[size_t(seat_)].knocked();
-    if (had_local && snapshots_applied_ > 1 && !newly_hit) {
+    // animation covers it, so it doesn't count as a correction. Nor does the
+    // rest of the spin: a kart that hit an oil slick a tick apart on the two
+    // sides tumbles along two paths that only meet again when it recovers.
+    const bool spinning = had_local && (knocked_before || karts[size_t(seat_)].knocked());
+    if (had_local && snapshots_applied_ > 1 && !spinning) {
         last_correction_ = glm::length(local_before - karts[size_t(seat_)].pos);
         max_correction_ = std::max(max_correction_, last_correction_);
     }
