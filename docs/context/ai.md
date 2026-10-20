@@ -11,7 +11,14 @@
   as the server drives them, so keep it that way.
 - Difficulty: `CpuLevel` Easy/Normal/Hard -> `cpu_skill(level, seat)`.
   Easy keeps to the middle and never drifts; Normal releases at first
-  spark; Hard drives the full line. `cpu_rubber_band(level)` sets
+  spark; Hard drives the full line. `CpuSkill::edge_room` sets how close
+  to the road's edge the line may run (Hard 1 m, Easy 2.4 m), `weave` how
+  far it sways across straights, `overtakes` whether it commits to the
+  roomier side to pass a slower kart, and `mistakes` the chance in 100 of
+  a slip in each 20 s spell (Normal about one a lap, Hard half that):
+  a missed apex or an early drift release, or for Easy a brush against
+  the wall (`cpu_mistake`, seeded from the tick and the kart index, so it
+  stays a pure function of world state). `cpu_rubber_band(level)` sets
   `KartParams::rubber_band` (speed up behind the leading player, ease off
   ahead). `cpu_build(parts, seat)` picks each CPU's parts.
 - Side roads: `cpu_route` picks which open ones a CPU takes each lap. Short

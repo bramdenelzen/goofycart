@@ -50,6 +50,12 @@ queries against the track.
   at least v²/r, so a hop or a bump comes back to it; on the ground the
   slope term of gravity is skipped (the road's down is down) and the grip
   descent gain is capped at 15% (`kLoopGainCap`, provisional).
+- Snaking: with the stick held away from the drift (`drift_turn_wide`,
+  0.08) the kart runs nearly straight while charging at `charge_slow`, so
+  alternating drifts down a straight earn a blue mini-turbo each (about
+  every 2.5 s) and gain a few percent on flat out while swinging about
+  3 m either side of the line; `tests/test_kart.cpp` "snaking" keeps it
+  between 1% and 8%.
 - Grip road (`CenterSample::grip`, `Track::grip_up`): airborne gravity,
   yaw and the landing test use the road's up instead of world up, so hops
   off an 80° bank come back to it; `align_up` keeps the heading when the
