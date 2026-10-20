@@ -33,7 +33,7 @@
     "drift_slip_retention": 0.7,
     "drift_entry_frames": 18,
     "drift_entry_slip_retention": 0.94,
-    "drift_turn_wide": 0.12,
+    "drift_turn_wide": 0.08,
     "drift_turn_neutral": 0.42,
     "drift_turn_tight": 1.05,
     "drift_turn_start": 0.1,
