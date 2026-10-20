@@ -1,6 +1,6 @@
 # Tracks
 
-Tracks are data. 15 race tracks plus the built-in `greybox` test track.
+Tracks are data. 16 race tracks plus the built-in `greybox` test track.
 `docs/TRACKS.md` is the full file-format reference (sections: The main
 loop, Point to point, Features, Gates, Branches); read only the section you
 need.
@@ -54,6 +54,7 @@ alternate paths that can open and close.
   holds the plane's normal), so the road rolls over the top instead of
   corkscrewing; `CenterSample::loop_r` marks the samples (`Track::loop_radius`).
   The run-in and run-out must be straight and level; `tests/test_loop.cpp`.
+  Caldera Coaster (`data/tracks/caldera_coaster.json`) has two.
 - Visual seams: `gk_client --track <id> --seam-tour <dir>` photographs the
   track; `src/client/render/seam_check.cpp` finds cracks, z-fighting,
   terrain through the road and floating props. Findings and fixes are in
