@@ -467,8 +467,12 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     const float turn = turn_ahead(t, ahead4, 30.0f, spacing, route);
     const float turn_long = turn_ahead(t, ahead4, 55.0f, spacing, route);
     const bool going_right_way = to.z > 0.5f;
-    // A drift can't turn gentler than this; only drift where the corner needs most of it.
-    const float min_drift_yaw = p.turn_rate * drift_turn_target(c, p, -1.0f) * speed_fac;
+    // The gentlest arc worth a drift, as a fraction of the kart's full lock
+    // (a counter-steered drift can turn gentler still, since the snaking
+    // tune, but a corner needing less than this isn't worth one).
+    constexpr float kGentlestDrift = 0.12f;
+    const float inward = drift_turn_target(c, p, 0.0f) / std::max(c.drift_turn_neutral, 1e-3f); // the body's inward bonus
+    const float min_drift_yaw = p.turn_rate * kGentlestDrift * inward * speed_fac;
     const float near_turn = turn_ahead(t, t.next(cur, route), 14.0f, spacing, route);
     const float corner_yaw = std::abs(near_turn) / 14.0f * speed;
     const bool want_drift = skill.drifts && !dodging_lava && k.grounded && going_right_way && speed > c.min_drift_speed + 3.0f &&
@@ -483,14 +487,15 @@ KartInput cpu_input(const World& world, int kart, const CpuSkill& skill) {
     };
     if (k.drift == DriftState::Drifting) {
         const float dir = float(k.drift_dir);
-        float rel = drift_rel_for(c, p, yaw_needed * dir / (p.turn_rate * speed_fac)); // +1 = into the turn
+        const float f_needed = yaw_needed * dir / (p.turn_rate * speed_fac * inward); // the arc the line wants, as a fraction of full lock
+        float rel = drift_rel_for(c, p, yaw_needed * dir / (p.turn_rate * speed_fac));  // +1 = into the turn
         const float rest = turn_ahead(t, cur, 12.0f, spacing, route) * dir;
         const int tier = k.mt_tier(c);
         // Let go once the wanted mini-turbo is ready (and drift again if the
-        // corner goes on), when the drift turns tighter than the line, or
-        // when the corner has ended.
+        // corner goes on), when the line bends the other way (further than
+        // a little, while there's no spark yet), or when the corner has ended.
         const bool cash_in = tier >= skill.max_tier || slip == CpuMistake::EarlyRelease; // a slip: lets go before the sparks
-        const bool losing_line = rel < (tier >= 1 ? -1.4f : -1.8f);
+        const bool losing_line = f_needed < (tier >= 1 ? 0.0f : -0.12f);
         const bool straight = rest < 0.05f;
         const bool edge = room_inside(dir) < -0.9f; // the band already keeps 1.6 m off the edge
         if (cash_in || losing_line || straight || edge || !going_right_way || dodging_lava) {

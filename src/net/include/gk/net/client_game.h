@@ -128,6 +128,7 @@ private:
 
     float last_correction_ = 0.0f;
     float max_correction_ = 0.0f;
+    uint32_t last_bump_tick_ = 0; // the last tick our kart bumped another, predicted or replayed
     int snapshots_applied_ = 0;
 };
 
