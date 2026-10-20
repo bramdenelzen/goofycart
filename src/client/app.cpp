@@ -1109,24 +1109,37 @@ void App::update_camera(float alpha, float dt) {
         cam_dist_ += (dist - cam_dist_) * k2;
     }
     // Grip road: the camera leans with the road, up to a point, so a steep
-    // bank reads as the floor it is and not as a wall beside you.
+    // bank reads as the floor it is and not as a wall beside you. On a loop
+    // it rolls all the way over with the road (eased over about 0.3 s).
+    const sim::Track& t = world()->track();
+    const bool on_loop = t.loop_radius(now.sample) > 0.0f;
     {
-        const sim::Track& t = world()->track();
         vec3 want = kUp;
-        if (t.grip_at(now.sample)) {
+        if (on_loop) {
+            want = t.sample(now.sample).up;
+        } else if (t.grip_at(now.sample)) {
             const vec3 ru = t.sample(now.sample).up;
             const float ang = std::acos(std::clamp(ru.y, -1.0f, 1.0f));
             if (ang > 1e-3f) want = glm::normalize(glm::mix(kUp, ru, std::min(ang, glm::radians(55.0f)) / ang));
         }
         cam_up_ = cam_init_ ? glm::normalize(glm::mix(cam_up_, want, 1.0f - std::exp(-3.0f * dt))) : want;
     }
+    // On a loop the chase direction follows the kart's own forward round
+    // the loop (the level heading has nothing to say on a vertical wall),
+    // then eases back to the level heading once off it.
+    vec3 dir3 = cam_dir_;
+    if (on_loop || cam_loop_) {
+        const vec3 goal = on_loop ? fwd : cam_dir_;
+        cam_dir3_ = cam_loop_ ? glm::normalize(glm::mix(cam_dir3_, goal, 1.0f - std::exp(-6.0f * dt))) : fwd;
+        cam_loop_ = on_loop || glm::dot(cam_dir3_, cam_dir_) < 0.995f;
+        dir3 = cam_dir3_;
+    }
     // Looking back is a clean cut both ways, then follows just as smoothly.
-    const vec3 dir = back ? -cam_dir_ : cam_dir_;
+    const vec3 dir = back ? -dir3 : dir3;
     const vec3 cam_target = pos - dir * cam_dist_ + cam_up_ * cam_height_;
     if (!cam_init_ || back != cam_back_) cam_y_ = cam_target.y;
     else cam_y_ += (cam_target.y - cam_y_) * (1.0f - std::exp(-10.0f * dt)); // soften hops and bumps
     {   // Under a tunnel's roof (the kart's or the camera's): stay below it.
-        const sim::Track& t = world()->track();
         const vec3 at(cam_target.x, cam_y_, cam_target.z);
         float limit = 1e9f;
         if (const auto r = t.tunnel_roof(at, t.nearest_sample(at, now.sample))) limit = *r - 0.8f;

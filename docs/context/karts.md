@@ -46,6 +46,10 @@ queries against the track.
 - Drift hop: past the top of the hop with the stick held over, the
   mini-turbo starts charging in the air (`step_air`); landing the other way
   starts it over.
+- Loops (`Track::loop_radius` > 0): in the air the pull towards the road is
+  at least v²/r, so a hop or a bump comes back to it; on the ground the
+  slope term of gravity is skipped (the road's down is down) and the grip
+  descent gain is capped at 15% (`kLoopGainCap`, provisional).
 - Snaking: with the stick held away from the drift (`drift_turn_wide`,
   0.08) the kart runs nearly straight while charging at `charge_slow`, so
   alternating drifts down a straight earn a blue mini-turbo each (about

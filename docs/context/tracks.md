@@ -48,6 +48,12 @@ alternate paths that can open and close.
   `test_mechanics` (grip road, conveyors, waves, presses, swings).
 - Banks over 35° need a covering `grip` feature (`check_steep_banks`);
   `kGripBank` (80°) is the limit.
+- Loops (`loop` feature, `splice_loop` in the builder): spliced into the
+  main road's samples before the other features go on, in road order. The
+  frame through a loop is carried in the loop's plane (`Strip::level_right`
+  holds the plane's normal), so the road rolls over the top instead of
+  corkscrewing; `CenterSample::loop_r` marks the samples (`Track::loop_radius`).
+  The run-in and run-out must be straight and level; `tests/test_loop.cpp`.
 - Visual seams: `gk_client --track <id> --seam-tour <dir>` photographs the
   track; `src/client/render/seam_check.cpp` finds cracks, z-fighting,
   terrain through the road and floating props. Findings and fixes are in

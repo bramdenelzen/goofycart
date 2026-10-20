@@ -29,6 +29,10 @@ One of the three stretches a point-to-point track is divided into; the HUD shows
 A stretch of road karts stick to however steeply it banks (up to 80°): in the air over it gravity follows the road's up, and going downhill on it is faster. Not anti-gravity: the road still has a down.
 _Avoid_: anti-gravity, wall ride
 
+**Loop**:
+A vertical loop spliced into the main road: grip road that climbs over the top and comes back down beside its own entry, shifted sideways by at least the road's width plus 4 m. Karts stick to it at any speed, gravity on it is the road's down, and a hop or a hit on it stays on it.
+_Avoid_: loop-the-loop, corkscrew (that's a roll, not a loop)
+
 **Conveyor**:
 Dry road that carries karts along or across it, like a current does under deep water.
 

@@ -90,6 +90,21 @@ they are metres from where the branch leaves.
 | `wave` | the road rolls in travelling waves | `from`, `to`, `amplitude` (m), `wavelength` (m), `period` (s), `phase`, `when` |
 | `current` | deep water only: the water moves, carrying karts with it | `from`, `to`, `push` (m/s along), `drift` (m/s across, + right), `when` |
 | `vent` | deep water only: a bubble vent that throws karts up | `at`, `offset`, `width`, `lift` (m/s up), `period`, `open`, `phase`, `when` |
+| `loop` | main road only: a vertical loop spliced in at `at` | `at`, `radius` (8..30 m, default 12), `shift` (m sideways, + right; at least 2 x half width + 4, the default) |
+
+A loop is built into the road, not drawn with the control points: the road
+climbs into a clothoid (a circle of `radius` with the curvature easing in
+over the first `radius` metres and out over the last), comes back down
+`shift` metres to the right of where it left, and eases back onto its own
+line over the next 60 m or so. The road has to run straight and level from
+12 m before the loop to about 80 m after it, nothing that lifts, tilts or
+roofs the road (ramps, gaps, banks, waves, tunnels, stairs) can sit on it,
+and it is always grip road with 10 m of grip either side. Karts stick to it
+at any speed, gravity on it is the road's down (no speed lost climbing, and
+at most 15% gained coming down), a hop or a hit on it stays on it, and
+nobody respawns onto it. The lap gets longer by the loop's length less the
+straight it consumed; features placed by later control points stay where
+they were. More than one loop is fine.
 
 Zone surfaces: `water`, `ice`, `oil`, `sand`, `offroad_*`, `boost` (a dash
 strip) and `lava` (out of bounds: a respawn).

@@ -322,6 +322,8 @@ private:
     bool cam_back_ = false;
     vec3 cam_dir_{0.0f, 0.0f, 1.0f};
     vec3 cam_up_{0.0f, 1.0f, 0.0f}; // leans with grip road
+    vec3 cam_dir3_{0.0f, 0.0f, 1.0f}; // on a loop: follows the kart's forward round it
+    bool cam_loop_ = false;
     float cam_height_ = 2.2f, cam_dist_ = 5.5f, cam_y_ = 0.0f;
     HudMessage message_;
     bool show_help_ = true;

@@ -329,7 +329,14 @@ void step_air(KartState& s, const KartInput& in, bool drift_pressed, const KartS
         // Over grip road "down" is into the road, so a hop or a bump off a
         // steep bank comes back to it instead of peeling away.
         const vec3 gup = ctx.track.grip_up(s.sample);
-        s.air_vel -= gup * (k.gravity * kDt);
+        float pull = k.gravity;
+        if (const float r = ctx.track.loop_radius(s.sample); r > 0.0f) {
+            // On a loop the road's pull holds the kart at any speed: a hop or
+            // a bump comes back to the road instead of flying out of it.
+            const vec3 along = s.air_vel - gup * glm::dot(s.air_vel, gup);
+            pull = std::max(pull, glm::dot(along, along) / r);
+        }
+        s.air_vel -= gup * (pull * kDt);
         float rate = in.steer * p.turn_rate * 0.35f;
         if (s.drift == DriftState::Drifting) rate = float(s.drift_dir) * p.turn_rate * s.drift_turn * 0.8f;
         const quat q = glm::angleAxis(-rate * kDt, gup);
@@ -422,7 +429,11 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
     // away gently for a while after it (momentum out of a spiral).
     const bool grip = ctx.track.grip_at(s.sample);
     if (grip) {
-        top *= 1.0f + k.grip_descent_gain * std::max(0.0f, -fwd.y);
+        // A loop's descent is capped: out about 15% faster than in, not the
+        // spiral's 40% (provisional, #43).
+        constexpr float kLoopGainCap = 0.15f;
+        const float gain = k.grip_descent_gain * std::max(0.0f, -fwd.y);
+        top *= 1.0f + (ctx.track.loop_radius(s.sample) > 0.0f ? std::min(gain, kLoopGainCap) : gain);
         s.grip_carry = uint8_t(std::min(k.grip_carry_frames, 255));
     } else if (s.grip_carry > 0) {
         --s.grip_carry;
@@ -449,7 +460,9 @@ void step_ground(KartState& s, const KartInput& in, bool drift_pressed, const Ka
         if (!s.knocked()) s.speed = approach(s.speed, 0.0f, k.coast_decel * kDt);
         if (s.speed > top) s.speed = approach(s.speed, top, overspeed_decel * kDt);
     }
-    s.speed -= fwd.y * k.gravity * k.slope_factor * kDt;
+    // On a loop gravity is the road's down, so the climb costs nothing and
+    // the drop gives nothing beyond the capped grip gain above.
+    if (ctx.track.loop_radius(s.sample) <= 0.0f) s.speed -= fwd.y * k.gravity * k.slope_factor * kDt;
 
     // Hop: the drift button lifts the kart; landing with the stick held starts a drift.
     if (drift_pressed && s.drift == DriftState::None && s.speed > 1.0f) {
