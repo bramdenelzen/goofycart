@@ -287,6 +287,13 @@ bool PhysicsTables::load(const std::string& path, std::string* error) {
             read_const(c, "susp_air_droop", k.susp_air_droop);
             read_const(c, "susp_wobble_frames", k.susp_wobble_frames);
             read_const(c, "susp_wobble_steer", k.susp_wobble_steer);
+            read_const(c, "tilt_lateral_light", k.tilt_lateral_light);
+            read_const(c, "tilt_lateral_heavy", k.tilt_lateral_heavy);
+            read_const(c, "tilt_per_lateral", k.tilt_per_lateral);
+            read_const(c, "tilt_max", k.tilt_max);
+            read_const(c, "tilt_freq", k.tilt_freq);
+            read_const(c, "tilt_damping", k.tilt_damping);
+            read_const(c, "tilt_bounce", k.tilt_bounce);
         }
     } catch (const std::exception& e) {
         if (error) *error = path + ": " + e.what();

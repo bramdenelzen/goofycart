@@ -341,6 +341,44 @@ TEST_CASE("suspension: pitches under acceleration and braking, rolls out of turn
     CHECK(x.pos == y.pos);
 }
 
+TEST_CASE("two wheels: a hard corner tips the kart onto its outside wheels, more for faster and lighter karts") {
+    // Peak tilt (radians, + right side down) over a second of the given input.
+    auto corner = [](float weight, EngineClass cc, KartInput in, int8_t* drift_dir = nullptr) {
+        Bench b(test::flat_track());
+        b.params = test::default_params(b.tables, b.parts, {1, 0, 0, 0}, cc);
+        b.params.weight01 = weight;
+        b.step(gas(), 150);
+        float peak = 0.0f;
+        for (int f = 0; f < 60; ++f) {
+            b.step(in);
+            if (std::abs(b.kart.tilt) > std::abs(peak)) peak = b.kart.tilt;
+        }
+        if (drift_dir) *drift_dir = b.kart.drift_dir;
+        return peak;
+    };
+    const float k = test::tables().constants.tilt_max;
+    CHECK(corner(0.5f, EngineClass::cc150, gas(0.5f)) == 0.0f);   // ordinary steering stays on four wheels
+    CHECK(corner(0.5f, EngineClass::cc50, gas(1.0f)) == 0.0f);    // and so does a slow full lock
+    int8_t dir = 0;
+    const float tight = corner(0.5f, EngineClass::cc150, gas(1.0f, true), &dir);
+    REQUIRE(dir == 1);
+    CHECK(tight < -0.1f);                // a tight right drift lifts the right (inside) wheels
+    CHECK(tight >= -k);
+    CHECK(corner(0.5f, EngineClass::cc150, gas(-1.0f, true)) > 0.1f); // and a left one the left
+    CHECK(corner(0.5f, EngineClass::cc200, gas(1.0f, true)) < tight); // faster, further up
+    CHECK(corner(0.0f, EngineClass::cc150, gas(1.0f, true)) < corner(1.0f, EngineClass::cc150, gas(1.0f, true)));
+
+    // Straightening out, the wheels come down and the kart sits flat again.
+    Bench b(test::flat_track());
+    b.params = test::default_params(b.tables, b.parts, {1, 0, 0, 0}, EngineClass::cc200);
+    b.step(gas(), 150);
+    b.step(gas(1.0f, true), 60);
+    REQUIRE(b.kart.tilt < -0.1f);
+    b.step(gas(), 60);
+    CHECK(std::abs(b.kart.tilt) < 0.01f);
+    CHECK(b.kart.tilt <= 0.0f); // never tipped past flat onto the other side
+}
+
 TEST_CASE("a trick works off any ledge, but only pays out after real air") {
     Bench high(ledge_track(2.0f), {0, 2.0f, -80.0f});
     REQUIRE(trick_off_ledge(high));

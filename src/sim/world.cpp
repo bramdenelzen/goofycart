@@ -362,6 +362,7 @@ bool World::adopt_motion(int kart, const KartState& c, std::span<const KartInput
     k.susp_y = c.susp_y, k.susp_vy = c.susp_vy;
     k.susp_pitch = c.susp_pitch, k.susp_pitch_v = c.susp_pitch_v;
     k.susp_roll = c.susp_roll, k.susp_roll_v = c.susp_roll_v;
+    k.tilt = c.tilt, k.tilt_v = c.tilt_v;
     k.susp_wobble = c.susp_wobble;
     // Boosts the kart earned by how it was driven (drift, slipstream, pads)
     // go with the movement; item boosts are the server's (they cost an item).
