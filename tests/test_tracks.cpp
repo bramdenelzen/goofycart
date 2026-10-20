@@ -141,6 +141,9 @@ TEST_CASE("where a track passes over itself there is room underneath") {
         for (int i = 0; i < n; ++i)
             for (int j = i + 20; j < n && n - (j - i) >= 20; ++j) {
                 const CenterSample &a = t.center[size_t(i)], &b = t.center[size_t(j)];
+                // A loop's back comes down beside its own run-in, shifted
+                // clear of it sideways rather than over it (test_loop).
+                if (a.loop_r > 0.0f || b.loop_r > 0.0f) continue;
                 const float d = glm::length(vec2(a.pos.x - b.pos.x, a.pos.z - b.pos.z));
                 if (d > a.half_width + b.half_width + 10.0f) continue;
                 CAPTURE(i);

@@ -104,7 +104,8 @@ at any speed, gravity on it is the road's down (no speed lost climbing, and
 at most 15% gained coming down), a hop or a hit on it stays on it, and
 nobody respawns onto it. The lap gets longer by the loop's length less the
 straight it consumed; features placed by later control points stay where
-they were. More than one loop is fine.
+they were. More than one loop is fine: Caldera Coaster has two, one at the
+foot of its descent and one straight off a glide landing.
 
 Zone surfaces: `water`, `ice`, `oil`, `sand`, `offroad_*`, `boost` (a dash
 strip) and `lava` (out of bounds: a respawn).
