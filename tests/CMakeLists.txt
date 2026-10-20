@@ -17,6 +17,7 @@ add_executable(gk_tests
   test_paths.cpp
   test_master.cpp
   test_mechanics.cpp
+  test_loop.cpp
 )
 target_link_libraries(gk_tests PRIVATE gk_net gk_audio gk_online doctest::doctest gk_warnings)
 add_test(NAME gk_tests COMMAND gk_tests)

@@ -18,7 +18,7 @@ them, including screenshot/testing flags like `--pixel`, `--no-ui`,
 | Karts | `build_visual`, `set_kart_meshes`, `draw_kart`, `draw_kart_visual`, `draw_glider_visual` |
 | Effects | `handle_events`, `event_particles`, `emit_kart_particles`, `burst`, `explosion_burst`, `draw_flame`, `draw_speed_lines` |
 | World drawing | `draw_items`, `draw_held_item`, `draw_movers`, `draw_gates`, `draw_breakables`, `update_lava`, `draw_water_overlay` |
-| Camera | `update_camera`, `spring`, `seam_tour_step` |
+| Camera | `update_camera`, `spring`, `seam_tour_step`; on a loop it rolls fully with the road and follows the kart's own forward (`cam_dir3_`) |
 | Sound | `event_sound`, `update_audio`, `play_at` |
 | Pause | `pause_items`, `update_pause`, `draw_pause` |
 

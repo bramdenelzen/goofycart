@@ -82,6 +82,8 @@ struct Strip {
     std::vector<std::pair<Range, const TrackFeature*>> zones, tunnels, currents, waves;
     std::vector<std::pair<Range, float>> banks; // radians, + right side down
     std::vector<Range> grips;
+    std::vector<std::pair<Range, float>> loops;  // vertical loops and their radius
+    std::vector<vec3> level_right;               // per base sample: the normal of the loop's plane, its frame kept in it (zero elsewhere)
 
     int n() const { return int(c.size()); }
     Range range(float a, float b) const { return Range{a, b, closed ? total : kOpenRoad}; }
@@ -137,6 +139,7 @@ struct Strip {
         case TrackFeature::Kind::Conveyor: currents.push_back({range(a, b), &f}); break;
         case TrackFeature::Kind::Vent: vents.push_back({a, &f}); break;
         case TrackFeature::Kind::Grip: grips.push_back(range(a, b)); break;
+        case TrackFeature::Kind::Loop: break; // spliced into the road by build_track before the features go on
         case TrackFeature::Kind::Wave:
             waves.push_back({range(a, b), &f});
             no_respawn.push_back(range(a - 2.0f, b + 2.0f)); // a kart dropped onto a wave lands inside it
@@ -211,16 +214,29 @@ struct Strip {
             const int a = closed ? (i - 1 + count) % count : std::max(i - 1, 0);
             const int b = closed ? (i + 1) % count : std::min(i + 1, count - 1);
             cs.tangent = glm::normalize(vec3(base[size_t(b)]) - vec3(base[size_t(a)]));
-            cs.right = glm::normalize(glm::cross(cs.tangent, kUp));
-            cs.up = glm::normalize(glm::cross(cs.right, cs.tangent));
-            if (const float bank = bank_at(cs.u); bank != 0.0f) { // tilt across: + the right side down
-                cs.right = glm::normalize(cs.right * std::cos(bank) - cs.up * std::sin(bank));
+            if (level_right.size() == c.size() && glm::length(level_right[size_t(i)]) > 0.5f) {
+                // Through a loop the frame is carried in the loop's plane:
+                // the road's up stays in it (so the road rolls over the top
+                // with its up pointing down instead of twisting round like a
+                // corkscrew) and `right` is the plane's normal, less the
+                // tilt the sideways shift gives the tangent.
+                const vec3 lr = level_right[size_t(i)];
+                cs.up = glm::normalize(glm::cross(lr, cs.tangent));
+                cs.right = glm::normalize(glm::cross(cs.tangent, cs.up));
+            } else {
+                cs.right = glm::normalize(glm::cross(cs.tangent, kUp));
                 cs.up = glm::normalize(glm::cross(cs.right, cs.tangent));
+                if (const float bank = bank_at(cs.u); bank != 0.0f) { // tilt across: + the right side down
+                    cs.right = glm::normalize(cs.right * std::cos(bank) - cs.up * std::sin(bank));
+                    cs.up = glm::normalize(glm::cross(cs.right, cs.tangent));
+                }
             }
             cs.half_width = base[size_t(i)].w;
             cs.has_floor = !in_any(gaps, cs.u);
             cs.respawn_ok = !in_any(no_respawn, cs.u);
             cs.grip = in_any(grips, cs.u);
+            for (const auto& [r, radius] : loops)
+                if (r.contains(cs.u)) cs.loop_r = radius;
         }
     }
     uint32_t V(int sample, int col) const { return first_vertex + uint32_t(wrap(sample) * kStride + col); }
@@ -266,6 +282,98 @@ std::vector<vec4> resample_open(const std::vector<vec4>& pts, float& step, float
     return out;
 }
 
+// A vertical loop spliced into a closed road at `s0`: the road climbs into
+// a clothoid (curvature easing in over the first `r` metres and out over the
+// last, a circle of radius `r` between) that comes back down to the road
+// `shift` metres to the right of where it left, then the road eases back
+// onto its own line. The run-in and the run-out have to be straight and
+// level, since the loop keeps the entry's frame all the way round.
+void splice_loop(Strip& m, std::vector<float>& ctrl_at, float s0, float r, float shift) {
+    const int n = int(m.base.size());
+    const float step = m.step;
+    auto wrapi = [&](int i, int count) { return ((i % count) + count) % count; }; // the strip's samples aren't made yet
+    const int i0 = wrapi(int(std::round(s0 / step)), n);
+    auto at = [&](int i) { return vec3(m.base[size_t(wrapi(i, n))]); };
+    const vec3 p0 = at(i0);
+    vec3 fwd = at(i0 + 1) - at(i0 - 1);
+    fwd.y = 0.0f;
+    if (glm::length(fwd) < 1e-3f) throw std::runtime_error("a loop on a road with no direction");
+    fwd = glm::normalize(fwd);
+    const vec3 right = glm::normalize(glm::cross(fwd, kUp));
+    // Trace the clothoid: curvature ramps over `ease` at each end round a
+    // circle of radius r, 2 pi of turning in all.
+    const float ease = r, L = 2.0f * kPi * r + ease;
+    constexpr float dl = 0.05f;
+    std::vector<vec3> trace{p0};
+    std::vector<float> trace_l{0.0f};
+    vec3 p = p0;
+    float th = 0.0f;
+    for (float l = 0.0f; l < L; l += dl) {
+        const float kap = (l < ease ? l / ease : l > L - ease ? (L - l) / ease : 1.0f) / r;
+        th += kap * dl;
+        p += (fwd * std::cos(th) + kUp * std::sin(th)) * dl;
+        trace.push_back(p);
+        trace_l.push_back(l + dl);
+    }
+    const vec3 end = trace.back();
+    const float D = glm::dot(end - p0, fwd); // how far along the road the loop lands
+    const int nl = std::max(4, int(std::round(L / step)));
+    const int consumed = int(std::round(D / step));
+    const float run_out = std::max(60.0f, 3.0f * std::abs(shift)); // the road eases back onto its line over this
+    // The run-in and run-out must be straight and level, or the frame kept
+    // level through the loop would not match the road either side.
+    for (int i = i0 - 6; i <= i0 + consumed + int(run_out / step); ++i) {
+        vec3 t = at(i + 1) - at(i - 1);
+        t.y = 0.0f;
+        if (glm::dot(glm::normalize(t), fwd) < std::cos(glm::radians(12.0f)) || std::abs(at(i).y - p0.y) > 1.5f)
+            throw std::runtime_error("a loop needs a straight, level road from 12 m before it to " + std::to_string(int(D + run_out)) + " m after");
+    }
+    if (i0 - 6 < 0 || i0 + consumed + int(run_out / step) >= n) throw std::runtime_error("a loop too close to the start line");
+    // Loop samples at even spacing along the trace, shifted sideways on an
+    // S-curve so the exit lands `shift` to the right; the last is the exit.
+    std::vector<vec4> loop_pts;
+    std::vector<vec3> loop_right;
+    const float w = m.base[size_t(i0)].w;
+    for (int j = 1; j <= nl; ++j) {
+        const float l = L * float(j) / float(nl);
+        size_t k = 0;
+        while (k + 1 < trace_l.size() && trace_l[k + 1] < l) ++k;
+        const float f = std::clamp((l - trace_l[k]) / dl, 0.0f, 1.0f);
+        const vec3 q = glm::mix(trace[k], trace[std::min(k + 1, trace.size() - 1)], f) + right * (shift * smooth(l / L));
+        loop_pts.emplace_back(q, w);
+    }
+    // The road after the exit: the original samples past the stretch the
+    // loop consumed, eased from the exit's offset back onto their own line.
+    const vec3 exit_off = right * shift + fwd * (D - float(consumed) * step);
+    std::vector<vec4> out;
+    std::vector<float> out_ctrl;
+    out.reserve(size_t(n + nl));
+    for (int i = 0; i <= i0; ++i) out.push_back(m.base[size_t(i)]), out_ctrl.push_back(ctrl_at[size_t(i)]);
+    for (const vec4& q : loop_pts) out.push_back(q), out_ctrl.push_back(ctrl_at[size_t(i0)]);
+    for (int i = i0 + consumed + 1; i < n; ++i) {
+        const float d = float(i - (i0 + consumed + 1)) * step;
+        out.push_back(m.base[size_t(i)] + vec4(exit_off * (1.0f - smooth(d / run_out)), 0.0f));
+        out_ctrl.push_back(ctrl_at[size_t(i)]);
+    }
+    const bool had_frames = m.level_right.size() == size_t(n);
+    m.base = out;
+    ctrl_at = out_ctrl;
+    m.total = float(m.base.size()) * step;
+    if (!had_frames) m.level_right.assign(m.base.size(), vec3(0.0f));
+    else { // an earlier splice's frames (always later along the road) move up with this one
+        std::vector<vec3> lr(m.base.size(), vec3(0.0f));
+        for (int i = 0; i < n; ++i)
+            if (i <= i0) lr[size_t(i)] = m.level_right[size_t(i)];
+            else if (i > i0 + consumed) lr[size_t(i + nl - consumed)] = m.level_right[size_t(i)];
+        m.level_right = lr;
+    }
+    for (int j = -1; j <= nl + 1; ++j) m.level_right[size_t(wrapi(i0 + j, int(m.base.size())))] = right;
+    const float s_exit = s0 + L;
+    m.loops.push_back({m.range(s0, s_exit), r});
+    m.grips.push_back(m.range(s0 - 10.0f, s_exit + 10.0f));
+    m.no_respawn.push_back(m.range(s0 - 5.0f, s_exit + 15.0f));
+}
+
 } // namespace
 
 Track build_track(const TrackDef& def) {
@@ -301,9 +409,9 @@ Track build_track(const TrackDef& def) {
     std::vector<float> dense_s(nd + (closed ? 1 : 0), 0.0f);
     for (size_t i = 1; i < dense_s.size(); ++i)
         dense_s[i] = dense_s[i - 1] + glm::length(xyz(dense[i % nd]) - xyz(dense[i - 1]));
-    const float total = dense_s.back();
+    float total = dense_s.back();
     constexpr float kSpacing = 2.0f;
-    const int n = int(std::round(total / kSpacing)) + (closed ? 0 : 1); // an open road keeps its last sample
+    int n = int(std::round(total / kSpacing)) + (closed ? 0 : 1); // an open road keeps its last sample
     const float step = closed ? total / float(n) : total / float(n - 1);
 
     Strip main;
@@ -329,9 +437,36 @@ Track build_track(const TrackDef& def) {
             }
         return s + p.metres;
     };
+    // Loops first, in road order: each splice lengthens the road after it,
+    // so the next loop's place is read off the road as it then stands.
+    {
+        std::vector<std::pair<float, const TrackFeature*>> loops;
+        for (const TrackFeature& f : def.features)
+            if (f.kind == TrackFeature::Kind::Loop) loops.push_back({s_of(f.at), &f});
+        std::sort(loops.begin(), loops.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        if (!loops.empty() && !closed) throw std::runtime_error("a loop on a point-to-point track");
+        for (const auto& [s_first, f] : loops) {
+            splice_loop(main, ctrl_at, s_of(f->at), f->radius, f->shift);
+            n = int(main.base.size());
+            total = main.total;
+        }
+    }
     for (const TrackFeature& f : def.features) {
         if (f.kind == TrackFeature::Kind::Stairs) t.stairs.push_back({s_of(f.at), s_of(f.to)});
         else main.add(f, s_of(f.at), s_of(f.to));
+    }
+    // Nothing that lifts, tilts or roofs the road sits on a loop.
+    for (const auto& [lr, radius] : main.loops) {
+        auto over = [&](const Range& r) { return r.contains(lr.a) || r.contains(lr.b) || lr.contains(r.a) || lr.contains(r.b); };
+        bool bad = false;
+        for (const Range& r : main.trick_ramps) bad |= over(r);
+        for (const Range& r : main.glide_ramps) bad |= over(r);
+        for (const Range& r : main.gaps) bad |= over(r);
+        for (const auto& [r, angle] : main.banks) bad |= over(r);
+        for (const auto& [r, f] : main.waves) bad |= over(r);
+        for (const auto& [r, f] : main.tunnels) bad |= over(r);
+        for (const auto& [a, b] : t.stairs) bad |= over(main.range(a, b));
+        if (bad) throw std::runtime_error("a ramp, gap, bank, wave, tunnel or stairs on a loop");
     }
     main.make_samples([](float u) { return u; });
     t.center = main.c;
@@ -1132,6 +1267,7 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
     else if (type == "grip") tf.kind = K::Grip;
     else if (type == "conveyor") tf.kind = K::Conveyor;
     else if (type == "wave") tf.kind = K::Wave;
+    else if (type == "loop") tf.kind = K::Loop;
     else throw std::runtime_error("unknown feature type " + type);
     if (on_branch && tf.kind == K::Stairs) throw std::runtime_error("stairs only on the main loop");
     auto pos = [&](const nlohmann::json& j) { return on_branch ? TrackPos{0.0f, j.get<float>()} : parse_pos(j); };
@@ -1203,6 +1339,14 @@ TrackFeature parse_feature(const nlohmann::json& f, TrackDef& d, GateNames& gate
         if (tf.amplitude <= 0.0f || tf.amplitude > 1.5f) throw std::runtime_error("a wave's amplitude is 0..1.5 m");
         if (tf.wavelength < 4.0f) throw std::runtime_error("a wave shorter than 4 m");
         if (tf.period < 0.5f) throw std::runtime_error("a wave's period is at least 0.5 s");
+    }
+    if (tf.kind == K::Loop) {
+        if (on_branch) throw std::runtime_error("a loop only on the main road");
+        tf.radius = f.value("radius", 12.0f);
+        if (tf.radius < 8.0f || tf.radius > 30.0f) throw std::runtime_error("a loop's radius is 8..30 m");
+        const float min_shift = 2.0f * d.half_width + 4.0f; // the exit road clear of the entry road
+        tf.shift = f.value("shift", min_shift);
+        if (std::abs(tf.shift) < min_shift - 1e-3f) throw std::runtime_error("a loop's shift is at least twice the road's half width plus 4 m");
     }
     if (tf.kind == K::Vent) {
         tf.width = f.value("width", 6.0f);

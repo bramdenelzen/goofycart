@@ -46,6 +46,10 @@ queries against the track.
 - Drift hop: past the top of the hop with the stick held over, the
   mini-turbo starts charging in the air (`step_air`); landing the other way
   starts it over.
+- Loops (`Track::loop_radius` > 0): in the air the pull towards the road is
+  at least v²/r, so a hop or a bump comes back to it; on the ground the
+  slope term of gravity is skipped (the road's down is down) and the grip
+  descent gain is capped at 15% (`kLoopGainCap`, provisional).
 - Grip road (`CenterSample::grip`, `Track::grip_up`): airborne gravity,
   yaw and the landing test use the road's up instead of world up, so hops
   off an 80° bank come back to it; `align_up` keeps the heading when the

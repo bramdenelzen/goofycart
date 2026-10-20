@@ -392,9 +392,13 @@ void World::collide_karts() {
             KartState& kb = karts_[b];
             if (ka.respawn_frames > 0 || kb.respawn_frames > 0) continue;
             if (ka.ghost_frames > 0 || kb.ghost_frames > 0) continue; // ghosts pass through
+            // In the road's plane, so two karts on a loop's wall push each
+            // other along the road and not off it (on flat road that's xz).
+            const vec3 up = track_.grip_at(ka.sample) ? track_.grip_up(ka.sample) : track_.grip_up(kb.sample);
             vec3 d = kb.pos - ka.pos;
-            if (std::abs(d.y) > 1.5f) continue;
-            d.y = 0.0f;
+            const float lift = glm::dot(d, up);
+            if (std::abs(lift) > 1.5f) continue;
+            d -= up * lift;
             const float dist = glm::length(d);
             if (dist >= 2.0f * kRadius || dist < 1e-4f) continue;
             // A star or a bullet knocks over whoever it touches; a full-size
@@ -419,8 +423,8 @@ void World::collide_karts() {
             // Rear-ending someone: tilt the contact sideways so the two slide
             // past each other instead of the one behind getting stuck.
             {
-                const vec3 fa = glm::normalize(vec3(ka.forward().x, 0.0f, ka.forward().z));
-                const vec3 side(-fa.z, 0.0f, fa.x);
+                const vec3 fa = glm::normalize(ka.forward() - up * glm::dot(ka.forward(), up));
+                const vec3 side = glm::cross(up, fa);
                 const float along = glm::dot(n, fa);
                 if (std::abs(along) > 0.7f) {
                     float s = glm::dot(n, side);

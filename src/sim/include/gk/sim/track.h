@@ -32,6 +32,7 @@ struct CenterSample {
     int branch = -1;       // -1 the main loop, else the index in Track::branches
     float u = 0.0f;        // distance along its own road (m): texture runs, not progress
     bool grip = false;     // grip road: karts in the air fall towards it, not down
+    float loop_r = 0.0f;   // on a loop: its radius (m); 0 elsewhere
 };
 
 struct RayHit {
@@ -260,6 +261,7 @@ public:
     // Grip road: the up the karts fall towards at this sample (the road's, or the world's).
     bool grip_at(int sample) const { return size_t(sample) < road.size() && road[size_t(sample)].grip; }
     vec3 grip_up(int sample) const { return grip_at(sample) ? road[size_t(sample)].up : vec3(0, 1, 0); }
+    float loop_radius(int sample) const { return size_t(sample) < road.size() ? road[size_t(sample)].loop_r : 0.0f; }
 
     // A vent on the floor of deep water: a column of bubbles that lifts a kart
     // driving over it, blowing all the time or for `open` of every `period` ticks.
