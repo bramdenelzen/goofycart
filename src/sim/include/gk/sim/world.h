@@ -5,6 +5,7 @@
 #include "gk/sim/track.h"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -91,7 +92,9 @@ public:
     void give_item(int kart, Item item);
     // Testing: a hit or an explosion on demand.
     void spawn_explosion(vec3 pos, int owner);
-    void apply_hit(int kart, HitKind kind, int from);
+    // `at` is where the hit came from, for its animation; by default the
+    // hitting kart (no direction for a Shrink: lightning comes from above).
+    void apply_hit(int kart, HitKind kind, int from, std::optional<vec3> at = std::nullopt);
     void throw_item(int kart, Item item, bool backwards, bool forwards);
     // Whether a kart is on a dropped oil slick (slippery, like the oil surface).
     bool over_oil(int kart) const;

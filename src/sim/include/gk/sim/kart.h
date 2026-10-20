@@ -125,6 +125,21 @@ struct KartState {
     // corner, radians, + right side down (left wheels up). Visual only.
     float tilt = 0.0f, tilt_v = 0.0f;
 
+    // Wheelie (bikes): a fresh pull back on the stick lifts the front wheel
+    // for a little more top speed and weaker steering. Ends early on a drift,
+    // the brakes, a bump or a hit, or leaving the ground; then a cooldown.
+    uint8_t wheelie_frames = 0;    // left in this wheelie
+    uint8_t wheelie_cooldown = 0;  // before the next one
+    float wheelie_lift = 0.0f;     // 0..1: how far the front is up; scales the speed bonus
+    bool pitch_prev = false;       // the stick was pulled back last tick
+
+    // The last hit, for its animation: where it came from in the kart's
+    // frame (0 ahead, +64 right, -64 left, +-127 behind) and how fast the
+    // kart was going. `hit_aimed` is false when nothing gave a direction.
+    int8_t hit_angle = 0;
+    uint8_t hit_speed = 0;
+    bool hit_aimed = false;
+
     // Visual-only helpers (the client may also derive these)
     float visual_drift_yaw = 0.0f;
     float wall_bump = 0.0f;
@@ -161,6 +176,11 @@ float drift_rel_for(const PhysicsConstants& k, const KartParams& p, float factor
 
 void kart_step(KartState& s, const KartInput& in, const KartStepContext& ctx);
 void kart_give_boost(KartState& s, BoostKind kind, int frames, float mult, bool ignores_offroad);
+// Drops a bike's front wheel and starts the cooldown; nothing if not in a wheelie.
+void kart_end_wheelie(KartState& s, const PhysicsConstants& k);
+// A shove from another kart or a wall, as the change in velocity: the body
+// rocks away from it and a hard one tips the kart onto two wheels.
+void kart_shove(KartState& s, vec3 dv, const PhysicsConstants& k);
 // Called once when the countdown ends: resolves the rocket start.
 void kart_on_go(KartState& s, const KartStepContext& ctx);
 // Updates sample, checkpoints and laps; returns true when a lap was completed.

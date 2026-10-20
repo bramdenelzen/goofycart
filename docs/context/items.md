@@ -17,7 +17,9 @@ Star, Fireball, Boomerang, Chomper, Horn, Lucky Eight, Coin, Ghost).
 - `World::blocked_items` limits Spiked Shell, Lightning and Ink (Blooper) via
   held limits, start gates and cooldowns (`ItemTuning`).
 - Hits: `apply_hit` folds a glider; spin and tumble shed speed for
-  `spin_shed_frames` / `tumble_shed_frames`, then the kart slides on.
+  `spin_shed_frames` / `tumble_shed_frames`, then the kart slides on. It
+  records `hit_angle` (from `at`, else the hitting kart) and `hit_speed`
+  for the client's animation; on the wire only while knocked.
 - Star and bullet: immune to items, bumps, presses and lava zones on the road
   (`kart_step`); the lava floor below and the kill height still take them.
 

@@ -432,11 +432,24 @@ bool World::shield_blocks(int kart, vec3 from_pos, bool any_side) {
     return false;
 }
 
-void World::apply_hit(int kart, HitKind kind, int from) {
+void World::apply_hit(int kart, HitKind kind, int from, std::optional<vec3> at) {
     KartState& k = karts_[size_t(kart)];
     const auto& t = item_tuning_;
     if (k.finished || k.respawn_frames > 0) return;
     if (kind != HitKind::Shrink && k.untouchable()) return;
+    // Where it came from, in the kart's frame, and how fast the kart was going.
+    if (!at && kind != HitKind::Shrink && from >= 0 && from != kart && size_t(from) < karts_.size()) at = karts_[size_t(from)].pos;
+    k.hit_aimed = false;
+    if (at) {
+        const vec3 d = *at - k.pos;
+        const float fz = glm::dot(d, k.forward()), rx = glm::dot(d, k.right());
+        if (fz * fz + rx * rx > 1e-4f) {
+            k.hit_angle = int8_t(std::lround(std::atan2(rx, fz) / 3.14159265f * 127.0f));
+            k.hit_aimed = true;
+        }
+    }
+    k.hit_speed = uint8_t(std::clamp(glm::length(k.velocity()), 0.0f, 255.0f));
+    kart_end_wheelie(k, tables_.constants);
     if (k.trailing) consume(k); // the held item is knocked away
     k.trailing = false;
     if (k.gliding || k.glide_armed) {
@@ -630,7 +643,7 @@ void World::update_entities() {
         case EntityType::Explosion:
             for (int j = 0; j < nk; ++j)
                 if (glm::length(karts_[size_t(j)].pos - e.pos) < t.explosion_radius)
-                    apply_hit(j, HitKind::Tumble, e.owner);
+                    apply_hit(j, HitKind::Tumble, e.owner, e.pos);
             continue;
         case EntityType::SpikedShell: {
             // Flies above the road along the centre line, then drops on the leader.
@@ -768,7 +781,7 @@ void World::update_entities() {
                 break;
             }
             const HitKind kind = e.type == EntityType::Banana || e.type == EntityType::Fireball ? HitKind::Spin : HitKind::Tumble;
-            apply_hit(j, kind, e.owner);
+            apply_hit(j, kind, e.owner, e.pos);
             if (e.type != EntityType::Boomerang) {
                 dead[idx] = true;
                 break;

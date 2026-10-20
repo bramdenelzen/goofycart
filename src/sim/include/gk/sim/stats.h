@@ -216,6 +216,16 @@ struct PhysicsConstants {
     float tilt_freq = 7.0f;            // rad/s
     float tilt_damping = 0.45f;
     float tilt_bounce = 0.25f;         // velocity kept, reversed, when the wheels slam down
+    float bump_roll_gain = 0.08f;      // body roll speed (rad/s) per m/s of sideways shove
+    float bump_tilt_gain = 0.3f;       // two-wheel tip speed (rad/s) per m/s of shove past bump_tilt_min
+    float bump_tilt_min = 2.5f;        // m/s of shove before a bump tips the kart up
+    // Wheelie (bikes only). Provisional, tuned by feel: worth about what
+    // snaking is on a straight, paid for with steering and no drift.
+    int wheelie_frames = 150;          // the longest a wheelie lasts
+    int wheelie_cooldown_frames = 60;  // after one ends, before the next
+    float wheelie_speed_bonus = 0.045f; // top speed with the front fully up
+    float wheelie_steer = 0.55f;       // fraction of steering kept
+    float wheelie_stick = 0.7f;        // how far back the stick must be pulled
 };
 
 class PhysicsTables {

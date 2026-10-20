@@ -128,7 +128,8 @@ void write_kart(Writer& w, const sim::KartState& s) {
                            uint16_t(s.glide_armed) << 4 | uint16_t(s.gliding) << 5 | uint16_t(s.finished) << 6 |
                            uint16_t(s.item_button_prev) << 7 | uint16_t(s.trailing) << 8 |
                            uint16_t(s.item != sim::Item::None || s.item_next != sim::Item::None || s.roulette > 0) << 9 |
-                           uint16_t(s.underwater) << 10 | uint16_t(std::min<int>(s.trick_gap, 15)) << 11;
+                           uint16_t(s.underwater) << 10 | uint16_t(std::min<int>(s.trick_gap, 15)) << 11 |
+                           uint16_t(s.wheelie_frames > 0 || s.wheelie_cooldown > 0 || s.wheelie_lift > 0.0f || s.pitch_prev) << 15;
     w.u16(flags);
     if (!s.grounded) {
         w.q16(s.air_vel.x, 120.0f);
@@ -182,6 +183,12 @@ void write_kart(Writer& w, const sim::KartState& s) {
     w.q16(s.tilt, 1.0f);
     w.q16(s.tilt_v, 20.0f);
     w.u8(s.susp_wobble);
+    if (flags & (1u << 15)) {
+        w.u8(s.wheelie_frames);
+        w.u8(s.wheelie_cooldown);
+        w.q16(s.wheelie_lift, 1.0f);
+        w.u8(uint8_t(s.pitch_prev));
+    }
     // Item effect timers: a mask of the running ones, then each as u16.
     const int timers[] = {s.spin_frames, s.tumble_frames, s.shrink_frames, s.star_frames, s.bullet_frames, s.ghost_frames,
                           s.ink_frames, s.golden_frames, s.fire_frames, s.chomper_frames, s.chomper_cooldown};
@@ -191,6 +198,11 @@ void write_kart(Writer& w, const sim::KartState& s) {
     w.u16(mask);
     for (size_t i = 0; i < std::size(timers); ++i)
         if (mask & (1u << i)) w.u16(uint16_t(std::clamp(timers[i], 0, 65535)));
+    if (mask & 3u) { // spinning or tumbling: which way the hit came from, for the animation
+        w.i8(s.hit_angle);
+        w.u8(s.hit_speed);
+        w.u8(uint8_t(s.hit_aimed));
+    }
 }
 
 sim::KartState read_kart(Reader& r) {
@@ -270,11 +282,22 @@ sim::KartState read_kart(Reader& r) {
     s.tilt = r.q16(1.0f);
     s.tilt_v = r.q16(20.0f);
     s.susp_wobble = r.u8();
+    if (flags & (1u << 15)) {
+        s.wheelie_frames = r.u8();
+        s.wheelie_cooldown = r.u8();
+        s.wheelie_lift = r.q16(1.0f);
+        s.pitch_prev = r.u8() != 0;
+    }
     int* timers[] = {&s.spin_frames, &s.tumble_frames, &s.shrink_frames, &s.star_frames, &s.bullet_frames, &s.ghost_frames,
                      &s.ink_frames, &s.golden_frames, &s.fire_frames, &s.chomper_frames, &s.chomper_cooldown};
     const uint16_t mask = r.u16();
     for (size_t i = 0; i < std::size(timers); ++i)
         if (mask & (1u << i)) *timers[i] = r.u16();
+    if (mask & 3u) {
+        s.hit_angle = r.i8();
+        s.hit_speed = r.u8();
+        s.hit_aimed = r.u8() != 0;
+    }
     s.ground_normal = s.up();
     return s;
 }

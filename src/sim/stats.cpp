@@ -294,6 +294,14 @@ bool PhysicsTables::load(const std::string& path, std::string* error) {
             read_const(c, "tilt_freq", k.tilt_freq);
             read_const(c, "tilt_damping", k.tilt_damping);
             read_const(c, "tilt_bounce", k.tilt_bounce);
+            read_const(c, "bump_roll_gain", k.bump_roll_gain);
+            read_const(c, "bump_tilt_gain", k.bump_tilt_gain);
+            read_const(c, "bump_tilt_min", k.bump_tilt_min);
+            read_const(c, "wheelie_frames", k.wheelie_frames);
+            read_const(c, "wheelie_cooldown_frames", k.wheelie_cooldown_frames);
+            read_const(c, "wheelie_speed_bonus", k.wheelie_speed_bonus);
+            read_const(c, "wheelie_steer", k.wheelie_steer);
+            read_const(c, "wheelie_stick", k.wheelie_stick);
         }
     } catch (const std::exception& e) {
         if (error) *error = path + ": " + e.what();

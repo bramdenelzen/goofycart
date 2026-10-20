@@ -104,6 +104,11 @@
     "tilt_lateral_light": 30.0, "tilt_lateral_heavy": 38.0,
     "tilt_per_lateral": 0.018, "tilt_max": 0.42,
     "tilt_freq": 7.0, "tilt_damping": 0.45, "tilt_bounce": 0.25,
+    "_bumps": "provisional, tuned by feel: a shove from another kart or a wall rocks the body and, past bump_tilt_min m/s, tips the kart up on two wheels. Visual only.",
+    "bump_roll_gain": 0.08, "bump_tilt_gain": 0.3, "bump_tilt_min": 2.5,
+    "_wheelie": "provisional, tuned by feel (bikes only): a fresh pull back on the stick lifts the front for wheelie_frames, top speed up by wheelie_speed_bonus and steering down to wheelie_steer; no drifting, and drift, brake, a bump, a hit or leaving the ground ends it early.",
+    "wheelie_frames": 150, "wheelie_cooldown_frames": 60,
+    "wheelie_speed_bonus": 0.045, "wheelie_steer": 0.55, "wheelie_stick": 0.7,
     "stuck_respawn_frames": 300
   }
 }
